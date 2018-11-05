@@ -27,6 +27,7 @@
 *.lib
 
 # Executables
+freddie
 *.exe
 *.out
 *.app
