@@ -1,14 +1,14 @@
-CXX      ?= g++
-CXXFLAGS  = -O3 -std=c++14
+CXX      ?=g++
+CXXFLAGS  =-O3 -std=c++14
 LDFLAGS   =
 
-all: clean freddie 
+all: clean freddie
 
-SOURCES   = $(wildcard *.cc)
-OBJECTS   = $(SOURCES:.cc=.o)
+SOURCES   = $(wildcard *.cc) $(wildcard *.h)
+# OBJECTS   = $(SOURCES:.cc=.o)
 
-freddie: $(OBJECTS)
-	$(CXX) $(OBJECTS) -o $@ ${LDFLAGS}
+freddie:
+	$(CXX) $(SOURCES) -o $@ ${LDFLAGS}
 
 clean:
 	@rm -f $(OBJECTS) freddie
