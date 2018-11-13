@@ -28,6 +28,7 @@
 
 # Executables
 freddie
+freddie_gdb
 *.exe
 *.out
 *.app

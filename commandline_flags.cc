@@ -1,4 +1,5 @@
 #include "commandline_flags.h"
+#include "global.h"
 
 using namespace std;
 // Parameter definitions
