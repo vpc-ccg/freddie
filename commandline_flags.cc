@@ -52,9 +52,9 @@ void print_flags(){
 
 void print_help(){
     cout << "Freddi: Co-chaining of local alignments of long reads on gene DAGs" << "\n";
-	cout << "Usage: freddie [--PARAMETER VALUE]" << "\n";
-	cout << "Example: freddie -r reads.sam -r R2.fastq -o my_out. -e 1 -l 8 -m 5 -t 2 -k 4 --silent" << "\n";
-	cout << "Calib's paramters arguments:" << "\n";
+    cout << "Usage: freddie [--PARAMETER VALUE]" << "\n";
+    cout << "Example: freddie -r reads.sam -r R2.fastq -o my_out. -e 1 -l 8 -m 5 -t 2 -k 4 --silent" << "\n";
+    cout << "Calib's paramters arguments:" << "\n";
     cout << "\t-r\t--input-reads-sam               \t(type: string;   REQUIRED paramter)\n";
     cout << "\t-g\t--input-genes-fasta              \t(type: string;   REQUIRED paramter)\n";
     cout << "\t-o\t--output-prefix                 \t(type: string;   Default \"\")\n";

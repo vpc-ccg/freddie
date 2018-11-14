@@ -37,11 +37,11 @@ void process_gene(sequence_t gene, sequence_list_t reads) {
 }
 
 void dag_local_alignment(const sequence_t read,
-        const node_list_t& topo_sorted,
-        const in_neighbors_t& parents,
-        const node_to_base_t& node_to_base,
-        align_matrix_t& D,
-        backtrack_matrix_t& B) {
+                         const node_list_t& topo_sorted,
+                         const in_neighbors_t& parents,
+                         const node_to_base_t& node_to_base,
+                         align_matrix_t& D,
+                         backtrack_matrix_t& B) {
     size_t dag_size = topo_sorted.size();
     size_t seq_size = read.size();
     D.clear();
@@ -59,20 +59,20 @@ void dag_local_alignment(const sequence_t read,
 }
 
 void add_edge(in_neighbors_t &in_neighbors,
-        out_neighbors_t &out_neighbors,
-        node_id_t source,
-        node_id_t target) {
+              out_neighbors_t &out_neighbors,
+              node_id_t source,
+              node_id_t target) {
     out_neighbors[source].push_back(target);
     in_neighbors[target].push_back(source);
 }
 
 
 node_id_t add_node(in_neighbors_t &in_neighbors,
-        out_neighbors_t &out_neighbors,
-        node_to_base_t &node_to_base,
-        node_to_read_t &node_to_read,
-        nucleotide_t base,
-        read_id_t read_id) {
+                   out_neighbors_t &out_neighbors,
+                   node_to_base_t &node_to_base,
+                   node_to_read_t &node_to_read,
+                   nucleotide_t base,
+                   read_id_t read_id) {
     in_neighbors.push_back(node_list_t());
     out_neighbors.push_back(node_list_t());
     node_to_base.push_back(base);
@@ -82,10 +82,10 @@ node_id_t add_node(in_neighbors_t &in_neighbors,
 
 
 void print_graph(const node_list_t node_list,
-        const in_neighbors_t &in_neighbors,
-        const out_neighbors_t &out_neighbors,
-        const node_to_base_t &node_to_base,
-        const node_to_read_t &node_to_read)  {
+                 const in_neighbors_t &in_neighbors,
+                 const out_neighbors_t &out_neighbors,
+                 const node_to_base_t &node_to_base,
+                 const node_to_read_t &node_to_read)  {
     cout << "N [" << node_list.size() << "]" << endl;
     for (node_id_t node : node_list) {
         cout << node << " (" << node_to_base[node] << ")" << endl;
