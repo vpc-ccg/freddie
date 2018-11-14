@@ -1,5 +1,6 @@
 #include "commandline_flags.h"
 #include "dag_align.h"
+
 using namespace std;
 
 int main(int argc, char *argv[]) {

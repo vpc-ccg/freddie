@@ -29,11 +29,33 @@ void process_gene(sequence_t gene, sequence_list_t reads) {
         add_edge(parents, children, last_node, current_node);
     }
 
-    current_node = add_node(parents, children, node_to_base, node_to_read, 'X', GENE_ID);
-    add_edge(parents, children, current_node, 2);
+    // current_node = add_node(parents, children, node_to_base, node_to_read, 'X', GENE_ID);
+    // add_edge(parents, children, current_node, 2);
 
     node_list_t topo_sorted = topological_sort(parents.size(), parents);
     print_graph(topo_sorted, parents, children, node_to_base, node_to_read);
+}
+
+void dag_local_alignment(const sequence_t read,
+        const node_list_t& topo_sorted,
+        const in_neighbors_t& parents,
+        const node_to_base_t& node_to_base,
+        align_matrix_t& D,
+        backtrack_matrix_t& B) {
+    size_t dag_size = topo_sorted.size();
+    size_t seq_size = read.size();
+    D.clear();
+    B.clear();
+    D = align_matrix_t(seq_size+1);
+    for (align_row_t row : D) {
+        row.resize(dag_size+1, 0);
+    }
+    B = backtrack_matrix_t(seq_size+1);
+    for (backtrack_row_t row : B) {
+        row.resize(dag_size+1, backtrack_t(-1,-1));
+    }
+
+
 }
 
 void add_edge(in_neighbors_t &in_neighbors,
