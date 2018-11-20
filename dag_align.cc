@@ -1,5 +1,7 @@
 #include "dag_align.h"
 
+#include <fstream>      // std::ofstream
+#include <sstream>
 #include <stack>
 
 #define GENE_ID 0
@@ -34,6 +36,7 @@ void process_gene(sequence_t gene, sequence_list_t reads) {
 
     node_list_t topo_sorted = topological_sort(parents.size(), parents);
     print_graph(topo_sorted, parents, children, node_to_base, node_to_read);
+    generate_dot(topo_sorted, children, node_to_base, node_to_read, "test2.dot");
 }
 
 void dag_local_alignment(const sequence_t read,
@@ -75,8 +78,9 @@ node_id_t add_node(in_neighbors_t &in_neighbors,
                    read_id_t read_id) {
     in_neighbors.push_back(node_list_t());
     out_neighbors.push_back(node_list_t());
+    node_to_read.push_back(read_list_t());
+    node_to_read[node_to_read.size()-1].push_back(read_id);
     node_to_base.push_back(base);
-    node_to_read.push_back(read_id);
     return in_neighbors.size() - 1;
 }
 
@@ -130,12 +134,28 @@ node_list_t topological_sort(const node_id_t node_count, const in_neighbors_t& i
     return result;
 }
 
-
-
-
-
-
-
+void generate_dot(const node_list_t topo_sorted,
+                  const out_neighbors_t& children,
+                  const node_to_base_t& node_to_base,
+                  const node_to_read_t& node_to_read,
+                  const string output_path)  {
+    stringstream output;
+    output << "digraph graphname{" << endl;
+    for (node_id_t node : topo_sorted) {
+        output << "    " << node <<" [label=\"" << node << ":" << node_to_base[node] << ":" << node_to_read[node].size() << "\"]" << endl;
+    }
+    output << endl;
+    for (node_id_t node : topo_sorted) {
+        for (node_id_t child : children[node]) {
+            output << "    " << node <<"->" << child << endl;
+        }
+    }
+    output << "}";
+    ofstream ofile;
+    ofile.open(output_path);
+    ofile << output.str();
+    ofile.close();
+}
 
 
 

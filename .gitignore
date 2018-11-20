@@ -32,3 +32,6 @@ freddie_gdb
 *.exe
 *.out
 *.app
+
+*.dot
+*.pdf
