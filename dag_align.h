@@ -49,10 +49,12 @@ node_id_t add_node(in_neighbors_t &in_neighbors,
                    nucleotide_t base,
                    read_id_t read_id);
 
-void dag_local_alignment(const in_neighbors_t& parents,
-                         const node_to_base_t& node_to_base,
-                         align_matrix_t& D,
-                         backtrack_matrix_t& B);
+void dag_local_alignment(const sequence_t seq,
+                        const node_list_t& topo_sorted,
+                        const in_neighbors_t& parents,
+                        const node_to_base_t& node_to_base,
+                        align_matrix_t& D,
+                        backtrack_matrix_t& B);
 
 void generate_dot(const node_list_t topo_sorted,
                   const out_neighbors_t& children,
