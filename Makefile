@@ -1,6 +1,6 @@
 CXX      ?=g++
 CXXFLAGS  =-O3 -std=c++11
-CXXDBG  =  -g -std=c++11
+CXXDBG  =  -g -std=c++11 -O0
 LDFLAGS   =
 
 all: clean freddie

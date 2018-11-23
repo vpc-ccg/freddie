@@ -5,17 +5,26 @@
 #include <stack>
 
 #define GENE_ID 0
-#define MATCH_S 1
+#define MATCH_S 2
 #define GAP_S -1
 #define MISMATCH_S -1
 
 using namespace std;
 
 void process_gene_test() {
-    sequence_t gene_test = "ACTGCCGC";
+    sequence_t gene_test = "CATGTC";
     sequence_list_t reads_test;
 
     process_gene(gene_test, reads_test);
+}
+
+void print_matrix(const align_matrix_t& D, const backtrack_matrix_t& B){
+    for (size_t i = 0; i < D.size(); i++) {
+        for (size_t j = 0; j < D[i].size(); j++) {
+            cout << D[i][j] << " (" << B[i][j].first << "," <<B[i][j].second << ")\t";
+        }
+        cout << endl;
+    }
 }
 
 void process_gene(sequence_t gene, sequence_list_t reads) {
@@ -25,7 +34,7 @@ void process_gene(sequence_t gene, sequence_list_t reads) {
     node_to_read_t node_to_read;
 
 
-    cout << gene << endl;
+    // cout << gene << endl;
     node_id_t last_node = add_node(parents, children, node_to_base, node_to_read, gene[0], GENE_ID);
     node_id_t current_node = last_node;
     for (size_t i = 1; i < gene.size(); i++) {
@@ -34,18 +43,19 @@ void process_gene(sequence_t gene, sequence_list_t reads) {
         add_edge(parents, children, last_node, current_node);
     }
 
-    current_node = add_node(parents, children, node_to_base, node_to_read, 'X', GENE_ID);
-    node_to_read[current_node].push_back(1);
-    add_edge(parents, children, current_node, 2);
-    add_edge(parents, children, current_node, 5);
+    // current_node = add_node(parents, children, node_to_base, node_to_read, 'X', GENE_ID);
+    // node_to_read[current_node].push_back(1);
+    add_edge(parents, children, 1, 5);
+    // add_edge(parents, children, current_node, 5);
 
     node_list_t topo_sorted = topological_sort(parents.size(), parents);
     // print_graph(topo_sorted, parents, children, node_to_base, node_to_read);
     generate_dot(topo_sorted, children, node_to_base, node_to_read, "test2.dot");
     align_matrix_t D;
     backtrack_matrix_t B;
-    sequence_t s = "ACTCGC";
+    sequence_t s = "CAGT";
     dag_local_alignment(s, topo_sorted, parents, node_to_base, D, B);
+    print_matrix(D, B);
     // for (size_t i = 0; i < D.size(); i++) {
     //     for (size_t j = 0; j < D[0].size(); j++) {
     //         cout << "(" << j<< "):" << D[j] << "\t";
@@ -53,6 +63,7 @@ void process_gene(sequence_t gene, sequence_list_t reads) {
     //     cout << endl;
     // }
 }
+
 
 void dag_local_alignment(const sequence_t seq,
                          const node_list_t& topo_sorted,
@@ -64,54 +75,47 @@ void dag_local_alignment(const sequence_t seq,
     size_t seq_size = seq.size();
     vector<size_t> node_to_topo_idx(dag_size);
     for (size_t topo_idx = 0; topo_idx < dag_size; topo_idx++) {
+        // cout << topo_sorted[topo_idx] << " : " << topo_idx << endl;
         node_to_topo_idx[topo_sorted[topo_idx]] = topo_idx;
     }
+    // cout << endl;
     D.clear();
     B.clear();
-    D = align_matrix_t(seq_size);
-    for (align_row_t row : D) {
-        row.resize(dag_size, 0);
-    }
-    B = backtrack_matrix_t(seq_size);
-    for (backtrack_row_t row : B) {
-        row.resize(dag_size, backtrack_t(-1,-1));
-    }
+    D = align_matrix_t(seq_size + 1, align_row_t(dag_size+1, 0));
+    B = backtrack_matrix_t(seq_size + 1, backtrack_row_t(dag_size + 1, backtrack_t(-1,-1)));
 
-    for (size_t i = 0; i < seq_size; i++) {
-        for (size_t j = 0; j < dag_size; j++) {
-            node_id_t node = topo_sorted[j];
-            if (parents[node].size() > 1) {
+    for (size_t i = 1; i < seq_size+1; i++) {
+        for (size_t j = 1; j < dag_size+1; j++) {
+            size_t seq_pos = i-1;
+            node_id_t node = topo_sorted[j-1];
+            // cout << i << " : " << j << " - " << seq_pos << " : " << node << endl;
+            if (parents[node].size() != 1) {
+                if (node_to_base[node]==seq[seq_pos]) {
+                    D[i][j] = MATCH_S;
+                }
+                // cout << '\t' << parents[node].size() << " : " << match << endl;
                 continue;
             }
-            if (parents[node].size() == 0) {
-                align_score_t match = 0;
-                size_t parent_pos = -1;
-                
-            }
 
-
-            node_id_t parent = parents[node][0];
-            parent_pos = node_to_topo_idx[parent];
-            size_t parent_pos = node_to_pos[parent];
-
-            align_score_t match = D[seq_pos-1][parent_pos];
+            size_t j_parent = node_to_topo_idx[parents[node][0]];
+            align_score_t match = D[i-1][j_parent];
             if (node_to_base[node]==seq[seq_pos]) {
                     match += MATCH_S;
             } else {
                 match += MISMATCH_S;
             }
-            align_score_t dag_skip = D[seq_pos][parent_pos] + GAP_S;
-            align_score_t read_skip = D[seq_pos-1][node_pos] + GAP_S;
+            align_score_t dag_skip = D[i][j_parent] + GAP_S;
+            align_score_t read_skip = D[i-1][j] + GAP_S;
 
             if (read_skip > dag_skip && read_skip > match) {
-                D[seq_pos][node_pos] = read_skip;
-                B[seq_pos][node_pos] = backtrack_t(seq_pos-1, node_pos);
+                D[i][j] = read_skip;
+                B[i][j] = backtrack_t(i-1, j);
             } else if (dag_skip > match) {
-                D[seq_pos][node_pos] = dag_skip;
-                B[seq_pos][node_pos] = backtrack_t(seq_pos, parent_pos);
+                D[i][j] = dag_skip;
+                B[i][j] = backtrack_t(i, j_parent);
             } else {
-                D[seq_pos][node_pos] = match;
-                B[seq_pos][node_pos] = backtrack_t(seq_pos-1, parent_pos);
+                D[i][j] = match;
+                B[i][j] = backtrack_t(i-1, j_parent);
             }
         }
     }
@@ -190,7 +194,7 @@ node_list_t topological_sort(const node_id_t node_count, const in_neighbors_t& i
     return result;
 }
 
-void generate_dot(const node_list_t topo_sorted,
+void generate_dot(const node_list_t& topo_sorted,
                   const out_neighbors_t& children,
                   const node_to_base_t& node_to_base,
                   const node_to_read_t& node_to_read,

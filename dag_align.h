@@ -56,7 +56,7 @@ void dag_local_alignment(const sequence_t seq,
                         align_matrix_t& D,
                         backtrack_matrix_t& B);
 
-void generate_dot(const node_list_t topo_sorted,
+void generate_dot(const node_list_t& topo_sorted,
                   const out_neighbors_t& children,
                   const node_to_base_t& node_to_base,
                   const node_to_read_t& node_to_read,
