@@ -35,8 +35,8 @@ void print_graph(const node_list_t node_list,
                  const node_to_base_t &node_to_base,
                  const node_to_read_t &node_to_read);
 
-node_list_t topological_sort(const node_id_t node_count,
-                             const in_neighbors_t& in_neighbors);
+std::vector<node_list_t> topological_sort(const node_id_t node_count,
+                             const in_neighbors_t& parents);
 void add_edge(in_neighbors_t &in_neighbors,
               out_neighbors_t &out_neighbors,
               node_id_t source,
@@ -56,7 +56,7 @@ void dag_local_alignment(const sequence_t seq,
                         align_matrix_t& D,
                         backtrack_matrix_t& B);
 
-void generate_dot(const node_list_t& topo_sorted,
+void generate_dot(const std::vector<node_list_t> & topo_sorted,
                   const out_neighbors_t& children,
                   const node_to_base_t& node_to_base,
                   const node_to_read_t& node_to_read,

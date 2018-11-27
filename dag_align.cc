@@ -48,13 +48,13 @@ void process_gene(sequence_t gene, sequence_list_t reads) {
     add_edge(parents, children, 1, 5);
     // add_edge(parents, children, current_node, 5);
 
-    node_list_t topo_sorted = topological_sort(parents.size(), parents);
+    std::vector<node_list_t> topo_sorted = topological_sort(parents.size(), parents);
     // print_graph(topo_sorted, parents, children, node_to_base, node_to_read);
     generate_dot(topo_sorted, children, node_to_base, node_to_read, "test2.dot");
     align_matrix_t D;
     backtrack_matrix_t B;
     sequence_t s = "CAGT";
-    dag_local_alignment(s, topo_sorted, parents, node_to_base, D, B);
+    // dag_local_alignment(s, topo_sorted, parents, node_to_base, D, B);
     print_matrix(D, B);
     // for (size_t i = 0; i < D.size(); i++) {
     //     for (size_t j = 0; j < D[0].size(); j++) {
@@ -166,9 +166,9 @@ void print_graph(const node_list_t node_list,
     }
 }
 
-node_list_t topological_sort(const node_id_t node_count, const in_neighbors_t& in_neighbors) {
+vector<node_list_t> topological_sort(const node_id_t node_count, const in_neighbors_t& parents) {
     vector<bool> visited(node_count, false);
-    node_list_t result;
+    vector<node_list_t> result;
     for (node_id_t node = 0; node < node_count; node++) {
         if (visited[node] == true) {
             continue;
@@ -178,36 +178,54 @@ node_list_t topological_sort(const node_id_t node_count, const in_neighbors_t& i
         while (opened.size() > 0) {
             node_id_t current_node = opened.top();
             size_t unvisited_parents = 0;
-            for (node_id_t parent : in_neighbors[current_node]) {
+            for (node_id_t parent : parents[current_node]) {
                 if (visited[parent] == false) {
                     unvisited_parents++;
                     opened.push(parent);
                 }
             }
             if (unvisited_parents == 0) {
-                result.push_back(current_node);
+                node_list_t segment;
+                segment.push_back(current_node);
                 visited[current_node] = true;
                 opened.pop();
+                while(true) {
+                    if (opened.size() == 0) {
+                        break;
+                    }
+                    node_id_t current_node = opened.top();
+                    if (parents[current_node].size() > 1){
+                        break;
+                    }
+                    visited[current_node] = true;
+                    segment.push_back(current_node);
+                    opened.pop();
+                }
+                result.push_back(segment);
             }
         }
     }
     return result;
 }
 
-void generate_dot(const node_list_t& topo_sorted,
+void generate_dot(const vector<node_list_t>& topo_sorted,
                   const out_neighbors_t& children,
                   const node_to_base_t& node_to_base,
                   const node_to_read_t& node_to_read,
                   const string output_path)  {
     stringstream output;
     output << "digraph graphname{" << endl;
-    for (node_id_t node : topo_sorted) {
-        output << "    " << node <<" [label=\"" << node << ":" << node_to_base[node] << ":" << node_to_read[node].size() << "\"]" << endl;
+    for (size_t seg_idx = 0; seg_idx < topo_sorted.size(); seg_idx++) {
+        for (node_id_t node : topo_sorted[seg_idx]) {
+            output << "    " << node <<" [label=\"" << seg_idx << ":" << node << ":" << node_to_base[node] << ":" << node_to_read[node].size() << "\"]" << endl;
+        }
     }
     output << endl;
-    for (node_id_t node : topo_sorted) {
-        for (node_id_t child : children[node]) {
-            output << "    " << node <<"->" << child << endl;
+    for (node_list_t segment : topo_sorted) {
+        for (node_id_t node : segment) {
+            for (node_id_t child : children[node]) {
+                output << "    " << node <<"->" << child << endl;
+            }
         }
     }
     output << "}";
