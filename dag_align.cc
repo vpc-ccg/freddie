@@ -43,12 +43,12 @@ void process_gene(sequence_t gene, sequence_list_t reads) {
         add_edge(parents, children, last_node, current_node);
     }
 
-    // current_node = add_node(parents, children, node_to_base, node_to_read, 'X', GENE_ID);
-    // node_to_read[current_node].push_back(1);
     add_edge(parents, children, 1, 5);
-    // add_edge(parents, children, current_node, 5);
+    current_node = add_node(parents, children, node_to_base, node_to_read, 'X', GENE_ID);
+    node_to_read[current_node].push_back(1);
+    add_edge(parents, children, current_node, 0);
 
-    std::vector<node_list_t> topo_sorted = topological_sort(parents.size(), parents);
+    std::vector<node_list_t> topo_sorted = topological_sort(parents.size(), parents, children);
     // print_graph(topo_sorted, parents, children, node_to_base, node_to_read);
     generate_dot(topo_sorted, children, node_to_base, node_to_read, "test2.dot");
     align_matrix_t D;
@@ -166,7 +166,9 @@ void print_graph(const node_list_t node_list,
     }
 }
 
-vector<node_list_t> topological_sort(const node_id_t node_count, const in_neighbors_t& parents) {
+vector<node_list_t> topological_sort(const node_id_t node_count,
+                                     const in_neighbors_t& parents,
+                                     const out_neighbors_t& children) {
     vector<bool> visited(node_count, false);
     vector<node_list_t> result;
     for (node_id_t node = 0; node < node_count; node++) {
@@ -200,6 +202,18 @@ vector<node_list_t> topological_sort(const node_id_t node_count, const in_neighb
                     visited[current_node] = true;
                     segment.push_back(current_node);
                     opened.pop();
+                }
+                while (true) {
+                    if (children[current_node].size() != 1) {
+                        break;
+                    }
+                    node_id_t child = children[current_node][0];
+                    if (parents[child].size() != 1) {
+                        break;
+                    }
+                    visited[child] = true;
+                    segment.push_back(child);
+                    current_node = child;
                 }
                 result.push_back(segment);
             }
