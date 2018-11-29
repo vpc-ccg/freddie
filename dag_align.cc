@@ -5,29 +5,52 @@
 #include <stack>
 
 #define GENE_ID 0
-#define MATCH_S 2
+#define MATCH_S 1
 #define GAP_S -1
 #define MISMATCH_S -1
+#define MATCH_B_S u8"⭦"
+#define SEQ_DEL_B_S u8"↑"
+#define SEG_DEL_B_S u8"🠐"
+#define RESET_B_S u8"O"
+#define MATCH_B 0x1
+#define SEQ_DEL_B 0x2
+#define SEG_DEL_B 0x4
+#define RESET_B 0x8
+
 
 using namespace std;
+string BINARY_TO_UTF8[sizeof(backtrack_t)];
 
 void process_gene_test() {
-    sequence_t gene_test = "CATGTC";
+    sequence_t gene_test = "ACGTACGGCGTATTGCACGT";
     sequence_list_t reads_test;
 
     process_gene(gene_test, reads_test);
 }
 
-void print_matrix(const align_matrix_t& D, const backtrack_matrix_t& B){
+void print_matrix(const sequence_t& seq, const node_list_t& seg, const node_to_base_t& node_to_base,
+                  const align_matrix_t& D, const backtrack_matrix_t& B){
+    cout << "\\\t";
+    cout << "^ (-1)\t";
+    for (node_id_t j : seg) {
+        cout << node_to_base[j] << " (" << j << ")\t";
+    }
+    cout << endl;
+    sequence_t seq_temp = "$" + seq;
     for (size_t i = 0; i < D.size(); i++) {
+        cout << seq_temp[i] << " (" << i << ")\t";
         for (size_t j = 0; j < D[i].size(); j++) {
-            cout << D[i][j] << " (" << B[i][j].first << "," <<B[i][j].second << ")\t";
+            cout << D[i][j] << " (" << BINARY_TO_UTF8[B[i][j]] << ")\t";
         }
         cout << endl;
     }
 }
 
 void process_gene(sequence_t gene, sequence_list_t reads) {
+    BINARY_TO_UTF8[MATCH_B] = MATCH_B_S;
+    BINARY_TO_UTF8[SEQ_DEL_B] = SEQ_DEL_B_S;
+    BINARY_TO_UTF8[SEG_DEL_B] = SEG_DEL_B_S;
+    BINARY_TO_UTF8[RESET_B] = RESET_B_S;
     in_neighbors_t parents;
     out_neighbors_t children;
     node_to_base_t node_to_base;
@@ -42,82 +65,107 @@ void process_gene(sequence_t gene, sequence_list_t reads) {
         add_edge(parents, children, last_node, current_node);
     }
 
-    add_edge(parents, children, 1, 5);
-    current_node = add_node(parents, children, node_to_base, node_to_read, 'X', GENE_ID);
-    node_to_read[current_node].push_back(1);
-    add_edge(parents, children, current_node, 0);
+    // add_edge(parents, children, 1, 5);
+    // current_node = add_node(parents, children, node_to_base, node_to_read, 'X', GENE_ID);
+    // node_to_read[current_node].push_back(1);
+    // add_edge(parents, children, current_node, 0);
 
     std::vector<node_list_t> topo_sorted = topological_sort(parents.size(), parents, children);
-    // print_graph(topo_sorted, parents, children, node_to_base, node_to_read);
     generate_dot(topo_sorted, children, node_to_base, node_to_read, "test2.dot");
     align_matrix_t D;
     backtrack_matrix_t B;
-    sequence_t s = "CAGT";
-    // dag_local_alignment(s, topo_sorted, parents, node_to_base, D, B);
-    print_matrix(D, B);
-    // for (size_t i = 0; i < D.size(); i++) {
-    //     for (size_t j = 0; j < D[0].size(); j++) {
-    //         cout << "(" << j<< "):" << D[j] << "\t";
-    //     }
-    //     cout << endl;
-    // }
+    sequence_t s = "ACGT";
+    segment_local_alignment(s, topo_sorted[0], node_to_base, D, B);
+    print_matrix(s, topo_sorted[0], node_to_base, D, B);
 }
 
-void dag_local_alignment(const sequence_t seq,
-                         const node_list_t& topo_sorted,
-                         const in_neighbors_t& parents,
-                         const node_to_base_t& node_to_base,
-                         align_matrix_t& D,
-                         backtrack_matrix_t& B) {
-    size_t dag_size = topo_sorted.size();
-    size_t seq_size = seq.size();
-    vector<size_t> node_to_topo_idx(dag_size);
-    for (size_t topo_idx = 0; topo_idx < dag_size; topo_idx++) {
-        // cout << topo_sorted[topo_idx] << " : " << topo_idx << endl;
-        node_to_topo_idx[topo_sorted[topo_idx]] = topo_idx;
-    }
-    // cout << endl;
+void segment_local_alignment(const sequence_t& seq, const node_list_t& seg, const node_to_base_t& node_to_base,
+                             align_matrix_t& D, backtrack_matrix_t& B) {
+    size_t seq_l = seq.size();
+    size_t seg_l = seg.size();
     D.clear();
     B.clear();
-    D = align_matrix_t(seq_size + 1, align_row_t(dag_size+1, 0));
-    B = backtrack_matrix_t(seq_size + 1, backtrack_row_t(dag_size + 1, backtrack_t(-1,-1)));
+    D = align_matrix_t(seq_l + 1, align_row_t(seg_l + 1, 0));
+    B = backtrack_matrix_t(seq_l + 1, backtrack_row_t(seg_l + 1, RESET_B));
 
-    for (size_t i = 1; i < seq_size+1; i++) {
-        for (size_t j = 1; j < dag_size+1; j++) {
-            size_t seq_pos = i-1;
-            node_id_t node = topo_sorted[j-1];
-            // cout << i << " : " << j << " - " << seq_pos << " : " << node << endl;
-            if (parents[node].size() != 1) {
-                if (node_to_base[node]==seq[seq_pos]) {
-                    D[i][j] = MATCH_S;
-                }
-                // cout << '\t' << parents[node].size() << " : " << match << endl;
-                continue;
+    for (size_t i = 1; i < seq_l+1; i++) {
+        for (size_t j = 1; j < seg_l+1; j++) {
+            align_score_t match_score, seq_del_score, seg_del_score;
+
+            match_score  = D[i-1][j-1];
+            // cout <<
+            if (seq[i-1] == node_to_base[seg[j-1]]) {
+                match_score += MATCH_S;
+            } else {
+                match_score += MISMATCH_S;
             }
 
-            size_t j_parent = node_to_topo_idx[parents[node][0]];
-            align_score_t match = D[i-1][j_parent];
-            if (node_to_base[node]==seq[seq_pos]) {
-                match += MATCH_S;
-            } else {
-                match += MISMATCH_S;
-            }
-            align_score_t dag_skip = D[i][j_parent] + GAP_S;
-            align_score_t read_skip = D[i-1][j] + GAP_S;
+            seq_del_score = D[i-1][j] + GAP_S;
+            seg_del_score = D[i][j-1] + GAP_S;
 
-            if (read_skip > dag_skip && read_skip > match) {
-                D[i][j] = read_skip;
-                B[i][j] = backtrack_t(i-1, j);
-            } else if (dag_skip > match) {
-                D[i][j] = dag_skip;
-                B[i][j] = backtrack_t(i, j_parent);
-            } else {
-                D[i][j] = match;
-                B[i][j] = backtrack_t(i-1, j_parent);
+            if (seq_del_score > seg_del_score && seq_del_score > match_score && seq_del_score > 0) {
+                D[i][j] = seq_del_score;
+                B[i][j] = SEQ_DEL_B;
+            } else if (seg_del_score > match_score && seg_del_score > 0) {
+                D[i][j] = seg_del_score;
+                B[i][j] = SEG_DEL_B;
+            } else if (match_score > 0) {
+                D[i][j] = match_score;
+                B[i][j] = MATCH_B;
             }
         }
     }
 }
+
+// void dag_local_alignment(const sequence_t seq, const node_list_t& topo_sorted, const in_neighbors_t& parents,
+//                          const node_to_base_t& node_to_base, align_matrix_t& D, backtrack_matrix_t& B) {
+//     size_t dag_size = topo_sorted.size();
+//     size_t seq_size = seq.size();
+//     vector<size_t> node_to_topo_idx(dag_size);
+//     for (size_t topo_idx = 0; topo_idx < dag_size; topo_idx++) {
+//         node_to_topo_idx[topo_sorted[topo_idx]] = topo_idx;
+//     }
+//     D.clear();
+//     B.clear();
+//     D = align_matrix_t(seq_size + 1, align_row_t(dag_size+1, 0));
+//     B = backtrack_matrix_t(seq_size + 1, backtrack_row_t(dag_size + 1, backtrack_t(-1,-1)));
+//
+//     for (size_t i = 1; i < seq_size+1; i++) {
+//         for (size_t j = 1; j < dag_size+1; j++) {
+//             size_t seq_pos = i-1;
+//             node_id_t node = topo_sorted[j-1];
+//             // cout << i << " : " << j << " - " << seq_pos << " : " << node << endl;
+//             if (parents[node].size() != 1) {
+//                 if (node_to_base[node]==seq[seq_pos]) {
+//                     D[i][j] = MATCH_S;
+//                 }
+//                 // cout << '\t' << parents[node].size() << " : " << match << endl;
+//                 continue;
+//             }
+//
+//             size_t j_parent = node_to_topo_idx[parents[node][0]];
+//             align_score_t match = D[i-1][j_parent];
+//             if (node_to_base[node]==seq[seq_pos]) {
+//                 match += MATCH_S;
+//             } else {
+//                 match += MISMATCH_S;
+//             }
+//             align_score_t dag_skip = D[i][j_parent] + GAP_S;
+//             align_score_t read_skip = D[i-1][j] + GAP_S;
+//
+//             if (read_skip > dag_skip && read_skip > match) {
+//                 D[i][j] = read_skip;
+//                 B[i][j] = backtrack_t(i-1, j);
+//             } else if (dag_skip > match) {
+//                 D[i][j] = dag_skip;
+//                 B[i][j] = backtrack_t(i, j_parent);
+//             } else {
+//                 D[i][j] = match;
+//                 B[i][j] = backtrack_t(i-1, j_parent);
+//             }
+//         }
+//     }
+// }
 
 void add_edge(in_neighbors_t &in_neighbors, out_neighbors_t &out_neighbors, node_id_t source, node_id_t target) {
     out_neighbors[source].push_back(target);
@@ -223,5 +271,3 @@ void generate_dot(const vector<node_list_t>& topo_sorted, const out_neighbors_t&
     ofile << output.str();
     ofile.close();
 }
-
-//
