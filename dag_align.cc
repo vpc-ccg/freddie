@@ -12,11 +12,10 @@
 #define SEQ_DEL_B_S u8"↑"
 #define SEG_DEL_B_S u8"🠐"
 #define RESET_B_S u8"O"
-#define MATCH_B 0x1
-#define SEQ_DEL_B 0x2
-#define SEG_DEL_B 0x4
-#define RESET_B 0x8
-
+#define RESET_B 0x0
+#define SEQ_DEL_B 0x1
+#define SEG_DEL_B 0x2
+#define MATCH_B 0x3
 
 using namespace std;
 string BINARY_TO_UTF8[sizeof(backtrack_t)];
@@ -72,11 +71,60 @@ void process_gene(sequence_t gene, sequence_list_t reads) {
 
     std::vector<node_list_t> topo_sorted = topological_sort(parents.size(), parents, children);
     generate_dot(topo_sorted, children, node_to_base, node_to_read, "test2.dot");
+    sequence_t s = "ACGT";
     align_matrix_t D;
     backtrack_matrix_t B;
-    sequence_t s = "ACGT";
     segment_local_alignment(s, topo_sorted[0], node_to_base, D, B);
     print_matrix(s, topo_sorted[0], node_to_base, D, B);
+
+    matrix_coordinate_t start, end;
+    vector<backtrack_t> moves;
+    extract_local_alignment(start, end, moves, D, B);
+    cout << "start: (" << start.first << "," << start.second << ")" << endl;
+    cout << "end: (" << end.first << "," << end.second << ")" << endl;
+    cout << "moves: ";
+    for (backtrack_t move : moves) {
+        cout << BINARY_TO_UTF8[move];
+    }
+    cout << endl;
+    print_matrix(s, topo_sorted[0], node_to_base, D, B);
+}
+
+void extract_local_alignment(matrix_coordinate_t& start, matrix_coordinate_t& end, vector<backtrack_t>& moves,
+                             align_matrix_t& D, backtrack_matrix_t& B) {
+    moves.clear();
+    align_score_t max = 0;
+    for (size_t i = 0; i < D.size(); i++) {
+        for (size_t j = 0; j < D[0].size(); j++) {
+            if (D[i][j] > max) {
+                max = D[i][j];
+                end = matrix_coordinate_t(i,j);
+            }
+        }
+    }
+
+    matrix_coordinate_t cur_pos = end;
+    backtrack_t move = B[cur_pos.first][cur_pos.second];
+    while (move != RESET_B) {
+        moves.push_back(move);
+        move = B[cur_pos.first][cur_pos.second];
+        B[cur_pos.first][cur_pos.second] = RESET_B;
+        D[cur_pos.first][cur_pos.second] = 0;
+        switch (move) {
+        case MATCH_B:
+            cur_pos.first--;
+            cur_pos.second--;
+            break;
+        case SEQ_DEL_B:
+            cur_pos.first--;
+            break;
+        case SEG_DEL_B:
+            cur_pos.second--;
+            break;
+        }
+    }
+
+
 }
 
 void segment_local_alignment(const sequence_t& seq, const node_list_t& seg, const node_to_base_t& node_to_base,

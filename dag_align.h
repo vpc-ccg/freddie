@@ -9,8 +9,8 @@ typedef uint32_t read_id_t;
 typedef uint32_t node_id_t;
 typedef uint8_t nucleotide_t;
 typedef int32_t align_score_t;
-// typedef std::pair<int16_t, int16_t> backtrack_t;
 typedef uint8_t backtrack_t;
+typedef std::pair<int16_t, int16_t> matrix_coordinate_t;
 
 typedef std::vector<node_id_t> node_list_t;
 typedef std::vector<node_list_t> out_neighbors_t;
@@ -31,6 +31,9 @@ void process_gene_test();
 
 void process_gene(sequence_t gene,
                   sequence_list_t reads);
+
+void extract_local_alignment(matrix_coordinate_t& start, matrix_coordinate_t& end, std::vector<backtrack_t>&moves,
+                             align_matrix_t& D, backtrack_matrix_t& B);
 
 void print_graph(const sequence_t& seq, const node_list_t& seg, const node_to_base_t& node_to_base,
                  const align_matrix_t& D, const backtrack_matrix_t& B);
