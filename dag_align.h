@@ -7,53 +7,59 @@
 
 typedef uint32_t read_id_t;
 typedef uint32_t node_id_t;
-typedef uint8_t nucleotide_t;
+
 typedef int32_t align_score_t;
-typedef uint8_t backtrack_t;
+// typedef uint8_t backtrack_t;
 typedef std::pair<int16_t, int16_t> matrix_coordinate_t;
 
 typedef std::vector<node_id_t> node_list_t;
 typedef std::vector<node_list_t> out_neighbors_t;
 typedef std::vector<node_list_t> in_neighbors_t;
 typedef std::vector<read_id_t> read_list_t;
-typedef std::vector<read_list_t> node_to_read_t;
-typedef std::vector<nucleotide_t> node_to_base_t;
+typedef std::vector<read_list_t> node_to_reads_t;
+
 
 typedef std::string sequence_t;
 typedef std::vector<sequence_t> sequence_list_t;
 
 typedef std::vector<align_score_t> align_row_t;
 typedef std::vector<align_row_t> align_matrix_t;
-typedef std::vector<backtrack_t> backtrack_row_t;
+typedef std::vector<matrix_coordinate_t> backtrack_row_t;
 typedef std::vector<backtrack_row_t> backtrack_matrix_t;
 
 void process_gene_test();
 
-void process_gene(sequence_t gene,
-                  sequence_list_t reads);
+void process_gene(const sequence_list_t& reads,
+                  const sequence_t& gene,
+                  const std::vector<bool>& exonic);
 
-void extract_local_alignment(matrix_coordinate_t& start, matrix_coordinate_t& end, std::vector<backtrack_t>&moves,
-                             align_matrix_t& D, backtrack_matrix_t& B);
+void add_edge(in_neighbors_t &in_neighbors,
+              out_neighbors_t &out_neighbors,
+              node_id_t source,
+              node_id_t target);
 
-void print_graph(const sequence_t& seq, const node_list_t& seg, const node_to_base_t& node_to_base,
-                 const align_matrix_t& D, const backtrack_matrix_t& B);
+node_id_t append_node(in_neighbors_t &in_neighbors,
+                      out_neighbors_t &out_neighbors,
+                      node_to_reads_t &node_to_read);
 
-std::vector<node_list_t> topological_sort(const node_id_t node_count, const in_neighbors_t& parents,
-                                          const out_neighbors_t& children);
+align_score_t match(char i, char j);
 
-void add_edge(in_neighbors_t &in_neighbors, out_neighbors_t &out_neighbors, node_id_t source, node_id_t target);
+void local_alignment(const sequence_t& read,
+                     const sequence_t& gene,
+                     const std::vector<bool>& exonic,
+                     const out_neighbors_t& parents,
+                     align_matrix_t& D,
+                     backtrack_matrix_t& B);
 
-node_id_t add_node(in_neighbors_t &in_neighbors, out_neighbors_t &out_neighbors, node_to_base_t &node_to_base,
-                   node_to_read_t &node_to_read, nucleotide_t base, read_id_t read_id);
+void print_matrix(const sequence_t& read,
+                  const sequence_t& gene,
+                  const align_matrix_t& D,
+                  const backtrack_matrix_t& B);
 
-void segment_local_alignment(const sequence_t& seq, const node_list_t& seg, const node_to_base_t& node_to_base,
-                             align_matrix_t& D, backtrack_matrix_t& B);
-
-// void dag_local_alignment(const sequence_t seq, const node_list_t& topo_sorted, const in_neighbors_t& parents,
-//                          const node_to_base_t& node_to_base, align_matrix_t& D, backtrack_matrix_t& B);
-
-void generate_dot(const std::vector<node_list_t> & topo_sorted, const out_neighbors_t& children,
-                  const node_to_base_t& node_to_base, const node_to_read_t& node_to_read,
+void generate_dot(const node_to_reads_t& node_to_read,
+                  const sequence_t& gene,
+                  const std::vector<bool>& exonic,
+                  const out_neighbors_t& children,
                   const std::string output_path);
 
 #endif //FREDDIE_DAGALIGN_H
