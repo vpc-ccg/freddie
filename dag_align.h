@@ -58,7 +58,13 @@ void local_alignment(const sequence_t& read,
                      align_matrix_t& D,
                      backtrack_matrix_t& B);
 
+void clear_descendants(matrix_coordinate_t source,
+                       const in_neighbors_t& children,
+                       align_matrix_t& D,
+                       backtrack_matrix_t& B);
+
 void extract_local_alignment(read_exonic_alignment_t& opt_alignment,
+                             const in_neighbors_t& children,
                              align_score_t& opt_score,
                              align_matrix_t& D,
                              backtrack_matrix_t& B);

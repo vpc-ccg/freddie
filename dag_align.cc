@@ -42,8 +42,9 @@ void process_gene(const sequence_list_t& reads,
         print_matrix(reads[i], gene, D, B);
         read_exonic_alignment_t opt_alignment;
         align_score_t opt_score;
-        extract_local_alignment(opt_alignment, opt_score, D, B);
+        extract_local_alignment(opt_alignment, children, opt_score, D, B);
         print_read_exonic_alignment(opt_alignment, opt_score, reads[i], gene);
+        print_matrix(reads[i], gene, D, B);
     }
 
 }
@@ -127,13 +128,40 @@ void local_alignment(const sequence_t& read,
     }
 }
 
-void clear_decendants(matrix_coordinate_t source,
-                      align_matrix_t D,
-                      backtrack_matrix_t B) {
+void clear_descendants(matrix_coordinate_t source,
+                       const in_neighbors_t& children,
+                       align_matrix_t& D,
+                       backtrack_matrix_t& B) {
+    // cout << "("<<source.first<<","<<source.second<<")"<<endl;
+    D[source.first][source.second] = 0;
+    B[source.first][source.second] = INVALID;
+    auto check_child = [source, children] (matrix_coordinate_t descendant, align_matrix_t& D, backtrack_matrix_t& B ) {
+        if (descendant.first < D.size() && descendant.second < D[0].size() && B[descendant.first][descendant.second] == source) {
+            clear_descendants(descendant, children, D, B);
+        }
+    };
+    // Direct children
+    matrix_coordinate_t descendant;
+    descendant = {source.first + 1, source.second + 1};
+    check_child(descendant, D, B);
+    descendant = {source.first + 1, source.second + 0};
+    check_child(descendant, D, B);
+    descendant = {source.first + 0, source.second + 1};
+    check_child(descendant, D, B);
+    // Other DAG children
+    for (const node_id_t& child : children[source.second - 1]) {
+        descendant = {source.first + 1, child + 1};
+        check_child(descendant, D, B);
+        descendant = {source.first + 0, child + 1};
+        check_child(descendant, D, B);
+        descendant = {source.first + 1, child + 0};
+        check_child(descendant, D, B);
+    }
     return;
 }
 
 void extract_local_alignment(read_exonic_alignment_t& opt_alignment,
+                             const in_neighbors_t& children,
                              align_score_t& opt_score,
                              align_matrix_t& D,
                              backtrack_matrix_t& B) {
@@ -172,8 +200,7 @@ void extract_local_alignment(read_exonic_alignment_t& opt_alignment,
     opt_read_fragment.first = cur_pos.first - 1;
     cur_opt_exon_frag.first = cur_pos.second - 1;
     opt_exon_fragments.emplace_back(cur_opt_exon_frag);
-
-    clear_decendants(cur_pos, D, B);
+    clear_descendants(cur_pos, children, D, B);
 }
 
 
