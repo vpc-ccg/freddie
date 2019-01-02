@@ -33,9 +33,7 @@ void process_gene(const sequence_list_t& reads,
     }
 
     generate_dot(children, gene, exonic, node_to_read, "gene.dot");
-    cout << gene << endl;
     for (size_t i = 0; i < reads.size(); i++) {
-        cout << reads[i] << endl;
         align_matrix_t D;
         backtrack_matrix_t B;
         local_alignment(reads[i], gene, exonic, parents, D, B);
@@ -63,6 +61,8 @@ void local_alignment(const sequence_t& read,
                      const out_neighbors_t& parents,
                      align_matrix_t& D,
                      backtrack_matrix_t& B) {
+    cout << read << endl;
+    cout << gene << endl;
     size_t read_l = read.size();
     size_t gene_l = gene.size();
     D.clear();
@@ -70,60 +70,42 @@ void local_alignment(const sequence_t& read,
     D = align_matrix_t(read_l + 1, align_row_t(gene_l + 1, 0));
     B = backtrack_matrix_t(read_l + 1, backtrack_row_t(gene_l + 1, matrix_coordinate_t(-1,-1)));
 
-    for (size_t i = 1; i < read_l+1; i++) {
-        for (size_t j = 1; j < gene_l+1; j++) {
+    auto set_to_max_match = [&D, &read, &gene, &exonic] (align_score_t& opt_s, matrix_coordinate_t& opt_b, const backtrack_t& row, const backtrack_t& col) {
+        align_score_t cur_s = D[row][col] + match(read[row], gene[col], exonic[col]);
+        if (cur_s > opt_s) {
+            opt_s = cur_s;
+            opt_b = {row, col};
+        }
+    };
+    auto set_to_max_gap = [&D] (align_score_t& opt_s, matrix_coordinate_t& opt_b, const backtrack_t& row, const backtrack_t& col) {
+        align_score_t cur_s = D[row][col] + GAP_S;
+        cout << D[row][col] << endl;
+        if (cur_s > opt_s) {
+            opt_s = cur_s;
+            opt_b = {row, col};
+        }
+    };
+
+    for (size_t i = 1; i <= read_l; i++) {
+        for (size_t j = 1; j <= gene_l; j++) {
+            cout << i << ":" << j << endl;
             align_score_t opt_s = 0;
             matrix_coordinate_t opt_b(-1,-1);
-
-            align_score_t cur_s;
-            matrix_coordinate_t cur_b;
-            // direct parent matching
-            cur_b = make_pair(i-1, j-1);
-            cur_s  = D[i-1][j-1] + match(read[i-1], gene[j-1], exonic[j-1]);
-            if (cur_s > opt_s) {
-                opt_s = cur_s;
-                opt_b = cur_b;
-            }
-            // direct parent deletion
-            cur_b = make_pair(i-1, j);
-            cur_s  = D[i-1][j] + GAP_S;
-            if (cur_s > opt_s) {
-                opt_s = cur_s;
-                opt_b = cur_b;
-            }
-            // direct parent insertion
-            cur_b = make_pair(i, j-1);
-            cur_s  = D[i][j-1] + GAP_S;
-            if (cur_s > opt_s) {
-                opt_s = cur_s;
-                opt_b = cur_b;
-            }
+            // Three direct parents parents
+            set_to_max_match(opt_s, opt_b, i-1, j-1); // Match
+            set_to_max_gap(opt_s, opt_b, i-1, j-0); // Delete
+            set_to_max_gap(opt_s, opt_b, i-0, j-1); // Insert
+            // Other DAG parents
             for (node_id_t parent : parents[j-1]) {
-                size_t j = parent + 1;
-                // direct parent matching
-                cur_b = make_pair(i-1, j-1);
-                cur_s  = D[i-1][j-1] + match(read[i-1], gene[j-1], exonic[j-1]);
-                if (cur_s > opt_s) {
-                    opt_s = cur_s;
-                    opt_b = cur_b;
-                }
-                // direct parent deletion
-                cur_b = make_pair(i-1, j);
-                cur_s  = D[i-1][j] + GAP_S;
-                if (cur_s > opt_s) {
-                    opt_s = cur_s;
-                    opt_b = cur_b;
-                }
-                // direct parent insertion
-                cur_b = make_pair(i, j-1);
-                cur_s  = D[i][j-1] + GAP_S;
-                if (cur_s > opt_s) {
-                    opt_s = cur_s;
-                    opt_b = cur_b;
-                }
+                size_t parent_j = parent + 1;
+                // Three indirect parents
+                set_to_max_match(opt_s, opt_b, i-1, parent_j-1); // Match
+                set_to_max_gap(opt_s, opt_b, i-1, parent_j-0); // Delete
+                set_to_max_gap(opt_s, opt_b, i-0, parent_j-1); // Insert
             }
             D[i][j] = opt_s;
             B[i][j] = opt_b;
+            print_matrix(read, gene, D, B);
         }
     }
 }

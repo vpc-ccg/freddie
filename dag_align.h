@@ -10,8 +10,8 @@ typedef uint32_t node_id_t;
 typedef uint32_t read_pos_t;
 
 typedef int32_t align_score_t;
-// typedef uint8_t backtrack_t;
-typedef std::pair<int16_t, int16_t> matrix_coordinate_t;
+typedef uint16_t backtrack_t;
+typedef std::pair<backtrack_t, backtrack_t> matrix_coordinate_t;
 
 typedef std::pair<read_pos_t, read_pos_t> read_fragment_t;
 typedef std::pair<node_id_t, node_id_t> exonic_fragment_t;
