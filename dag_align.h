@@ -13,11 +13,12 @@ typedef int32_t align_score_t;
 typedef uint16_t backtrack_t;
 typedef std::pair<backtrack_t, backtrack_t> matrix_coordinate_t;
 
-typedef std::pair<read_pos_t, read_pos_t> read_fragment_t;
-typedef std::pair<node_id_t, node_id_t> exonic_fragment_t;
-typedef std::vector<exonic_fragment_t> exonic_fragments_t;
-typedef std::pair<read_fragment_t, exonic_fragments_t> read_exonic_alignment_t;
-typedef std::vector<read_exonic_alignment_t> read_exonic_alignments_t;
+typedef std::vector<matrix_coordinate_t> alignment_t;
+// typedef std::pair<read_pos_t, read_pos_t> read_fragment_t;
+// typedef std::pair<node_id_t, node_id_t> exonic_fragment_t;
+// typedef std::vector<exonic_fragment_t> exonic_fragments_t;
+// typedef std::pair<read_fragment_t, exonic_fragments_t> read_exonic_alignment_t;
+// typedef std::vector<read_exonic_alignment_t> read_exonic_alignments_t;
 
 typedef std::vector<node_id_t> node_list_t;
 typedef std::vector<node_list_t> out_neighbors_t;
@@ -51,33 +52,32 @@ node_id_t append_node(in_neighbors_t &in_neighbors,
 
 align_score_t match(char i, char j, bool is_exonic);
 
-void local_alignment(const sequence_t& read,
+void local_alignment(align_matrix_t& D,
+                     backtrack_matrix_t& B,
+                     const sequence_t& read,
                      const sequence_t& gene,
                      const std::vector<bool>& exonic,
-                     const out_neighbors_t& parents,
-                     align_matrix_t& D,
-                     backtrack_matrix_t& B);
+                     const out_neighbors_t& parents);
 
-void clear_descendants(matrix_coordinate_t source,
-                       const in_neighbors_t& children,
-                       align_matrix_t& D,
-                       backtrack_matrix_t& B);
+void clean_alignment_matrix(align_matrix_t& D,
+                            backtrack_matrix_t& B,
+                            const alignment_t& opt_alignment,
+                            const in_neighbors_t& children);
 
-void extract_local_alignment(read_exonic_alignment_t& opt_alignment,
-                             const in_neighbors_t& children,
+void extract_local_alignment(alignment_t& opt_alignment,
                              align_score_t& opt_score,
-                             align_matrix_t& D,
-                             backtrack_matrix_t& B);
+                             const align_matrix_t& D,
+                             const backtrack_matrix_t& B);
 
 void print_matrix(const sequence_t& read,
                   const sequence_t& gene,
                   const align_matrix_t& D,
                   const backtrack_matrix_t& B);
 
-void print_read_exonic_alignment(const read_exonic_alignment_t& opt_alignment,
-                                 const align_score_t& opt_score,
-                                 const sequence_t& read,
-                                 const sequence_t& gene);
+// void print_read_exonic_alignment(const read_exonic_alignment_t& opt_alignment,
+//                                  const align_score_t& opt_score,
+//                                  const sequence_t& read,
+//                                  const sequence_t& gene);
 
 void generate_dot(const node_to_reads_t& node_to_read,
                   const sequence_t& gene,
