@@ -1,5 +1,5 @@
 CXX      ?=g++
-CXXFLAGS  =-O3 -std=c++11
+CXXFLAGS  =-O3 -std=c++11 -Wall -Wextra
 CXXDBG  =  -g -std=c++11 -O0
 LDFLAGS   =
 

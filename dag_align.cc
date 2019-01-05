@@ -3,6 +3,7 @@
 #include <fstream>  // std::ofstream
 #include <sstream>
 #include <queue>
+#include <algorithm> // std::reverse
 #include <stdlib.h> //abort()
 
 #define EXONIC_ID 0x7FFFFFFF
@@ -11,19 +12,26 @@
 #define GAP_S -1
 #define MISMATCH_S -1
 
-using namespace std;
-
 constexpr matrix_coordinate_t INVALID_COORDINATE = {-1,-1};
+
+using std::cout;
+using std::endl;
+using std::string;
+using std::stringstream;
+using std::ofstream;
+using std::queue;
+using std::reverse;
+
 void process_gene_test() {
-    sequence_list_t reads(1, "ACGTACGGCGTATTGCACGT");
+    sequence_list_t reads(1, "ACGGCGTATTGCACGT");
     sequence_t gene = "GTACGCAC";
-    vector<bool> exonic(gene.size(), true);
+    exonic_indicator_t exonic(gene.size(), true);
     process_gene(reads, gene, exonic);
 }
 
 void process_gene(const sequence_list_t& reads,
                   const sequence_t& gene,
-                  const vector<bool>& exonic) {
+                  const exonic_indicator_t& exonic) {
     in_neighbors_t parents;
     out_neighbors_t children;
     node_to_reads_t node_to_read;
@@ -36,12 +44,13 @@ void process_gene(const sequence_list_t& reads,
     for (size_t i = 0; i < reads.size(); i++) {
         align_matrix_t D;
         backtrack_matrix_t B;
-        local_alignment(D, B, reads[i], gene, exonic, parents);
+        local_aligner_func_t local_aligner = get_local_aligner(D, B, reads[i], gene, exonic, parents);
+        local_alignment(D, B, reads[i], gene, local_aligner);
         print_matrix(reads[i], gene, D, B);
-        alignment_t opt_alignment;
+        align_path_t opt_alignment;
         align_score_t opt_score;
         extract_local_alignment(opt_alignment, opt_score, D, B);
-        clean_alignment_matrix(D, B, opt_alignment, children);
+        recalc_alignment_matrix(D, B, opt_alignment, children, local_aligner);
 
         print_matrix(reads[i], gene, D, B);
     }
@@ -56,21 +65,12 @@ align_score_t match(char i, char j, bool is_exonic) {
     }
 }
 
-void local_alignment(align_matrix_t& D,
-                     backtrack_matrix_t& B,
-                     const sequence_t& read,
-                     const sequence_t& gene,
-                     const vector<bool>& exonic,
-                     const out_neighbors_t& parents) {
-    cout << read << endl;
-    cout << gene << endl;
-    size_t read_l = read.size();
-    size_t gene_l = gene.size();
-    D.clear();
-    B.clear();
-    D = align_matrix_t(read_l + 1, align_row_t(gene_l + 1, 0));
-    B = backtrack_matrix_t(read_l + 1, backtrack_row_t(gene_l + 1, INVALID_COORDINATE));
-
+local_aligner_func_t get_local_aligner(align_matrix_t& D,
+                                       backtrack_matrix_t& B,
+                                       const sequence_t& read,
+                                       const sequence_t& gene,
+                                       const exonic_indicator_t& exonic,
+                                       const out_neighbors_t& parents) {
     auto set_to_max_match = [&D, &read, &gene, &exonic] (align_score_t& opt_s, matrix_coordinate_t& opt_b, const backtrack_t& row, const backtrack_t& col) {
         align_score_t cur_s = D[row][col] + match(read[row], gene[col], exonic[col]);
         if (cur_s > opt_s) {
@@ -85,39 +85,66 @@ void local_alignment(align_matrix_t& D,
             opt_b = {row, col};
         }
     };
+    auto local_aligner = [&D, &B, &set_to_max_match, &set_to_max_gap, &parents] (const backtrack_t& i, const backtrack_t& j) {
+        align_score_t opt_s = 0;
+        matrix_coordinate_t opt_b = INVALID_COORDINATE;
+        // Three direct parents parents
+        set_to_max_match(opt_s, opt_b, i-1, j-1); // Match
+        set_to_max_gap(opt_s, opt_b, i-1, j-0); // Delete
+        set_to_max_gap(opt_s, opt_b, i-0, j-1); // Insert
+        // Other DAG parents
+        for (node_id_t parent : parents[j-1]) {
+            size_t parent_j = parent + 1;
+            // Three indirect parents
+            set_to_max_match(opt_s, opt_b, i-1, parent_j-1); // Match
+            set_to_max_gap(opt_s, opt_b, i-1, parent_j-0); // Delete
+            set_to_max_gap(opt_s, opt_b, i-0, parent_j-1); // Insert
+        }
+        D[i][j] = opt_s;
+        B[i][j] = opt_b;
+    };
+    return local_aligner;
+}
+
+void local_alignment(align_matrix_t& D,
+                     backtrack_matrix_t& B,
+                     const sequence_t& read,
+                     const sequence_t& gene,
+                     const local_aligner_func_t& local_aligner) {
+    cout << read << endl;
+    cout << gene << endl;
+    size_t read_l = read.size();
+    size_t gene_l = gene.size();
+    D.clear();
+    B.clear();
+    D = align_matrix_t(read_l + 1, align_row_t(gene_l + 1, 0));
+    B = backtrack_matrix_t(read_l + 1, backtrack_row_t(gene_l + 1, INVALID_COORDINATE));
 
     for (size_t i = 1; i <= read_l; i++) {
         for (size_t j = 1; j <= gene_l; j++) {
-            align_score_t opt_s = 0;
-            matrix_coordinate_t opt_b = INVALID_COORDINATE;
-            // Three direct parents parents
-            set_to_max_match(opt_s, opt_b, i-1, j-1); // Match
-            set_to_max_gap(opt_s, opt_b, i-1, j-0); // Delete
-            set_to_max_gap(opt_s, opt_b, i-0, j-1); // Insert
-            // Other DAG parents
-            for (node_id_t parent : parents[j-1]) {
-                size_t parent_j = parent + 1;
-                // Three indirect parents
-                set_to_max_match(opt_s, opt_b, i-1, parent_j-1); // Match
-                set_to_max_gap(opt_s, opt_b, i-1, parent_j-0); // Delete
-                set_to_max_gap(opt_s, opt_b, i-0, parent_j-1); // Insert
-            }
-            D[i][j] = opt_s;
-            B[i][j] = opt_b;
+            local_aligner(i, j);
         }
     }
 }
 
-void clean_alignment_matrix(align_matrix_t& D,
-                            backtrack_matrix_t& B,
-                            const alignment_t& opt_alignment,
-                            const in_neighbors_t& children) {
+void recalc_alignment_matrix(align_matrix_t& D,
+                             backtrack_matrix_t& B,
+                             const align_path_t& opt_alignment,
+                             const in_neighbors_t& children,
+                             const local_aligner_func_t& local_aligner) {
     queue<matrix_coordinate_t> clearing_queue;
     auto queue_children = [&D, &B, &children, &clearing_queue] (const matrix_coordinate_t& pos) {
         auto queue_if_child = [&D, &B, &children, &clearing_queue, &pos] (const matrix_coordinate_t& descendant) {
-            if (descendant.first < D.size() && descendant.second < D[descendant.first].size() && B[descendant.first][descendant.second] == pos) {
-                clearing_queue.push(descendant);
+            if (descendant.first >= D.size()) {
+                return;
             }
+            if (descendant.second >= D[descendant.first].size()) {
+                return;
+            }
+            if (B[descendant.first][descendant.second] != pos) {
+                return;
+            }
+            clearing_queue.push(descendant);
         };
         matrix_coordinate_t descendant;
         descendant = {pos.first + 1, pos.second + 1};
@@ -141,17 +168,22 @@ void clean_alignment_matrix(align_matrix_t& D,
         B[pos.first][pos.second] = INVALID_COORDINATE;
         clearing_queue.push(pos);
     }
+    print_matrix("ACGGCGTATTGCACGT", "GTACGCAC", D, B);
 
     while (clearing_queue.size() > 0) {
         matrix_coordinate_t pos = clearing_queue.front();
         queue_children(pos);
-        D[pos.first][pos.second] = 0;
-        B[pos.first][pos.second] = INVALID_COORDINATE;
+        if (B[pos.first][pos.second] != INVALID_COORDINATE) {
+            cout << "(" << pos.first << "," << pos.second << ") ";
+            cout << D[pos.first][pos.second] << " --> ";
+            local_aligner(pos.first, pos.second);
+            cout << D[pos.first][pos.second] << endl;
+        }
         clearing_queue.pop();
     }
 }
 
-void extract_local_alignment(alignment_t& opt_alignment,
+void extract_local_alignment(align_path_t& opt_alignment,
                              align_score_t& opt_score,
                              const align_matrix_t& D,
                              const backtrack_matrix_t& B) {
@@ -176,6 +208,7 @@ void extract_local_alignment(alignment_t& opt_alignment,
         cur_pos = nxt_pos;
         nxt_pos = B[cur_pos.first][cur_pos.second];
     }
+    reverse(opt_alignment.begin(), opt_alignment.end());
 }
 
 void add_edge(in_neighbors_t &in_neighbors,
@@ -211,7 +244,7 @@ node_id_t append_node(in_neighbors_t &in_neighbors,
 
 void generate_dot(const node_to_reads_t& node_to_read,
                   const sequence_t& gene,
-                  const vector<bool>& exonic,
+                  const exonic_indicator_t& exonic,
                   const out_neighbors_t& children,
                   const string output_path) {
     stringstream output;
