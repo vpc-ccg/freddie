@@ -1,18 +1,21 @@
-CXX      ?=g++
-CXXFLAGS  =-O3 -std=c++11 -Wall -Wextra
-CXXDBG  =  -g -std=c++11 -O0
-LDFLAGS   =
+CXX?=g++
+CXXFLAGS= -std=c++11 -Wall -Wextra
+LDFLAGS=
 
-all: clean freddie
 
-SOURCES   = $(wildcard *.cc) $(wildcard *.h)
+SOURCES= commandline_flags.cc dag_align.cc freddie.cc
+HEADERS= commandline_flags.h dag_align.h global.h
+
 # OBJECTS   = $(SOURCES:.cc=.o)
+.PHONY: clean
 
-freddie:
-	$(CXX) $(SOURCES) -o $@ ${LDFLAGS} $(CXXFLAGS)
+freddie: $(SOURCES) $(HEADERS)
+	$(CXX) $(SOURCES) $(HEADERS) -o $@ $(LDFLAGS) $(CXXFLAGS) -O3
 
-freddie_gdb:
-	$(CXX) $(SOURCES) -o $@ ${LDFLAGS} $(CXXDBG)
+freddie_gdb: $(SOURCES) $(HEADERS)
+	$(CXX) $(SOURCES) $(HEADERS) -o $@ $(LDFLAGS) $(CXXFLAGS) -g -O0
 
 clean:
-	@rm -f $(OBJECTS) freddie
+	rm -f freddie_gdb freddie
+
+all: clean freddie

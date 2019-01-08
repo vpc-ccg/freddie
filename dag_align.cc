@@ -1,7 +1,7 @@
 #include "dag_align.h"
 
 #include <fstream>  // std::ofstream
-#include <sstream>
+#include <sstream>  // std::stringstream
 #include <queue>
 #include <algorithm> // std::reverse
 #include <stdlib.h> //abort()
@@ -54,7 +54,6 @@ void process_gene(const sequence_list_t& reads,
 
         print_matrix(reads[i], gene, D, B);
     }
-
 }
 
 align_score_t match(char i, char j, bool is_exonic) {
