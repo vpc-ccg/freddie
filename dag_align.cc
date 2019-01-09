@@ -12,6 +12,8 @@
 #define GAP_S -1
 #define MISMATCH_S -1
 
+constexpr size_t MAX_MAPPINGS = 5;
+constexpr align_score_t MIN_SCORE = 3;
 constexpr matrix_coordinate_t INVALID_COORDINATE = {-1,-1};
 
 using std::cout;
@@ -47,13 +49,44 @@ void process_gene(const sequence_list_t& reads,
         local_aligner_func_t local_aligner = get_local_aligner(D, B, reads[i], gene, exonic, parents);
         local_alignment(D, B, reads[i], gene, local_aligner);
         print_matrix(reads[i], gene, D, B);
-        align_path_t opt_alignment;
-        align_score_t opt_score;
-        extract_local_alignment(opt_alignment, opt_score, D, B);
-        recalc_alignment_matrix(D, B, opt_alignment, children, local_aligner);
 
-        print_matrix(reads[i], gene, D, B);
+        read_gene_mappings_t mappings;
+        for (size_t j = 0; j < MAX_MAPPINGS; j++) {
+            align_path_t opt_alignment;
+            align_score_t opt_score;
+            extract_local_alignment(opt_alignment, opt_score, D, B);
+            recalc_alignment_matrix(D, B, opt_alignment, children, local_aligner);
+            cout << "Next best local alignment path score is " << opt_score << endl;
+            if (opt_score > MIN_SCORE) {
+                mappings.emplace_back(get_mapping_intervals(opt_alignment));
+                cout << "Added mapping" << endl;
+            } else {
+                cout << "Alignemnt too poor. Breaking..." << endl;
+                break;
+            }
+            print_matrix(reads[i], gene, D, B);
+        }
+
     }
+}
+
+read_gene_mapping_t get_mapping_intervals(const align_path_t& path) {
+    read_gene_mapping_t result(
+        read_interval_t(path[0].first, path[path.size()-1].first),
+        gene_intervals_t(1,
+            gene_interval_t(path[0].second, path[0].second)
+        )
+    );
+    gene_intervals_t& gene_intervals = result.second;
+    for (const matrix_coordinate_t& pos : path) {
+        gene_interval_t& cur_gene_interval = gene_intervals[gene_intervals.size()-1];
+        if (pos.second - cur_gene_interval.second > 1) {
+            gene_intervals.push_back(gene_interval_t(pos.second, pos.second));
+        } else {
+            cur_gene_interval.second = pos.second;
+        }
+    }
+    return result;
 }
 
 align_score_t match(char i, char j, bool is_exonic) {
@@ -70,21 +103,22 @@ local_aligner_func_t get_local_aligner(align_matrix_t& D,
                                        const sequence_t& gene,
                                        const exonic_indicator_t& exonic,
                                        const out_neighbors_t& parents) {
-    auto set_to_max_match = [&D, &read, &gene, &exonic] (align_score_t& opt_s, matrix_coordinate_t& opt_b, const backtrack_t& row, const backtrack_t& col) {
-        align_score_t cur_s = D[row][col] + match(read[row], gene[col], exonic[col]);
-        if (cur_s > opt_s) {
-            opt_s = cur_s;
-            opt_b = {row, col};
-        }
-    };
-    auto set_to_max_gap = [&D] (align_score_t& opt_s, matrix_coordinate_t& opt_b, const backtrack_t& row, const backtrack_t& col) {
-        align_score_t cur_s = D[row][col] + GAP_S;
-        if (cur_s > opt_s) {
-            opt_s = cur_s;
-            opt_b = {row, col};
-        }
-    };
-    auto local_aligner = [&D, &B, &set_to_max_match, &set_to_max_gap, &parents] (const backtrack_t& i, const backtrack_t& j) {
+    auto local_aligner = [&D, &B, &read, &gene, &exonic, &parents] (const backtrack_t& i, const backtrack_t& j) {
+        auto set_to_max_match = [&D, &read, &gene, &exonic] (align_score_t& opt_s, matrix_coordinate_t& opt_b, const backtrack_t& row, const backtrack_t& col) {
+            align_score_t cur_s = D[row][col];
+            cur_s += match(read[row], gene[col], exonic[col]);
+            if (cur_s > opt_s) {
+                opt_s = cur_s;
+                opt_b = {row, col};
+            }
+        };
+        auto set_to_max_gap = [&D] (align_score_t& opt_s, matrix_coordinate_t& opt_b, const backtrack_t& row, const backtrack_t& col) {
+            align_score_t cur_s = D[row][col] + GAP_S;
+            if (cur_s > opt_s) {
+                opt_s = cur_s;
+                opt_b = {row, col};
+            }
+        };
         align_score_t opt_s = 0;
         matrix_coordinate_t opt_b = INVALID_COORDINATE;
         // Three direct parents parents
@@ -167,16 +201,12 @@ void recalc_alignment_matrix(align_matrix_t& D,
         B[pos.first][pos.second] = INVALID_COORDINATE;
         clearing_queue.push(pos);
     }
-    print_matrix("ACGGCGTATTGCACGT", "GTACGCAC", D, B);
 
     while (clearing_queue.size() > 0) {
         matrix_coordinate_t pos = clearing_queue.front();
         queue_children(pos);
         if (B[pos.first][pos.second] != INVALID_COORDINATE) {
-            cout << "(" << pos.first << "," << pos.second << ") ";
-            cout << D[pos.first][pos.second] << " --> ";
             local_aligner(pos.first, pos.second);
-            cout << D[pos.first][pos.second] << endl;
         }
         clearing_queue.pop();
     }

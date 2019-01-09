@@ -6,6 +6,7 @@
 #include <functional> //std::function
 #include <utility> //std::pair stuff
 
+
 typedef uint32_t read_id_t;
 typedef uint32_t node_id_t;
 typedef uint32_t read_pos_t;
@@ -34,6 +35,12 @@ typedef std::vector<align_row_t> align_matrix_t;
 typedef std::vector<matrix_coordinate_t> backtrack_row_t;
 typedef std::vector<backtrack_row_t> backtrack_matrix_t;
 
+typedef std::pair<read_pos_t, read_pos_t> read_interval_t;
+typedef std::pair<node_id_t, node_id_t> gene_interval_t;
+typedef std::vector<gene_interval_t> gene_intervals_t;
+typedef std::pair<read_interval_t, gene_intervals_t> read_gene_mapping_t;
+typedef std::vector<read_gene_mapping_t> read_gene_mappings_t;
+
 void process_gene_test();
 
 void process_gene(const sequence_list_t& reads,
@@ -50,7 +57,9 @@ node_id_t append_node(in_neighbors_t &in_neighbors,
                       node_to_reads_t &node_to_read);
 
 align_score_t match(char i, char j, bool is_exonic);
-;
+
+read_gene_mapping_t get_mapping_intervals(const align_path_t& path);
+
 void local_alignment(align_matrix_t& D,
                      backtrack_matrix_t& B,
                      const sequence_t& read,
