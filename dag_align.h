@@ -62,6 +62,12 @@ read_gene_mappings_t align_read_to_dag(const sequence_t& read,
                                        const in_neighbors_t& parents,
                                        const out_neighbors_t& children);
 
+void update_dag(in_neighbors_t& parents,
+                out_neighbors_t& children,
+                node_to_reads_t& node_to_read,
+                const size_t& read_id,
+                const read_gene_mappings_t& opt_chain);
+
 read_gene_mapping_t get_mapping_intervals(const align_path_t& path);
 
 read_gene_mappings_t get_optimal_cochain(const std::vector<align_score_t>& scores,

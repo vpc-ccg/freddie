@@ -5,7 +5,7 @@
 #include <queue>
 #include <algorithm> // std::reverse
 #include <functional> // std::function
-#include <stdlib.h> //abort()
+#include <cstdlib> // abort()
 
 #define EXONIC_ID 0x7FFFFFFF
 #define INTRONIC_ID 0x7FFFFFFE
@@ -49,7 +49,16 @@ void process_gene(const sequence_list_t& reads,
     generate_dot(children, gene, exonic, node_to_read, "gene.dot");
     for (size_t i = 0; i < reads.size(); i++) {
         read_gene_mappings_t opt_chain = align_read_to_dag(reads[i], gene, exonic, parents, children);
+        update_dag(parents, children, node_to_read, i, opt_chain);
     }
+}
+
+void update_dag(in_neighbors_t& parents,
+                out_neighbors_t& children,
+                node_to_reads_t& node_to_read,
+                const size_t& read_id,
+                const read_gene_mappings_t& opt_chain) {
+    ;
 }
 
 // Align a read to the DAG
