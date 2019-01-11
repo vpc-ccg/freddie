@@ -56,7 +56,11 @@ node_id_t append_node(in_neighbors_t &in_neighbors,
                       out_neighbors_t &out_neighbors,
                       node_to_reads_t &node_to_read);
 
-align_score_t match(char i, char j, bool is_exonic);
+read_gene_mappings_t align_read_to_dag(const sequence_t& read,
+                                       const sequence_t& gene,
+                                       const exonic_indicator_t& exonic,
+                                       const in_neighbors_t& parents,
+                                       const out_neighbors_t& children);
 
 read_gene_mapping_t get_mapping_intervals(const align_path_t& path);
 
