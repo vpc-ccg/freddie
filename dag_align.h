@@ -60,6 +60,16 @@ align_score_t match(char i, char j, bool is_exonic);
 
 read_gene_mapping_t get_mapping_intervals(const align_path_t& path);
 
+read_gene_mappings_t get_optimal_cochain(const std::vector<align_score_t>& scores,
+                                         const read_gene_mappings_t& mappings);
+
+void print_cochain(const read_gene_mappings_t& chain);
+
+void print_mapping_interval(const align_score_t& score,
+                            const read_gene_mapping_t& read_gene_mapping,
+                            const sequence_t& read,
+                            const sequence_t& gene);
+
 void local_alignment(align_matrix_t& D,
                      backtrack_matrix_t& B,
                      const sequence_t& read,

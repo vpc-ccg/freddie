@@ -4,6 +4,7 @@
 #include <sstream>  // std::stringstream
 #include <queue>
 #include <algorithm> // std::reverse
+#include <functional> // std::function
 #include <stdlib.h> //abort()
 
 #define EXONIC_ID 0x7FFFFFFF
@@ -12,7 +13,7 @@
 #define GAP_S -1
 #define MISMATCH_S -1
 
-constexpr size_t MAX_MAPPINGS = 5;
+constexpr size_t MAX_MAPPINGS = 10;
 constexpr align_score_t MIN_SCORE = 3;
 constexpr matrix_coordinate_t INVALID_COORDINATE = {-1,-1};
 
@@ -22,11 +23,13 @@ using std::string;
 using std::stringstream;
 using std::ofstream;
 using std::queue;
+using std::vector;
+using std::function;
 using std::reverse;
 
 void process_gene_test() {
-    sequence_list_t reads(1, "ACGGCGTATTGCACGT");
-    sequence_t gene = "GTACGCAC";
+    sequence_list_t reads(1, "AAANNNNNNNNCCC");
+    sequence_t gene = "AAACCC";
     exonic_indicator_t exonic(gene.size(), true);
     process_gene(reads, gene, exonic);
 }
@@ -51,6 +54,7 @@ void process_gene(const sequence_list_t& reads,
         print_matrix(reads[i], gene, D, B);
 
         read_gene_mappings_t mappings;
+        vector<align_score_t> scores;
         for (size_t j = 0; j < MAX_MAPPINGS; j++) {
             align_path_t opt_alignment;
             align_score_t opt_score;
@@ -59,15 +63,86 @@ void process_gene(const sequence_list_t& reads,
             cout << "Next best local alignment path score is " << opt_score << endl;
             if (opt_score > MIN_SCORE) {
                 mappings.emplace_back(get_mapping_intervals(opt_alignment));
-                cout << "Added mapping" << endl;
+                scores.emplace_back(opt_score);
+                cout << "Added mapping:" << endl;
+                print_mapping_interval(opt_score, mappings[mappings.size()-1], reads[i], gene);
             } else {
                 cout << "Alignemnt too poor. Breaking..." << endl;
                 break;
             }
             print_matrix(reads[i], gene, D, B);
         }
-
+        for (size_t j = 0; j < mappings.size(); j++) {
+            print_mapping_interval(scores[j], mappings[j], reads[i], gene);
+        }
+        read_gene_mappings_t opt_cochain = get_optimal_cochain(scores, mappings);
+        cout << "Optimal cochain:" << endl;
+        print_cochain(opt_cochain);
     }
+}
+
+read_gene_mappings_t get_optimal_cochain(const vector<align_score_t>& scores,
+                                         const read_gene_mappings_t& mappings) {
+   constexpr size_t no_parent = -1;
+   vector<size_t> D(scores.size(), 0);
+   vector<size_t> B(scores.size(), no_parent);
+   vector<bool> done(scores.size(), false);
+
+   auto is_parent = [&mappings] (size_t child, size_t parent) {
+       if (child == parent) {
+           return false;
+       }
+       const read_interval_t& child_read_interval = mappings[child].first;
+       const read_interval_t& parent_read_interval = mappings[parent].first;
+       const gene_interval_t& child_first_gene_interval = mappings[child].second[0];
+       const gene_interval_t& parent_last_gene_interval = mappings[parent].second[mappings[parent].second.size()-1];
+       if (child_read_interval.first <= parent_read_interval.second) {
+           return false;
+       }
+       if (child_first_gene_interval.first <= parent_last_gene_interval.second) {
+           return false;
+       }
+       return true;
+   };
+   function<void (size_t)> recurse;
+   recurse = [&D, &B, &scores, &mappings, &done, &is_parent, &recurse] (size_t i) -> void {
+        if (done[i]) {
+            return;
+        }
+        size_t max_parent_value = 0;
+        size_t max_parent = no_parent;
+        for (size_t j = 0; j < scores.size(); j++) {
+            if (!is_parent(j, i)) {
+                continue;
+            }
+            cout << j << "<--" << i << endl;
+            if (D[j] > max_parent_value) {
+                max_parent_value = D[j];
+                max_parent = j;
+            }
+        }
+        D[i] = scores[i] + max_parent_value;
+        B[i] = max_parent;
+        done[i] = true;
+   };
+
+   size_t opt_chain_value = 0;
+   size_t opt_chain_tail = -1;
+   for (size_t i = 0; i < scores.size(); i++) {
+       recurse(i);
+       if (D[i] > opt_chain_value) {
+           opt_chain_value = D[i];
+           opt_chain_tail = i;
+       }
+   }
+   read_gene_mappings_t result;
+   result.push_back(mappings[opt_chain_tail]);
+   while (B[opt_chain_tail] != no_parent) {
+       opt_chain_tail = B[opt_chain_tail];
+       result.push_back(mappings[opt_chain_tail]);
+   }
+
+   return result;
 }
 
 read_gene_mapping_t get_mapping_intervals(const align_path_t& path) {
@@ -122,16 +197,16 @@ local_aligner_func_t get_local_aligner(align_matrix_t& D,
         align_score_t opt_s = 0;
         matrix_coordinate_t opt_b = INVALID_COORDINATE;
         // Three direct parents parents
-        set_to_max_match(opt_s, opt_b, i-1, j-1); // Match
         set_to_max_gap(opt_s, opt_b, i-1, j-0); // Delete
         set_to_max_gap(opt_s, opt_b, i-0, j-1); // Insert
+        set_to_max_match(opt_s, opt_b, i-1, j-1); // Match
         // Other DAG parents
         for (node_id_t parent : parents[j-1]) {
             size_t parent_j = parent + 1;
             // Three indirect parents
-            set_to_max_match(opt_s, opt_b, i-1, parent_j-1); // Match
             set_to_max_gap(opt_s, opt_b, i-1, parent_j-0); // Delete
             set_to_max_gap(opt_s, opt_b, i-0, parent_j-1); // Insert
+            set_to_max_match(opt_s, opt_b, i-1, parent_j-1); // Match
         }
         D[i][j] = opt_s;
         B[i][j] = opt_b;
@@ -300,27 +375,36 @@ void generate_dot(const node_to_reads_t& node_to_read,
     ofile.close();
 }
 
-// void print_read_exonic_alignment(const read_exonic_alignment_t& opt_alignment,
-//                                  const align_score_t& opt_score,
-//                                  const sequence_t& read,
-//                                  const sequence_t& gene) {
-//     size_t start, end, length;
-//     start = opt_alignment.first.first;
-//     end = opt_alignment.first.second;
-//     length = end - start + 1;
-//
-//     cout << "Read: " << read.substr(start, length) <<" ("<< start <<","<< end <<")" << endl;
-//     cout << "Gene: ";
-//     for (auto & fragment : opt_alignment.second) {
-//         start = fragment.first;
-//         end = fragment.second;
-//         length = end - start + 1;
-//         cout << gene.substr(start, length) << " ("<< start <<","<< end <<")-";
-//     }
-//     cout << endl;
-//     cout << "Alignment score: " << opt_score << endl;
-//
-// }
+void print_cochain(const read_gene_mappings_t& chain) {
+    for (read_gene_mapping_t mapping : chain) {
+        read_interval_t& read_interval = mapping.first;
+        cout << "R" << "("<<read_interval.first<<","<<read_interval.second<<") "<<endl;
+        for (gene_interval_t gene_interval : mapping.second) {
+            cout << "G" << "("<<gene_interval.first<<","<<gene_interval.second<<")"<<'-';
+        }
+        cout << endl;
+    }
+}
+
+void print_mapping_interval(const align_score_t& score,
+                            const read_gene_mapping_t& read_gene_mapping,
+                            const sequence_t& read,
+                            const sequence_t& gene) {
+    size_t start, end, length;
+
+    start = read_gene_mapping.first.first;
+    end = read_gene_mapping.first.second;
+    length = end - start + 1;
+    cout << score << ": ";
+    cout << read.substr(start-1, length) <<"("<<start<<","<<end<<")" << " --> ";
+    for (auto & fragment : read_gene_mapping.second) {
+        start = fragment.first;
+        end = fragment.second;
+        length = end - start + 1;
+        cout << gene.substr(start-1, length) <<"("<<start<<","<<end<<")-";
+    }
+    cout << endl;
+}
 
 void print_matrix(const sequence_t& read,
                   const sequence_t& gene,
