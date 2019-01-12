@@ -47,10 +47,10 @@ void process_gene(const sequence_list_t& reads,
                   const sequence_t& gene,
                   const exonic_indicator_t& exonic);
 
-void add_edge(in_neighbors_t &in_neighbors,
-              out_neighbors_t &out_neighbors,
-              node_id_t source,
-              node_id_t target);
+void add_edge(in_neighbors_t& parents,
+              out_neighbors_t& children,
+              const node_id_t&  source,
+              const node_id_t&  target);
 
 node_id_t append_node(in_neighbors_t &in_neighbors,
                       out_neighbors_t &out_neighbors,

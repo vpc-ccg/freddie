@@ -58,7 +58,26 @@ void update_dag(in_neighbors_t& parents,
                 node_to_reads_t& node_to_read,
                 const size_t& read_id,
                 const read_gene_mappings_t& opt_chain) {
-    ;
+    gene_intervals_t exons;
+    for (const read_gene_mapping_t& mapping : opt_chain) {
+        for (const gene_interval_t& gene_interval : mapping.second) {
+            exons.push_back(gene_interval);
+        }
+    }
+    gene_interval_t cur_gene_interval = exons[0];
+    for (size_t i = 1; i < exons.size(); i++) {
+        for (node_id_t node = cur_gene_interval.first -1; node < cur_gene_interval.second; node++) {
+            node_to_read[node].push_back(read_id);
+        }
+        gene_interval_t& nxt_gene_interval = exons[i];
+        cout << cur_gene_interval.first << ':' << cur_gene_interval.second << '-';
+        cout << nxt_gene_interval.first << ':' << nxt_gene_interval.second << endl;
+        add_edge(parents, children, cur_gene_interval.second - 1,  nxt_gene_interval.first - 1);
+        cur_gene_interval = nxt_gene_interval;
+    }
+    for (node_id_t node = cur_gene_interval.first -1; node < cur_gene_interval.second; node++) {
+        node_to_read[node].push_back(read_id);
+    }
 }
 
 // Align a read to the DAG
@@ -177,10 +196,14 @@ read_gene_mappings_t get_optimal_cochain(const vector<align_score_t>& scores,
     // Backtrack from the best tail
     read_gene_mappings_t result;
     result.push_back(mappings[opt_chain_tail]);
+    cout << opt_chain_tail << '-';
     while (B[opt_chain_tail] != no_parent) {
         opt_chain_tail = B[opt_chain_tail];
         result.push_back(mappings[opt_chain_tail]);
+        cout << opt_chain_tail << '-';
     }
+    cout << endl;
+
     reverse(result.begin(), result.end());
     return result;
 }
@@ -374,8 +397,8 @@ void extract_local_alignment(align_path_t& opt_alignment,
     reverse(opt_alignment.begin(), opt_alignment.end());
 }
 
-void add_edge(in_neighbors_t &in_neighbors,
-              out_neighbors_t &out_neighbors,
+void add_edge(in_neighbors_t& parents,
+              out_neighbors_t& children,
               const node_id_t&  source,
               const node_id_t&  target) {
     if (source >= target) {
@@ -386,12 +409,12 @@ void add_edge(in_neighbors_t &in_neighbors,
         cout << "Source can't be <= : " << source << endl;
         abort();
     }
-    if (target >= in_neighbors.size()) {
-        cout << "Target can't be >= in_neighbors.size(): " << target << " >= " << in_neighbors.size() << endl;
+    if (target >= parents.size()) {
+        cout << "Target can't be >= parents.size(): " << target << " >= " << parents.size() << endl;
         abort();
     }
-    out_neighbors[source].push_back(target);
-    in_neighbors[target].push_back(source);
+    children[source].push_back(target);
+    parents[target].push_back(source);
 }
 
 // Adds a node to the ends of the graph vectors
