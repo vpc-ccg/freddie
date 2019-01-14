@@ -14,7 +14,7 @@
 #define MISMATCH_S -1
 
 constexpr size_t MAX_MAPPINGS = 10;
-constexpr align_score_t MIN_SCORE = 3;
+constexpr align_score_t MIN_SCORE = 1;
 constexpr matrix_coordinate_t INVALID_COORDINATE = {-1,-1};
 
 using std::cout;
@@ -29,8 +29,8 @@ using std::reverse;
 
 // Testing function
 void process_gene_test() {
-    sequence_list_t reads(1, "AAANNNNNNNNCCC");
-    sequence_t gene = "AAACCC";
+    sequence_list_t reads(1, "ANNNNCNNNNG");
+    sequence_t gene = "ACG";
     exonic_indicator_t exonic(gene.size(), true);
     process_gene(reads, gene, exonic);
 }
@@ -64,19 +64,16 @@ void update_dag(in_neighbors_t& parents,
             exons.push_back(gene_interval);
         }
     }
-    gene_interval_t cur_gene_interval = exons[0];
+    for (node_id_t node = exons[0].first -1; node < exons[0].second; node++) {
+        node_to_read[node].push_back(read_id);
+    }
     for (size_t i = 1; i < exons.size(); i++) {
-        for (node_id_t node = cur_gene_interval.first -1; node < cur_gene_interval.second; node++) {
+        cout << exons[i-1].first << ':' << exons[i-1].second << '-';
+        cout << exons[i].first << ':' << exons[i].second << endl;
+        add_edge(parents, children, exons[i-1].second - 1,  exons[i].first - 1);
+        for (node_id_t node = exons[i].first -1; node < exons[i].second; node++) {
             node_to_read[node].push_back(read_id);
         }
-        gene_interval_t& nxt_gene_interval = exons[i];
-        cout << cur_gene_interval.first << ':' << cur_gene_interval.second << '-';
-        cout << nxt_gene_interval.first << ':' << nxt_gene_interval.second << endl;
-        add_edge(parents, children, cur_gene_interval.second - 1,  nxt_gene_interval.first - 1);
-        cur_gene_interval = nxt_gene_interval;
-    }
-    for (node_id_t node = cur_gene_interval.first -1; node < cur_gene_interval.second; node++) {
-        node_to_read[node].push_back(read_id);
     }
 }
 
@@ -388,7 +385,7 @@ void extract_local_alignment(align_path_t& opt_alignment,
     // Then, backtrack from the opt score back to the first positive score in the path
     matrix_coordinate_t cur_pos = opt_tail;
     matrix_coordinate_t nxt_pos = B[cur_pos.first][cur_pos.second];
-    while (D[nxt_pos.first][nxt_pos.second] > 0) {
+    while (nxt_pos != INVALID_COORDINATE && D[nxt_pos.first][nxt_pos.second] > 0) {
         opt_alignment.push_back(nxt_pos);
         cur_pos = nxt_pos;
         nxt_pos = B[cur_pos.first][cur_pos.second];
