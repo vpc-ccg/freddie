@@ -7,12 +7,12 @@
 #include <functional> // std::function
 #include <cstdlib> // abort()
 
-#define EXONIC_ID 0x7FFFFFFF
-#define INTRONIC_ID 0x7FFFFFFE
-#define MATCH_S 1
-#define GAP_S -1
-#define MISMATCH_S -1
+#define TEST_GENE "ANNNNCNNNNG"
+#define TEST_READ "ACG"
 
+constexpr align_score_t MATCH_S = 1;
+constexpr align_score_t GAP_S = -1;
+constexpr align_score_t MISMATCH_S = -1;
 constexpr size_t MAX_MAPPINGS = 10;
 constexpr align_score_t MIN_SCORE = 1;
 constexpr matrix_coordinate_t INVALID_COORDINATE = {-1,-1};
@@ -29,8 +29,8 @@ using std::reverse;
 
 // Testing function
 void process_gene_test() {
-    sequence_list_t reads(1, "ANNNNCNNNNG");
-    sequence_t gene = "ACG";
+    sequence_list_t reads(1, TEST_READ);
+    sequence_t gene = TEST_GENE;
     exonic_indicator_t exonic(gene.size(), true);
     process_gene(reads, gene, exonic);
 }
@@ -46,11 +46,26 @@ void process_gene(const sequence_list_t& reads,
     for (size_t i = 0; i < gene.size(); i++) {
         append_node(parents, children, node_to_read);
     }
-    generate_dot(children, gene, exonic, node_to_read, "gene.dot");
+    generate_dot(node_to_read, gene, exonic, children, "gene_pre.dot");
     for (size_t i = 0; i < reads.size(); i++) {
         read_gene_mappings_t opt_chain = align_read_to_dag(reads[i], gene, exonic, parents, children);
         update_dag(parents, children, node_to_read, i, opt_chain);
     }
+    for (node_id_t node = 0; node < children.size(); node++) {
+        cout << node << "->";
+        for (node_id_t child : children[node]) {
+            cout << child << ',';
+        }
+        cout << endl;
+    }
+    for (node_id_t node = 0; node < parents.size(); node++) {
+        cout << node << "<-";
+        for (node_id_t parent : parents[node]) {
+            cout << parent << ',';
+        }
+        cout << endl;
+    }
+    generate_dot(node_to_read, gene, exonic, children, "gene_post.dot");
 }
 
 void update_dag(in_neighbors_t& parents,
@@ -64,16 +79,17 @@ void update_dag(in_neighbors_t& parents,
             exons.push_back(gene_interval);
         }
     }
-    for (node_id_t node = exons[0].first -1; node < exons[0].second; node++) {
-        node_to_read[node].push_back(read_id);
-    }
-    for (size_t i = 1; i < exons.size(); i++) {
-        cout << exons[i-1].first << ':' << exons[i-1].second << '-';
-        cout << exons[i].first << ':' << exons[i].second << endl;
-        add_edge(parents, children, exons[i-1].second - 1,  exons[i].first - 1);
-        for (node_id_t node = exons[i].first -1; node < exons[i].second; node++) {
+    for (const gene_interval_t& exon : exons) {
+        for (node_id_t node = exon.first -1; node < exon.second; node++) {
             node_to_read[node].push_back(read_id);
         }
+    }
+    for (size_t i = 1; i < exons.size(); i++) {
+        node_id_t source =  exons[i-1].second-1;
+        node_id_t target =  exons[i-0].first-1;
+        cout << source << "->";
+        cout << target << endl;
+        add_edge(parents, children, source,  target);
     }
 }
 
@@ -92,7 +108,7 @@ read_gene_mappings_t align_read_to_dag(const sequence_t& read,
     local_aligner_func_t local_aligner = get_local_aligner(D, B, read, gene, exonic, parents);
     // Perfrom first round of local alignment for the whole read on the whole DAG
     local_alignment(D, B, read, gene, local_aligner);
-    print_matrix(read, gene, D, B);
+    // print_matrix(read, gene, D, B);
 
     // Now, we want to extract the best local alignments from D&B alignment matrices
     read_gene_mappings_t mappings;
@@ -115,11 +131,12 @@ read_gene_mappings_t align_read_to_dag(const sequence_t& read,
             cout << "Alignemnt too poor. Breaking..." << endl;
             break;
         }
-        print_matrix(read, gene, D, B);
+        // print_matrix(read, gene, D, B);
     }
-    for (size_t i = 0; i < mappings.size(); i++) {
-        print_mapping_interval(scores[i], mappings[i], read, gene);
-    }
+    // for (size_t i = 0; i < mappings.size(); i++) {
+    //     cout << i << ".";
+    //     print_mapping_interval(scores[i], mappings[i], read, gene);
+    // }
     // Using the extracted alignments, find the optimal co-linear chain of them
     read_gene_mappings_t opt_cochain = get_optimal_cochain(scores, mappings);
     cout << "Optimal cochain:" << endl;
@@ -157,47 +174,65 @@ read_gene_mappings_t get_optimal_cochain(const vector<align_score_t>& scores,
     };
     // Recursive lambda function. Computes optimal co linear chain ending at a given mapping.
     //   Recursively computes any possible parents of the mapping before computing score for the given mapping.
-    function<void (size_t)> recurse;
-    recurse = [&D, &B, &scores, &mappings, &done, &is_parent, &recurse] (size_t i) -> void {
-        if (done[i]) {
+    function<void (size_t)> compute_fragment_opt_score;
+    compute_fragment_opt_score = [&D, &B, &scores, &mappings, &done, &is_parent, &compute_fragment_opt_score] (size_t fragment_id) -> void {
+        if (done[fragment_id]) {
             return;
         }
         size_t max_parent_value = 0;
-        size_t max_parent = no_parent;
-        for (size_t j = 0; j < scores.size(); j++) {
-            if (!is_parent(j, i)) {
+        size_t max_parent_id = no_parent;
+        for (size_t parent_id = 0; parent_id < scores.size(); parent_id++) {
+            if (!is_parent(fragment_id, parent_id)) {
                 continue;
             }
-            cout << j << "<--" << i << endl;
-            if (D[j] > max_parent_value) {
-                max_parent_value = D[j];
-                max_parent = j;
+            compute_fragment_opt_score(parent_id);
+            if (D[parent_id] > max_parent_value) {
+                max_parent_value = D[parent_id];
+                max_parent_id = parent_id;
             }
+            cout << "D" << D[parent_id];
+            cout << "C" << parent_id<<"<--"<<fragment_id;
+            cout << "P:" << max_parent_id;
+            cout << "V:" << max_parent_value;
+            cout << endl;
         }
-        D[i] = scores[i] + max_parent_value;
-        B[i] = max_parent;
-        done[i] = true;
+        D[fragment_id] = scores[fragment_id] + max_parent_value;
+        B[fragment_id] = max_parent_id;
+        done[fragment_id] = true;
     };
 
     size_t opt_chain_value = 0;
     size_t opt_chain_tail = -1;
     // Find the optimal score ending with each mapping interval
     for (size_t i = 0; i < scores.size(); i++) {
-        recurse(i);
+        compute_fragment_opt_score(i);
         // Record the best of them
         if (D[i] > opt_chain_value) {
             opt_chain_value = D[i];
             opt_chain_tail = i;
         }
     }
+    for (size_t i = 0; i < D.size(); i++) {
+        cout << D[i] << '.';
+        cout << B[i] << '-';
+    }
+    cout << endl;
+
+
     // Backtrack from the best tail
     read_gene_mappings_t result;
     result.push_back(mappings[opt_chain_tail]);
-    cout << opt_chain_tail << '-';
+    cout << "T" << opt_chain_tail;
+    cout << "D" << D[opt_chain_tail];
+    cout << endl;
+    print_mapping_interval(scores[opt_chain_tail], mappings[opt_chain_tail], TEST_READ, TEST_GENE);
     while (B[opt_chain_tail] != no_parent) {
         opt_chain_tail = B[opt_chain_tail];
         result.push_back(mappings[opt_chain_tail]);
-        cout << opt_chain_tail << '-';
+        cout << "T" << opt_chain_tail;
+        cout << "D" << D[opt_chain_tail];
+        cout << endl;
+        print_mapping_interval(scores[opt_chain_tail], mappings[opt_chain_tail], TEST_READ, TEST_GENE);
     }
     cout << endl;
 
@@ -402,13 +437,12 @@ void add_edge(in_neighbors_t& parents,
         cout << "Source can't be >= target: " << source << " -> " << target << endl;
         abort();
     }
-    if (source <= 0) {
-        cout << "Source can't be <= : " << source << endl;
-        abort();
-    }
     if (target >= parents.size()) {
         cout << "Target can't be >= parents.size(): " << target << " >= " << parents.size() << endl;
         abort();
+    }
+    if (target - 1 == source) {
+        return;
     }
     children[source].push_back(target);
     parents[target].push_back(source);
@@ -448,10 +482,10 @@ void generate_dot(const node_to_reads_t& node_to_read,
         output << "    " << node <<" [label=\"" << node << ":" << gene[node] << ":" << node_to_read[node].size() << "\" "<< outline <<"]" << endl;
     }
     output << endl;
-    for (node_id_t node = 0; node < children.size() - 1; node++) {
+    for (node_id_t node = 0; node < children.size(); node++) {
         output << "    " << node <<"->" << node + 1 << endl;
     }
-    for (node_id_t node = 0; node < children.size() - 1; node++) {
+    for (node_id_t node = 0; node < children.size(); node++) {
         for (node_id_t child : children[node]) {
             output << "    " << node <<"->" << child << endl;
         }
