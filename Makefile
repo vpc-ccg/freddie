@@ -1,21 +1,21 @@
-CXX?=g++
-CXXFLAGS=-std=c++11 -Wall -Wextra
+CXX=g++
+CXXFLAGS=-std=c++14 -I src/ -I extern/ -Wall -Wextra
 LDFLAGS=
 
 
-SOURCES= commandline_flags.cc dag_align.cc freddie.cc
-HEADERS= commandline_flags.h dag_align.h global.h
+SOURCES:=$(wildcard src/*.cc)
+OBJECTS:=$(SOURCES:.cc=.o)
+EXECUTABLE=freddie
+DEBUGGABLE=$(EXECUTABLE)_dbg
+.PHONY: clean all
 
-# OBJECTS   = $(SOURCES:.cc=.o)
-.PHONY: clean
+$(EXECUTABLE): $(EXECUTABLE).cc $(OBJECTS) Makefile
+	$(CXX) $(OBJECTS) -O3 $< $(CXXFLAGS) -o $@
 
-freddie: $(SOURCES) $(HEADERS)
-	$(CXX) $(SOURCES) $(HEADERS) -o $@ $(LDFLAGS) $(CXXFLAGS) -O3
-
-freddie_gdb: $(SOURCES) $(HEADERS)
-	$(CXX) $(SOURCES) $(HEADERS) -o $@ $(LDFLAGS) $(CXXFLAGS) -g -O0
+$(DEBUGGABLE): $(EXECUTABLE).cc $(OBJECTS) Makefile
+	$(CXX) $(OBJECTS) -g -O1 $< $(CXXFLAGS) -o $@
 
 clean:
-	rm -f freddie_gdb freddie
+	rm -f $(EXECUTABLE) $(DEBUGGABLE) $(OBJECTS)
 
-all: clean freddie
+all: clean $(EXECUTABLE)
