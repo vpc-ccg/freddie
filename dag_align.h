@@ -3,6 +3,7 @@
 
 #include "global.h"
 #include <vector>
+#include <set>
 #include <functional> //std::function
 #include <utility> //std::pair stuff
 
@@ -19,9 +20,9 @@ typedef std::vector<matrix_coordinate_t> align_path_t;
 
 typedef std::function<void (backtrack_t, backtrack_t)> local_aligner_func_t;
 
-typedef std::vector<node_id_t> node_list_t;
-typedef std::vector<node_list_t> out_neighbors_t;
-typedef std::vector<node_list_t> in_neighbors_t;
+typedef std::set<node_id_t> node_set_t;
+typedef std::vector<node_set_t> out_neighbors_t;
+typedef std::vector<node_set_t> in_neighbors_t;
 typedef std::vector<read_id_t> read_list_t;
 typedef std::vector<read_list_t> node_to_reads_t;
 

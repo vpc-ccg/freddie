@@ -7,8 +7,9 @@
 #include <functional> // std::function
 #include <cstdlib> // abort()
 
-#define TEST_GENE "ANNNNCNNNNG"
-#define TEST_READ "ACG"
+#define TEST_GENE "AANNAANNCCNNGG"
+#define TEST_READ2 "AAAGG"
+#define TEST_READ1 "AAAACC"
 
 constexpr align_score_t MATCH_S = 1;
 constexpr align_score_t GAP_S = -1;
@@ -19,6 +20,7 @@ constexpr matrix_coordinate_t INVALID_COORDINATE = {-1,-1};
 
 using std::cout;
 using std::endl;
+using std::to_string;
 using std::string;
 using std::stringstream;
 using std::ofstream;
@@ -29,9 +31,10 @@ using std::reverse;
 
 // Testing function
 void process_gene_test() {
-    sequence_list_t reads(1, TEST_READ);
+    sequence_list_t reads(1, TEST_READ1);
+    reads.push_back(TEST_READ2);
     sequence_t gene = TEST_GENE;
-    exonic_indicator_t exonic(gene.size(), true);
+    exonic_indicator_t exonic(gene.size(), false);
     process_gene(reads, gene, exonic);
 }
 
@@ -50,6 +53,7 @@ void process_gene(const sequence_list_t& reads,
     for (size_t i = 0; i < reads.size(); i++) {
         read_gene_mappings_t opt_chain = align_read_to_dag(reads[i], gene, exonic, parents, children);
         update_dag(parents, children, node_to_read, i, opt_chain);
+        generate_dot(node_to_read, gene, exonic, children, "gene_"+to_string(i)+".dot");
     }
     for (node_id_t node = 0; node < children.size(); node++) {
         cout << node << "->";
@@ -65,7 +69,6 @@ void process_gene(const sequence_list_t& reads,
         }
         cout << endl;
     }
-    generate_dot(node_to_read, gene, exonic, children, "gene_post.dot");
 }
 
 void update_dag(in_neighbors_t& parents,
@@ -108,7 +111,7 @@ read_gene_mappings_t align_read_to_dag(const sequence_t& read,
     local_aligner_func_t local_aligner = get_local_aligner(D, B, read, gene, exonic, parents);
     // Perfrom first round of local alignment for the whole read on the whole DAG
     local_alignment(D, B, read, gene, local_aligner);
-    // print_matrix(read, gene, D, B);
+    print_matrix(read, gene, D, B);
 
     // Now, we want to extract the best local alignments from D&B alignment matrices
     read_gene_mappings_t mappings;
@@ -131,7 +134,7 @@ read_gene_mappings_t align_read_to_dag(const sequence_t& read,
             cout << "Alignemnt too poor. Breaking..." << endl;
             break;
         }
-        // print_matrix(read, gene, D, B);
+        print_matrix(read, gene, D, B);
     }
     // for (size_t i = 0; i < mappings.size(); i++) {
     //     cout << i << ".";
@@ -225,14 +228,14 @@ read_gene_mappings_t get_optimal_cochain(const vector<align_score_t>& scores,
     cout << "T" << opt_chain_tail;
     cout << "D" << D[opt_chain_tail];
     cout << endl;
-    print_mapping_interval(scores[opt_chain_tail], mappings[opt_chain_tail], TEST_READ, TEST_GENE);
+    print_mapping_interval(scores[opt_chain_tail], mappings[opt_chain_tail], TEST_READ1, TEST_GENE);
     while (B[opt_chain_tail] != no_parent) {
         opt_chain_tail = B[opt_chain_tail];
         result.push_back(mappings[opt_chain_tail]);
         cout << "T" << opt_chain_tail;
         cout << "D" << D[opt_chain_tail];
         cout << endl;
-        print_mapping_interval(scores[opt_chain_tail], mappings[opt_chain_tail], TEST_READ, TEST_GENE);
+        print_mapping_interval(scores[opt_chain_tail], mappings[opt_chain_tail], TEST_READ1, TEST_GENE);
     }
     cout << endl;
 
@@ -416,6 +419,9 @@ void extract_local_alignment(align_path_t& opt_alignment,
             }
         }
     }
+    if (opt_score == 0) {
+        return;
+    }
     opt_alignment.push_back(opt_tail);
     // Then, backtrack from the opt score back to the first positive score in the path
     matrix_coordinate_t cur_pos = opt_tail;
@@ -444,8 +450,8 @@ void add_edge(in_neighbors_t& parents,
     if (target - 1 == source) {
         return;
     }
-    children[source].push_back(target);
-    parents[target].push_back(source);
+    children[source].insert(target);
+    parents[target].insert(source);
 }
 
 // Adds a node to the ends of the graph vectors
@@ -461,8 +467,8 @@ node_id_t append_node(in_neighbors_t &in_neighbors,
         abort();
     }
     node_id_t new_node = in_neighbors.size();
-    in_neighbors.push_back(node_list_t());
-    out_neighbors.push_back(node_list_t());
+    in_neighbors.push_back(node_set_t());
+    out_neighbors.push_back(node_set_t());
     node_to_read.push_back(read_list_t());
     return new_node;
 }
@@ -482,7 +488,7 @@ void generate_dot(const node_to_reads_t& node_to_read,
         output << "    " << node <<" [label=\"" << node << ":" << gene[node] << ":" << node_to_read[node].size() << "\" "<< outline <<"]" << endl;
     }
     output << endl;
-    for (node_id_t node = 0; node < children.size(); node++) {
+    for (node_id_t node = 0; node < children.size() - 1; node++) {
         output << "    " << node <<"->" << node + 1 << endl;
     }
     for (node_id_t node = 0; node < children.size(); node++) {
