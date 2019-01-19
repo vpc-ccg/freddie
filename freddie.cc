@@ -1,15 +1,39 @@
 #include "commandline_flags.h"
 #include "dag_align.h"
+#include "fmt/format.h"
 
-using std::cerr;
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <vector>
+
+using std::string;
+using std::vector;
+using std::cout;
 using std::endl;
+using std::ifstream;
+using std::getline;
 
 int main(int argc, char *argv[]) {
-    // parse_flags(argc, argv);
-    if (argc > 1) {
-        cerr << argv[0] << endl;
+    parse_flags(argc, argv);
+    print_flags();
+    ifstream reads_file (globals::filenames::reads_fasta);
+    string line;
+    vector<string> reads;
+    while (getline (reads_file, line)) {
+        getline (reads_file, line);
+        reads.push_back(line);
     }
-    // print_flags();
-    process_gene_test();
+    cout << fmt::format("The number of reads is {}", reads.size()) << endl;
+    ifstream gene_file (globals::filenames::gene_fasta);
+    string gene;
+    getline(gene_file, gene);
+    getline(gene_file, gene);
+    cout << fmt::format("The length of the gene is {}", gene.size()) << endl;
+
+    dag_aligner my_dag = dag_aligner();
+    my_dag.init_dag(gene);
+
+    // process_gene_test();
     return 0;
 }

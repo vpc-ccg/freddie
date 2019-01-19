@@ -1,124 +1,72 @@
 #ifndef FREDDIE_DAGALIGN_H
 #define FREDDIE_DAGALIGN_H
 
-#include "global.h"
 #include <vector>
 #include <set>
 #include <functional> //std::function
 #include <utility> //std::pair stuff
+#include <string>
+#include <iostream>
 
+namespace dag_types {
+    typedef uint32_t read_id_t;
+    typedef uint32_t node_id_t;
+    typedef std::set<node_id_t> node_set_t;
+    typedef std::vector<node_set_t> neighbors_t;
+    typedef std::vector<read_id_t> read_id_list_t;
+    // Alignment matrix
+    typedef int32_t align_score_t;
+    typedef uint32_t matrix_index_t;
+    typedef std::pair<matrix_index_t, matrix_index_t> matrix_coordinate_t;
+    typedef std::vector<align_score_t> align_row_t;
+    typedef std::vector<align_row_t> align_matrix_t;
+    typedef std::vector<matrix_coordinate_t> backtrack_row_t;
+    typedef std::vector<backtrack_row_t> backtrack_matrix_t;
+    typedef std::vector<matrix_coordinate_t> align_path_t;
+    // Optimal alignment extraction
+    typedef uint32_t seq_idx_t;
+    typedef std::pair<seq_idx_t, seq_idx_t> interval_t;
+    typedef std::pair<interval_t, std::vector<interval_t>> mapping_t;
+}
 
-typedef uint32_t read_id_t;
-typedef uint32_t node_id_t;
-typedef uint32_t read_pos_t;
-
-typedef int32_t align_score_t;
-typedef uint16_t backtrack_t;
-typedef std::pair<backtrack_t, backtrack_t> matrix_coordinate_t;
-
-typedef std::vector<matrix_coordinate_t> align_path_t;
-
-typedef std::function<void (backtrack_t, backtrack_t)> local_aligner_func_t;
-
-typedef std::set<node_id_t> node_set_t;
-typedef std::vector<node_set_t> out_neighbors_t;
-typedef std::vector<node_set_t> in_neighbors_t;
-typedef std::vector<read_id_t> read_list_t;
-typedef std::vector<read_list_t> node_to_reads_t;
-
-typedef std::string sequence_t;
-typedef std::vector<sequence_t> sequence_list_t;
-
-typedef std::vector<bool> exonic_indicator_t;
-
-typedef std::vector<align_score_t> align_row_t;
-typedef std::vector<align_row_t> align_matrix_t;
-typedef std::vector<matrix_coordinate_t> backtrack_row_t;
-typedef std::vector<backtrack_row_t> backtrack_matrix_t;
-
-typedef std::pair<read_pos_t, read_pos_t> read_interval_t;
-typedef std::pair<node_id_t, node_id_t> gene_interval_t;
-typedef std::vector<gene_interval_t> gene_intervals_t;
-typedef std::pair<read_interval_t, gene_intervals_t> read_gene_mapping_t;
-typedef std::vector<read_gene_mapping_t> read_gene_mappings_t;
-
-void process_gene_test();
-
-void process_gene(const sequence_list_t& reads,
-                  const sequence_t& gene,
-                  const exonic_indicator_t& exonic);
-
-void add_edge(in_neighbors_t& parents,
-              out_neighbors_t& children,
-              const node_id_t&  source,
-              const node_id_t&  target);
-
-node_id_t append_node(in_neighbors_t &in_neighbors,
-                      out_neighbors_t &out_neighbors,
-                      node_to_reads_t &node_to_read);
-
-read_gene_mappings_t align_read_to_dag(const sequence_t& read,
-                                       const sequence_t& gene,
-                                       const exonic_indicator_t& exonic,
-                                       const in_neighbors_t& parents,
-                                       const out_neighbors_t& children);
-
-void update_dag(in_neighbors_t& parents,
-                out_neighbors_t& children,
-                node_to_reads_t& node_to_read,
-                const size_t& read_id,
-                const read_gene_mappings_t& opt_chain);
-
-read_gene_mapping_t get_mapping_intervals(const align_path_t& path);
-
-read_gene_mappings_t get_optimal_cochain(const std::vector<align_score_t>& scores,
-                                         const read_gene_mappings_t& mappings);
-
-void print_cochain(const read_gene_mappings_t& chain);
-
-void print_mapping_interval(const align_score_t& score,
-                            const read_gene_mapping_t& read_gene_mapping,
-                            const sequence_t& read,
-                            const sequence_t& gene);
-
-void local_alignment(align_matrix_t& D,
-                     backtrack_matrix_t& B,
-                     const sequence_t& read,
-                     const sequence_t& gene,
-                     const local_aligner_func_t& local_aligner);
-
-void recalc_alignment_matrix(align_matrix_t& D,
-                             backtrack_matrix_t& B,
-                             const align_path_t& opt_alignment,
-                             const in_neighbors_t& children,
-                             const local_aligner_func_t& local_aligner);
-
-void extract_local_alignment(align_path_t& opt_alignment,
-                             align_score_t& opt_score,
-                             const align_matrix_t& D,
-                             const backtrack_matrix_t& B);
-
-local_aligner_func_t get_local_aligner(align_matrix_t& D,
-                                       backtrack_matrix_t& B,
-                                       const sequence_t& read,
-                                       const sequence_t& gene,
-                                       const exonic_indicator_t& exonic,
-                                       const out_neighbors_t& parents);
-
-void print_matrix(const sequence_t& read,
-                  const sequence_t& gene,
-                  const align_matrix_t& D,
-                  const backtrack_matrix_t& B);
-
-// void print_read_exonic_alignment(const read_exonic_alignment_t& opt_alignment,
-//                                  const align_score_t& opt_score,
-//                                  const sequence_t& read,
-//                                  const sequence_t& gene);
-
-void generate_dot(const node_to_reads_t& node_to_read,
-                  const sequence_t& gene,
-                  const exonic_indicator_t& exonic,
-                  const out_neighbors_t& children,
-                  const std::string output_path);
-
+class dag_aligner {
+private:
+    //// Private members
+    // DAG
+    std::string gene;
+    std::vector<bool> exonic_indicator;
+    std::string read;
+    dag_types::read_id_t read_id;
+    dag_types::neighbors_t parents;
+    dag_types::neighbors_t children;
+    std::vector<dag_types::read_id_list_t> node_to_read;
+    // Alignment matrix
+    dag_types::align_matrix_t D;
+    dag_types::backtrack_matrix_t B;
+    std::vector<dag_types::align_score_t> align_scores;
+    std::vector<dag_types::align_path_t> align_paths;
+    std::vector<dag_types::mapping_t> local_mappings;
+    // Co-linear chaining
+    std::vector<bool> opt_chain_indicator;
+    std::vector<size_t> opt_chain;
+    //// Helper functions
+    void clear_read_structures();
+    void add_edge(const dag_types::node_id_t& source, const dag_types::node_id_t& target);
+    dag_types::node_id_t append_node();
+    void local_aligner(const dag_types::matrix_index_t& i, const dag_types::matrix_index_t& j);
+    void extract_local_alignment();
+    void recalc_alignment_matrix();
+    void compress_align_paths();
+    void cochain_mappings();
+    void update_dag();
+public:
+    void init_dag(const std::string& gene);
+    void init_dag(const std::string& gene, const std::vector<bool>& exonic_indicator);
+    void align_read(const std::string& read);
+    // void print_mapping_interval(size_t interval_id);
+    // void print_cochain(const read_gene_mappings_t& chain);
+    // void generate_dot(const std::string output_path);
+    // void print_matrix();
+    // void process_gene_test();
+};
 #endif //FREDDIE_DAGALIGN_H
