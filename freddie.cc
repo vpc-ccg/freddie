@@ -13,6 +13,7 @@ using std::cout;
 using std::endl;
 using std::ifstream;
 using std::getline;
+using fmt::format;
 
 int main(int argc, char *argv[]) {
     parse_flags(argc, argv);
@@ -33,6 +34,10 @@ int main(int argc, char *argv[]) {
 
     dag_aligner my_dag = dag_aligner();
     my_dag.init_dag(gene);
+    for (size_t i = 0; i < reads.size(); i++) {
+        my_dag.align_read(reads[i]);
+        my_dag.generate_dot(format("dag_{}.dot", i));
+    }
 
     return 0;
 }
