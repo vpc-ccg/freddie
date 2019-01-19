@@ -34,6 +34,5 @@ int main(int argc, char *argv[]) {
     dag_aligner my_dag = dag_aligner();
     my_dag.init_dag(gene);
 
-    // process_gene_test();
     return 0;
 }

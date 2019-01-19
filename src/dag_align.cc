@@ -319,12 +319,13 @@ void dag_aligner::init_dag(const string& gene) {
     init_dag(gene, vector<bool>(gene.size(), false));
 }
 
-void dag_aligner::init_dag(const string& gene_in, const std::vector<bool>& exonic) {
+void dag_aligner::init_dag(const string& gene_in, const std::vector<bool>& exonic_indicator_in) {
     read_id = 0;
     children.clear();
     parents.clear();
     node_to_read.clear();
     gene = gene_in;
+    exonic_indicator = exonic_indicator_in;
     for (size_t i = 0; i < gene.size(); i++) {
         append_node();
     }
@@ -357,35 +358,31 @@ void dag_aligner::align_read(const string& read_in) {
     update_dag();
 }
 
-// // A function to generate a .DOT file of the DAG
-// void generate_dot(const node_to_reads_t& node_to_read,
-//                   const sequence_t& gene,
-//                   const exonic_indicator_t& exonic,
-//                   const parents_t& children,
-//                   const string output_path) {
-//     stringstream output;
-//     output << "digraph graphname{" << endl;
-//     output << "    rankdir=LR;" << endl;
-//     for (node_id_t node = 0; node < children.size(); node++) {
-//         string outline = "peripheries=";
-//         outline +=  exonic[node] ? "2" : "1";
-//         output << "    " << node <<" [label=\"" << node << ":" << gene[node] << ":" << node_to_read[node].size() << "\" "<< outline <<"]" << endl;
-//     }
-//     output << endl;
-//     for (node_id_t node = 0; node < children.size() - 1; node++) {
-//         output << "    " << node <<"->" << node + 1 << endl;
-//     }
-//     for (node_id_t node = 0; node < children.size(); node++) {
-//         for (node_id_t child : children[node]) {
-//             output << "    " << node <<"->" << child << endl;
-//         }
-//     }
-//     output << "}" << endl;
-//     ofstream ofile;
-//     ofile.open(output_path);
-//     ofile << output.str();
-//     ofile.close();
-// }
+// A function to generate a .DOT file of the DAG
+void dag_aligner::generate_dot(const string& output_path) {
+    stringstream output;
+    output << "digraph graphname{" << endl;
+    output << "    rankdir=LR;" << endl;
+    for (node_id_t node = 0; node < children.size(); node++) {
+        string outline = "peripheries=";
+        outline +=  exonic_indicator[node] ? "2" : "1";
+        output << "    " << node <<" [label=\"" << node << ":" << gene[node] << ":" << node_to_read[node].size() << "\" "<< outline <<"]" << endl;
+    }
+    output << endl;
+    for (node_id_t node = 0; node < children.size() - 1; node++) {
+        output << "    " << node <<"->" << node + 1 << endl;
+    }
+    for (node_id_t node = 0; node < children.size(); node++) {
+        for (node_id_t child : children[node]) {
+            output << "    " << node <<"->" << child << endl;
+        }
+    }
+    output << "}" << endl;
+    ofstream ofile;
+    ofile.open(output_path);
+    ofile << output.str();
+    ofile.close();
+}
 //
 // void print_cochain(const read_gene_mappings_t& chain) {
 //     for (read_gene_mapping_t mapping : chain) {

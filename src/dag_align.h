@@ -63,6 +63,7 @@ public:
     void init_dag(const std::string& gene);
     void init_dag(const std::string& gene, const std::vector<bool>& exonic_indicator);
     void align_read(const std::string& read);
+    void generate_dot(const std::string& output_path);
     // void print_mapping_interval(size_t interval_id);
     // void print_cochain(const read_gene_mappings_t& chain);
     // void generate_dot(const std::string output_path);
