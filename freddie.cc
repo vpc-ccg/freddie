@@ -12,6 +12,7 @@ using std::vector;
 using std::cout;
 using std::endl;
 using std::ifstream;
+using std::ofstream;
 using std::getline;
 using fmt::format;
 
@@ -33,11 +34,14 @@ int main(int argc, char *argv[]) {
     cout << fmt::format("The length of the gene is {}", gene.size()) << endl;
 
     dag_aligner my_dag = dag_aligner();
+    ofstream paf_file(format("{}dag.paf", globals::filenames::output_prefix));
     my_dag.init_dag(gene);
     for (size_t i = 0; i < reads.size(); i++) {
         my_dag.align_read(reads[i]);
-        my_dag.generate_dot(format("dag_{}.dot", i));
+        my_dag.print_last_read_to_paf(paf_file);
+        my_dag.generate_dot(format("{}dag_{}.dot", globals::filenames::output_prefix, i));
     }
+    paf_file.close();
 
     return 0;
 }

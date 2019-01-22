@@ -17,7 +17,6 @@ $(DEBUGGABLE): $(EXECUTABLE).cc $(OBJECTS) Makefile
 
 %.o: %.cc Makefile
 	$(CXX) $(CXXFLAGS) -O3 -c $< -o $@
-	echo $@
 
 clean:
 	rm -f $(EXECUTABLE) $(DEBUGGABLE) $(OBJECTS) $(SOURCES:.cc=.h.gch)

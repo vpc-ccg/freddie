@@ -1,7 +1,6 @@
 #include "dag_align.h"
 #include "fmt/format.h"
 
-#include <fstream>  // std::ofstream
 #include <sstream>  // std::stringstream
 #include <queue>
 #include <algorithm> // std::reverse
@@ -287,9 +286,11 @@ void dag_aligner::cochain_mappings() {
     }
     // Backtrack from the best tail
     opt_chain.push_back(opt_chain_tail);
+    opt_chain_indicator[opt_chain_tail] = true;
     while (B[opt_chain_tail] != no_parent) {
         opt_chain_tail = B[opt_chain_tail];
         opt_chain.push_back(opt_chain_tail);
+        opt_chain_indicator[opt_chain_tail] = true;
     }
     reverse(opt_chain.begin(), opt_chain.end());
 }
@@ -309,8 +310,6 @@ void dag_aligner::update_dag() {
     for (size_t i = 1; i < exons.size(); i++) {
         node_id_t source =  exons[i-1].second-1;
         node_id_t target =  exons[i-0].first-1;
-        cout << source << "->";
-        cout << target << endl;
         add_edge(source, target);
     }
 }
@@ -383,6 +382,40 @@ void dag_aligner::generate_dot(const string& output_path) {
     ofile << output.str();
     ofile.close();
 }
+
+void dag_aligner::print_last_read_to_paf(ofstream& out_file) {
+    stringstream ss;
+    for (size_t i = 0; i < align_paths.size(); i++) {
+        ss << format("{}\t", read_id); //  Query sequence name
+        ss << format("{}\t", read.size()); //  Query sequence length
+        ss << format("{}\t", local_mappings[i].first.first); //  Query start (0-based)
+        ss << format("{}\t", local_mappings[i].first.second); //  Query end (0-based)
+        ss << format("{}\t", "+"); //  Relative strand: "+" or "-"
+        ss << format("{}\t", "gene"); //  Target sequence name
+        ss << format("{}\t", gene.size()); //  Target sequence length
+        stringstream gene_starts;
+        stringstream gene_ends;
+        for (const interval_t& exon : local_mappings[i].second) {
+            if (exon == local_mappings[i].second[0]) {
+                gene_starts << format("{}", exon.first);
+                gene_ends << format("{}", exon.second);
+            } else {
+                gene_starts << format(",{}", exon.first);
+                gene_ends << format(",{}", exon.second);
+            }
+        }
+        ss << format("{}\t", gene_starts.str());  //  Target start on original strand (0-based)
+        ss << format("{}\t", gene_ends.str());  //  Target end on original strand (0-based)
+        ss << format("{}\t", align_scores[i]); //  Local alignment score
+        // ss << format("{}\t", 0); //  Number of residue matches
+        // ss << format("{}\t", 0); //  Alignment block length
+        // ss << format("{}\t", 0); //  Mapping quality (0-255; 255 for missing)
+        ss << format("tg:c:{:d}\n", opt_chain_indicator[i]);
+    }
+    out_file << ss.str();
+    out_file.flush();
+}
+
 //
 // void print_cochain(const read_gene_mappings_t& chain) {
 //     for (read_gene_mapping_t mapping : chain) {
