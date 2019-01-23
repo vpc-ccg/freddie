@@ -14,13 +14,13 @@ $(EXECUTABLE): $(EXECUTABLE).cc $(OBJECTS) Makefile
 	$(CXX) $(OBJECTS) -O3 $< $(CXXFLAGS) -o $@
 
 $(DEBUGGABLE): $(EXECUTABLE).cc $(DBG_OBJECTS) Makefile
-	$(CXX) $(CXXFLAGS) $(DBG_OBJECTS) -g -O1 $<  -o $@
+	$(CXX) $(CXXFLAGS) $(DBG_OBJECTS) -g -O0 $< -o $@
 
 %.o: %.cc Makefile
 	$(CXX) $(CXXFLAGS) -O3 -c $< -o $@
 
 %.dbg: %.cc Makefile
-	$(CXX) $(CXXFLAGS) -g -O1 -c $< -o $@
+	$(CXX) $(CXXFLAGS) -g -O0 -c $< -o $@
 
 clean:
 	rm -f $(EXECUTABLE) $(DEBUGGABLE) $(OBJECTS) $(SOURCES:.cc=.h.gch) $(DBG_OBJECTS)
