@@ -5,6 +5,7 @@
 *.slo
 *.lo
 *.o
+*.dbg
 *.obj
 
 # Precompiled Headers
@@ -28,7 +29,7 @@
 
 # Executables
 freddie
-freddie_gdb
+freddie_dbg
 *.exe
 *.out
 *.app
@@ -36,3 +37,4 @@ freddie_gdb
 *.dot
 *.pdf
 *.paf
+*.mat
