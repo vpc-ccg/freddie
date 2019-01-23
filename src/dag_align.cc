@@ -1,4 +1,5 @@
 #include "dag_align.h"
+#include "commandline_flags.h"
 #include "fmt/format.h"
 
 #include <sstream>  // std::stringstream
@@ -41,7 +42,7 @@ void dag_aligner::clear_read_structures(){
     opt_chain.clear();
 }
 
-node_id_t dag_aligner::append_node() {
+index_t dag_aligner::append_node() {
     if (parents.size() != children.size()) {
         cout << "ERR:Graph corrupted. parents.size()!=children.size()" << endl;
         abort();
@@ -50,14 +51,14 @@ node_id_t dag_aligner::append_node() {
         cout << "ERR:Graph corrupted. node_to_read.size()!=children.size()" << endl;
         abort();
     }
-    node_id_t new_node = children.size();
+    index_t new_node = children.size();
     children.push_back(node_set_t());
     parents.push_back(node_set_t());
     node_to_read.push_back(read_id_list_t());
     return new_node;
 }
 
-void dag_aligner::add_edge(const node_id_t& source, const node_id_t& target) {
+void dag_aligner::add_edge(const index_t& source, const index_t& target) {
     if (source >= target) {
         cout << format("Source can't be >= target: {} -> {}", source, target) << endl;
         abort();
@@ -73,41 +74,38 @@ void dag_aligner::add_edge(const node_id_t& source, const node_id_t& target) {
     parents[target].insert(source);
 }
 
-void dag_aligner::local_aligner(const matrix_index_t& i, const matrix_index_t& j) {
-    // Lambda function to update the opt value when adding a gap
-    auto set_to_max_match = [&, this](align_score_t& opt_s, matrix_coordinate_t& opt_b, const matrix_index_t& row, const matrix_index_t& col) {
-        align_score_t cur_s = this->D[row][col];
-        if (this->read[row] == this->gene[col]) {
-            cur_s += MATCH_S + MATCH_S*this->exonic_indicator[col];
-        } else {
-            cur_s += MISMATCH_S;
-        }
+void dag_aligner::local_aligner(const index_t& i, const index_t& j) {
+    // Lambda function to update the opt value
+    auto set_to_max = [&, this, i, j](align_score_t& opt_s, matrix_coordinate_t& opt_b, matrix_coordinate_t& source, align_score_t cur_s) {
+        cur_s += this->D[source.first][source.second];
         if (cur_s > opt_s) {
             opt_s = cur_s;
-            opt_b = {row, col};
-        }
-    };
-    // Lambda function to update the opt value when adding a gap
-    auto set_to_max_gap =  [&, this] (align_score_t& opt_s, matrix_coordinate_t& opt_b, const matrix_index_t& row, const matrix_index_t& col) {
-        align_score_t cur_s = this->D[row][col] + GAP_S;
-        if (cur_s > opt_s) {
-            opt_s = cur_s;
-            opt_b = {row, col};
+            opt_b = {source.first, source.second};
         }
     };
     align_score_t opt_s = 0;
     matrix_coordinate_t opt_b = INVALID_COORDINATE;
-    // Three direct parents parents
-    set_to_max_gap(opt_s, opt_b, i-1, j-0); // Delete
-    set_to_max_gap(opt_s, opt_b, i-0, j-1); // Insert
-    set_to_max_match(opt_s, opt_b, i-1, j-1); // Match
+    align_score_t matching_score = 0;
+    if (this->read[i] == this->gene[j]) {
+        matching_score += MATCH_S + MATCH_S*this->exonic_indicator[j];
+    } else {
+        matching_score += MISMATCH_S;
+    }
+    matrix_coordinate_t source;
+    source = {i-1, j-0};
+    set_to_max(opt_s, opt_b, source, GAP_S); // Consume read
+    // Direct parent column
+    source = {i-0, j-1};
+    set_to_max(opt_s, opt_b, source, GAP_S); // Consume gene
+    source = {i-1, j-1};
+    set_to_max(opt_s, opt_b, source, matching_score); // Consume both
     // Other DAG parents
-    for (node_id_t parent : parents[j-1]) {
-        size_t parent_j = parent + 1;
-        // Three indirect parents
-        set_to_max_gap(opt_s, opt_b, i-1, parent_j-0); // Delete
-        set_to_max_gap(opt_s, opt_b, i-0, parent_j-1); // Insert
-        set_to_max_match(opt_s, opt_b, i-1, parent_j-1); // Match
+    for (index_t parent : parents[j]) {
+        // Parent column from DAG
+        source = {i-0, parent};
+        set_to_max(opt_s, opt_b, source, GAP_S); // Consume gene
+        source = {i-1, parent};
+        set_to_max(opt_s, opt_b, source, matching_score); // Consume both
     }
     D[i][j] = opt_s;
     B[i][j] = opt_b;
@@ -116,20 +114,22 @@ void dag_aligner::local_aligner(const matrix_index_t& i, const matrix_index_t& j
 void dag_aligner::extract_local_alignment() {
     align_path_t opt_alignment;
     // First, find optimal score in D
-    matrix_coordinate_t opt_tail = {0,0};
-    align_score_t opt_score = D[0][0];
-    for (size_t i = 0; i < D.size(); i++) { //TODO: start from 1 not zero and remove the if statement after the for loops
-        for (size_t j = 0; j < D[0].size(); j++) {
+    matrix_coordinate_t opt_tail = {1,1};
+    align_score_t opt_score = D[1][1];
+    for (index_t i = 1; i < read.size(); i++) {
+        for (index_t j = 1; j < gene.size(); j++) {
             if (D[i][j] > opt_score) {
                 opt_score = D[i][j];
                 opt_tail = {i,j};
             }
         }
     }
+    opt_alignment.push_back(opt_tail);
     if (opt_score == 0) {
+        align_scores.push_back(opt_score);
+        align_paths.emplace_back(opt_alignment);
         return;
     }
-    opt_alignment.push_back(opt_tail);
     // Then, backtrack from the opt score back to the first positive score in the path
     matrix_coordinate_t cur_pos = opt_tail;
     matrix_coordinate_t nxt_pos = B[cur_pos.first][cur_pos.second];
@@ -158,11 +158,11 @@ void dag_aligner::recalc_alignment_matrix() {
         // queue_children(pos);
         {
             // A sub-lambda function. Queues a possible child if it is an actual child
-            auto is_child = [&, this, pos] (const matrix_coordinate_t& descendant) {
-                if (descendant.first >= this->D.size()) {
+            auto branches_from_pos = [&, this, pos] (const matrix_coordinate_t& descendant) {
+                if (descendant.first >= this->read.size()) {
                     return false;
                 }
-                if (descendant.second >= this->D[descendant.first].size()) {
+                if (descendant.second >= this->gene.size()) {
                     return false;
                 }
                 if (B[descendant.first][descendant.second] != pos) {
@@ -174,20 +174,18 @@ void dag_aligner::recalc_alignment_matrix() {
             //   Note that the the third child must always be the corner since it possibly depend on the other two children
             matrix_coordinate_t descendant;
             descendant = {pos.first + 0, pos.second + 1};
-            if (is_child(descendant)) {clearing_queue.push(descendant);}
+            if (branches_from_pos(descendant)) {clearing_queue.push(descendant);}
             descendant = {pos.first + 1, pos.second + 0};
-            if (is_child(descendant)) {clearing_queue.push(descendant);}
+            if (branches_from_pos(descendant)) {clearing_queue.push(descendant);}
             descendant = {pos.first + 1, pos.second + 1};
-            if (is_child(descendant)) {clearing_queue.push(descendant);}
+            if (branches_from_pos(descendant)) {clearing_queue.push(descendant);}
             // Then, check possible children that come through DAG edges
-            for (const node_id_t& child : this->children[pos.second - 1]) {
+            for (const index_t& child : this->children[pos.second]) {
                 // Note that the the third child must always be the corner since it possibly depend on the other two children
-                descendant = {pos.first + 0, child + 1};
-                if (is_child(descendant)) {clearing_queue.push(descendant);}
-                descendant = {pos.first + 1, child + 0};
-                if (is_child(descendant)) {clearing_queue.push(descendant);}
-                descendant = {pos.first + 1, child + 1};
-                if (is_child(descendant)) {clearing_queue.push(descendant);}
+                descendant = {pos.first + 0, child};
+                if (branches_from_pos(descendant)) {clearing_queue.push(descendant);}
+                descendant = {pos.first + 1, child};
+                if (branches_from_pos(descendant)) {clearing_queue.push(descendant);}
             }
         }
         if (B[pos.first][pos.second] != INVALID_COORDINATE) {
@@ -303,13 +301,13 @@ void dag_aligner::update_dag() {
         }
     }
     for (const interval_t& exon : exons) {
-        for (node_id_t node = exon.first -1; node < exon.second; node++) {
+        for (index_t node = exon.first; node <= exon.second; node++) {
             node_to_read[node].push_back(read_id);
         }
     }
     for (size_t i = 1; i < exons.size(); i++) {
-        node_id_t source =  exons[i-1].second-1;
-        node_id_t target =  exons[i-0].first-1;
+        index_t source = exons[i-1].second;
+        index_t target = exons[i-0].first;
         add_edge(source, target);
     }
 }
@@ -325,7 +323,7 @@ void dag_aligner::init_dag(const string& gene_in, const std::vector<bool>& exoni
     node_to_read.clear();
     gene = gene_in;
     exonic_indicator = exonic_indicator_in;
-    for (size_t i = 0; i < gene.size(); i++) {
+    for (index_t i = 0; i < gene.size(); i++) {
         append_node();
     }
 }
@@ -334,12 +332,12 @@ void dag_aligner::align_read(const string& read_in) {
     clear_read_structures();
     read = read_in;
     read_id++;
-    size_t read_l = read.size();
-    size_t gene_l = gene.size();
-    D = align_matrix_t(read_l + 1, align_row_t(gene_l + 1, 0));
-    B = backtrack_matrix_t(read_l + 1, backtrack_row_t(gene_l + 1, INVALID_COORDINATE));
-    for (size_t i = 1; i <= read_l; i++) {
-        for (size_t j = 1; j <= gene_l; j++) {
+    index_t read_l = read.size();
+    index_t gene_l = gene.size();
+    D = align_matrix_t(read_l, align_row_t(gene_l, 0));
+    B = backtrack_matrix_t(read_l, backtrack_row_t(gene_l, INVALID_COORDINATE));
+    for (index_t i = 1; i < read_l; i++) {
+        for (index_t j = 1; j < gene_l; j++) {
             local_aligner(i, j);
         }
     }
@@ -350,6 +348,7 @@ void dag_aligner::align_read(const string& read_in) {
             align_scores.pop_back();
             break;
         }
+        print_matrix(format("{}{}_{}.mat", globals::filenames::output_prefix, read_id, i));
         recalc_alignment_matrix();
     }
     compress_align_paths();
@@ -362,17 +361,17 @@ void dag_aligner::generate_dot(const string& output_path) {
     stringstream output;
     output << "digraph graphname{" << endl;
     output << "    rankdir=LR;" << endl;
-    for (node_id_t node = 0; node < children.size(); node++) {
+    for (index_t node = 0; node < children.size(); node++) {
         string outline = "peripheries=";
         outline +=  exonic_indicator[node] ? "2" : "1";
         output << "    " << node <<" [label=\"" << node << ":" << gene[node] << ":" << node_to_read[node].size() << "\" "<< outline <<"]" << endl;
     }
     output << endl;
-    for (node_id_t node = 0; node < children.size() - 1; node++) {
+    for (index_t node = 0; node < children.size() - 1; node++) {
         output << "    " << node <<"->" << node + 1 << endl;
     }
-    for (node_id_t node = 0; node < children.size(); node++) {
-        for (node_id_t child : children[node]) {
+    for (index_t node = 0; node < children.size(); node++) {
+        for (index_t child : children[node]) {
             output << "    " << node <<"->" << child << endl;
         }
     }
@@ -416,6 +415,42 @@ void dag_aligner::print_last_read_to_paf(ofstream& out_file) {
     out_file.flush();
 }
 
+// Printing here is formatted to (kinda) work with "column -t" Linux program
+void dag_aligner::print_matrix(const string& output_path){
+    stringstream ss;
+    ss << "\\\t";
+    ss << format("0(^)");
+    for (index_t j = 1; j < D[0].size(); j++) {
+        ss << format("\t{}({})", j, gene[j-1]);
+    }
+    ss << "\n";
+    ss << "0(^)";
+    for (index_t j = 0; j < D[0].size(); j++) {
+        if (B[0][j] == INVALID_COORDINATE) {
+            ss << format("\t{}({},{})", D[0][j], "x", "x");
+        } else {
+            ss << format("\t{}({},{})", D[0][j], B[0][j].first, B[0][j].second);
+        }
+    }
+    ss << "\n";
+    for (index_t i = 1; i < D.size(); i++) {
+        ss << format("{}({})", i, read[i-1]);
+        for (index_t j = 0; j < D[i].size(); j++) {
+            if (B[i][j] == INVALID_COORDINATE) {
+                ss << format("\t{}({},{})", D[i][j], "x", "x");
+            }
+            else {
+                ss << format("\t{}({},{})", D[i][j], B[i][j].first, B[i][j].second);
+            }
+        }
+        ss << "\n";
+    }
+    ofstream ofile;
+    ofile.open(output_path);
+    ofile << ss.str();
+    ofile.close();
+}
+
 //
 // void print_cochain(const read_gene_mappings_t& chain) {
 //     for (read_gene_mapping_t mapping : chain) {
@@ -445,20 +480,3 @@ void dag_aligner::print_last_read_to_paf(ofstream& out_file) {
 //     cout << endl;
 // }
 //
-// // Printing here is formatted to (kinda) work with "column -t" Linux program
-// void print_matrix(){
-//     cout << "\\\t";
-//     sequence_t gene_temp = "$" + gene;
-//     for (size_t j = 0; j < gene_temp.size(); j++) {
-//         cout << j << "(" << gene_temp[j] << ")\t";
-//     }
-//     cout << endl;
-//     sequence_t read_temp = "$" + read;
-//     for (size_t i = 0; i < D.size(); i++) {
-//         cout << i << "(" << read_temp[i] << ")\t";
-//         for (size_t j = 0; j < D[i].size(); j++) {
-//             cout << D[i][j] << "(" << B[i][j].first << "," << B[i][j].second << ")\t";
-//         }
-//         cout << endl;
-//     }
-// }

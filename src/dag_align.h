@@ -11,14 +11,13 @@
 
 namespace dag_types {
     typedef uint32_t read_id_t;
-    typedef uint32_t node_id_t;
-    typedef std::set<node_id_t> node_set_t;
+    typedef uint32_t index_t;
+    typedef std::set<index_t> node_set_t;
     typedef std::vector<node_set_t> neighbors_t;
     typedef std::vector<read_id_t> read_id_list_t;
     // Alignment matrix
     typedef int32_t align_score_t;
-    typedef uint32_t matrix_index_t;
-    typedef std::pair<matrix_index_t, matrix_index_t> matrix_coordinate_t;
+    typedef std::pair<index_t, index_t> matrix_coordinate_t;
     typedef std::vector<align_score_t> align_row_t;
     typedef std::vector<align_row_t> align_matrix_t;
     typedef std::vector<matrix_coordinate_t> backtrack_row_t;
@@ -52,9 +51,9 @@ private:
     std::vector<size_t> opt_chain;
     //// Helper functions
     void clear_read_structures();
-    void add_edge(const dag_types::node_id_t& source, const dag_types::node_id_t& target);
-    dag_types::node_id_t append_node();
-    void local_aligner(const dag_types::matrix_index_t& i, const dag_types::matrix_index_t& j);
+    void add_edge(const dag_types::index_t& source, const dag_types::index_t& target);
+    dag_types::index_t append_node();
+    void local_aligner(const dag_types::index_t& i, const dag_types::index_t& j);
     void extract_local_alignment();
     void recalc_alignment_matrix();
     void compress_align_paths();
@@ -66,10 +65,10 @@ public:
     void align_read(const std::string& read);
     void generate_dot(const std::string& output_path);
     void print_last_read_to_paf(std::ofstream& out_file);
+    void print_matrix(const std::string& output_path);
     // void print_mapping_interval(size_t interval_id);
     // void print_cochain(const read_gene_mappings_t& chain);
     // void generate_dot(const std::string output_path);
-    // void print_matrix();
     // void process_gene_test();
 };
 #endif //FREDDIE_DAGALIGN_H

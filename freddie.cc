@@ -24,7 +24,7 @@ int main(int argc, char *argv[]) {
     vector<string> reads;
     while (getline (reads_file, line)) {
         getline (reads_file, line);
-        reads.push_back(line);
+        reads.push_back("^" + line);
     }
     cout << fmt::format("The number of reads is {}", reads.size()) << endl;
     ifstream gene_file (globals::filenames::gene_fasta);
@@ -35,7 +35,7 @@ int main(int argc, char *argv[]) {
 
     dag_aligner my_dag = dag_aligner();
     ofstream paf_file(format("{}dag.paf", globals::filenames::output_prefix));
-    my_dag.init_dag(gene);
+    my_dag.init_dag("^" + gene);
     for (size_t i = 0; i < reads.size(); i++) {
         my_dag.align_read(reads[i]);
         my_dag.print_last_read_to_paf(paf_file);
