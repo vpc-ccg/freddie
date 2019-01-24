@@ -9,6 +9,7 @@ namespace globals {
         static std::string reads_fasta;
         static std::string gene_fasta;
         static std::string output_prefix;
+        static std::string data;
     };
 }
 

@@ -66,6 +66,8 @@ public:
     void generate_dot(const std::string& output_path);
     void print_last_read_to_paf(std::ofstream& out_file);
     void print_matrix(const std::string& output_path);
+    void save_state(const std::string& output_path);
+    void load_state(const std::string& output_path);
     // void print_mapping_interval(size_t interval_id);
     // void print_cochain(const read_gene_mappings_t& chain);
     // void generate_dot(const std::string output_path);

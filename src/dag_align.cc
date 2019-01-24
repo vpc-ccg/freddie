@@ -2,11 +2,13 @@
 #include "commandline_flags.h"
 #include "fmt/format.h"
 
-#include <sstream>  // std::stringstream
+#include <sstream>  // std::stringstream, istringstream
 #include <queue>
 #include <algorithm> // std::reverse
 #include <functional> // std::function
 #include <cstdlib> // abort()
+#include <utility> // move()
+#include <iterator> // next()
 
 #define TEST_GENE "AANNAANNCCNNGG"
 #define TEST_READ2 "AAAGG"
@@ -26,11 +28,16 @@ using std::cout;
 using std::endl;
 using std::string;
 using std::stringstream;
+using std::istringstream;
+using std::istream_iterator;
+using std::ifstream;
 using std::ofstream;
 using std::queue;
 using std::vector;
 using std::function;
 using std::reverse;
+using std::move;
+using std::next;
 
 void dag_aligner::clear_read_structures(){
     D.clear();
@@ -348,7 +355,6 @@ void dag_aligner::align_read(const string& read_in) {
             align_scores.pop_back();
             break;
         }
-        print_matrix(format("{}{}_{}.mat", globals::filenames::output_prefix, read_id, i));
         recalc_alignment_matrix();
     }
     compress_align_paths();
@@ -449,6 +455,111 @@ void dag_aligner::print_matrix(const string& output_path){
     ofile.open(output_path);
     ofile << ss.str();
     ofile.close();
+}
+
+void dag_aligner::save_state(const std::string& output_path) {
+    ofstream ofile;
+    ofile.open(output_path);
+    ofile << gene << "\n";
+    for (const bool& i : exonic_indicator) {
+        ofile << format("{:d}", i);
+    }
+    ofile << "\n";
+    ofile << read_id << "\n";
+    for (index_t i = 0; i < gene.length(); i++) {
+        ofile << format("{:d}", parents[i].size());
+        for (const index_t& p : parents[i]) {
+            ofile << format(" {:d}", p);
+        }
+        ofile << "\n";
+    }
+    for (index_t i = 0; i < gene.length(); i++) {
+        ofile << format("{:d}", children[i].size());
+        for (const index_t& c : children[i]) {
+            ofile << format(" {:d}", c);
+        }
+        ofile << "\n";
+    }
+    for (index_t i = 0; i < gene.length(); i++) {
+        ofile << format("{:d}", node_to_read[i].size());
+        for (const index_t& r : node_to_read[i]) {
+            ofile << format(" {:d}", r);
+        }
+        ofile << "\n";
+    }
+    ofile.close();
+}
+
+void dag_aligner::load_state(const std::string& output_path) {
+    size_t line_num = 0;
+    ifstream ifs;
+    string buffer = "";
+    ifs.open(output_path);
+    getline(ifs, gene);
+    line_num++;
+    getline(ifs, buffer);
+    line_num++;
+    if (buffer.size() != gene.size()) {
+        cout << format("ERR: exonic_indicator line size != gene.size. Line: {}\n", line_num);
+        abort();
+    }
+    exonic_indicator.resize(gene.size());
+    for (size_t i = 0; i < buffer.size(); i++) {
+        if (buffer[i] == '0') {
+            exonic_indicator[i] = false;
+        }
+        else if (buffer[i] == '1') {
+            exonic_indicator[i] = true;
+        }
+        else {
+            cout << format("ERR: exonic_indicator contains neither a 0 or 1. Line: {}\n", line_num);
+            abort();
+        }
+    }
+    init_dag(gene, exonic_indicator);
+    getline(ifs, buffer);
+    line_num++;
+    read_id = stoi(buffer);
+    for (index_t i = 0; i < gene.length(); i++) {
+        getline(ifs, buffer);
+        line_num++;
+        istringstream iss(buffer);
+        istream_iterator<index_t> isi(iss);
+        index_t parents_size = *isi;
+        isi++;
+        parents[i] = move(node_set_t(isi, istream_iterator<index_t>()));
+        if (parents[i].size() != parents_size) {
+            cout << format("ERR: specified number of parents ({}) does not match number of found parents ({}). Line: {}\n", parents_size, parents[i].size(), line_num);
+            abort();
+        }
+    }
+    for (index_t i = 0; i < gene.length(); i++) {
+        getline(ifs, buffer);
+        line_num++;
+        istringstream iss(buffer);
+        istream_iterator<index_t> isi(iss);
+        index_t children_size = *isi;
+        isi++;
+        children[i] = move(node_set_t(isi, istream_iterator<index_t>()));
+        if (children[i].size() != children_size) {
+            cout << format("ERR: specified number of children ({}) does not match number of found children ({}). Line: {}\n", children_size, children[i].size(), line_num);
+            abort();
+        }
+    }
+    for (index_t i = 0; i < gene.length(); i++) {
+        getline(ifs, buffer);
+        line_num++;
+        istringstream iss(buffer);
+        istream_iterator<index_t> isi(iss);
+        index_t reads_size = *isi;
+        isi++;
+        node_to_read[i] = move(read_id_list_t(isi, istream_iterator<index_t>()));
+        if (node_to_read[i].size() != reads_size) {
+            cout << format("ERR: specified number of reads for a node ({}) does not match number of found reads ({}). Line: {}\n", reads_size, node_to_read[i].size(), line_num);
+            abort();
+        }
+    }
+    ifs.close();
 }
 
 //
