@@ -64,6 +64,7 @@ public:
     void init_dag(const std::string& gene, const std::vector<bool>& exonic_indicator);
     void align_read(const std::string& read);
     void generate_dot(const std::string& output_path);
+    void generate_compressed_dot(const std::string& output_path);
     void print_last_read_to_paf(std::ofstream& out_file);
     void print_matrix(const std::string& output_path);
     void save_state(const std::string& output_path);

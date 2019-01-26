@@ -4,6 +4,7 @@
 
 #include <sstream>  // std::stringstream, istringstream
 #include <queue>
+#include <unordered_map>
 #include <algorithm> // std::reverse
 #include <functional> // std::function
 #include <cstdlib> // abort()
@@ -34,6 +35,7 @@ using std::ifstream;
 using std::ofstream;
 using std::queue;
 using std::vector;
+using std::unordered_map;
 using std::function;
 using std::reverse;
 using std::move;
@@ -387,6 +389,54 @@ void dag_aligner::generate_dot(const string& output_path) {
     ofile << output.str();
     ofile.close();
 }
+
+void dag_aligner::generate_compressed_dot(const string& output_path) {
+    ofstream ofile;
+    ofile.open(output_path);
+    ofile << "digraph graphname{" << endl;
+    ofile << "    rankdir=LR;" << endl;
+    unordered_map<index_t, index_t> end_of_start;
+    for (index_t node = 1; node < children.size(); node++) {
+        index_t start = node;
+        index_t simple_path_size = 0;
+        double read_coverage_size = 0.0;
+        while (true) {
+            if (node == children.size()) {
+                node--;
+                break;
+            }
+            if (parents[node].size() > 0 && simple_path_size > 0) {
+                node--;
+                break;
+            }
+            simple_path_size++;
+            read_coverage_size = node_to_read[node].size();
+            if (children[node].size() > 0) {
+                break;
+            }
+            node++;
+        }
+        end_of_start[start] = node;
+        ofile << format("    {:d} [label=\"l:{:d} n:{:d} w:{:.2f}\"]", node, node, simple_path_size, read_coverage_size/simple_path_size) << endl;
+    }
+    ofile << endl;
+    ofile << format("    edge[weight=10, arrowhead=none];") << endl;
+    for (const auto& x : end_of_start) {
+        if (x.first <= 1) {
+            continue;
+        }
+        ofile << format("    {}->{}", x.first-1, x.second) << endl;
+    }
+    ofile << format("    edge[weight=1, arrowhead=normal];") << endl;
+    for (size_t node = 1; node < children.size() - 1; node++) {
+        for (index_t child : children[node]) {
+            ofile << format("    {}->{}", node, end_of_start[child]) << endl;
+        }
+    }
+    ofile << "}" << endl;
+    ofile.close();
+}
+
 
 void dag_aligner::print_last_read_to_paf(ofstream& out_file) {
     stringstream ss;

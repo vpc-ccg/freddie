@@ -46,6 +46,7 @@ int main(int argc, char *argv[]) {
         my_dag.align_read(reads[i]);
         my_dag.print_last_read_to_paf(paf_file);
         my_dag.generate_dot(format("{}dag_{}.dot", globals::filenames::output_prefix, i));
+        my_dag.generate_compressed_dot(format("{}dag_comp_{}.dot", globals::filenames::output_prefix, i));
     }
     paf_file.close();
     my_dag.save_state(format("{}dag.data", globals::filenames::output_prefix));
