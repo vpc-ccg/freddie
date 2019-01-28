@@ -17,6 +17,7 @@ using std::getline;
 using fmt::format;
 
 int main(int argc, char *argv[]) {
+    cout << format("🕺 Freddie 🕺: {}", string(GITINFO)) << endl;
     parse_flags(argc, argv);
     print_flags();
     ifstream reads_file (globals::filenames::reads_fasta);
