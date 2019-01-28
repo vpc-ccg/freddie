@@ -18,10 +18,10 @@
 using namespace dag_types;
 
 constexpr align_score_t MATCH_S = 1;
-constexpr align_score_t GAP_S = -1;
-constexpr align_score_t MISMATCH_S = -1;
+constexpr align_score_t GAP_S = -6;
+constexpr align_score_t MISMATCH_S = -6;
 constexpr size_t MAX_MAPPINGS = 10;
-constexpr align_score_t MIN_SCORE = 1;
+constexpr align_score_t MIN_SCORE = 30;
 constexpr matrix_coordinate_t INVALID_COORDINATE = {-1,-1};
 
 using fmt::format;
