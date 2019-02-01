@@ -16,6 +16,8 @@ using std::ofstream;
 using std::getline;
 using fmt::format;
 
+constexpr size_t DOT_GENERATION_FREQUENCY = 50;
+
 int main(int argc, char *argv[]) {
     cout << format("🕺 Freddie 🕺: {}", string(GITINFO)) << endl;
     parse_flags(argc, argv);
@@ -30,18 +32,38 @@ int main(int argc, char *argv[]) {
         getline(gene_file, gene_name);
         gene_name += " ";
         gene_name = gene_name.substr(1, gene_name.find(" ") - 1);
-        string gene_seq;
-        getline(gene_file, gene_seq);
+        string gene_seq = "^";
+        string line;
+        while (getline(gene_file, line)) {
+            gene_seq += line;
+        }
         cout << fmt::format("The length of the gene is {}", gene_seq.size()) << endl;
-        my_dag.init_dag("^" + gene_seq, gene_name);
+        my_dag.init_dag(gene_seq, gene_name);
     }
+
     if (globals::program::align) {
         ifstream reads_file (globals::filenames::reads_fasta);
         string line;
+        string read = "";
         vector<string> reads;
         while (getline (reads_file, line)) {
-            getline (reads_file, line);
-            reads.push_back("^" + line);
+            if (line[0]=='>') {
+                if (read.size() > 0) {
+                    reads.emplace_back(read);
+                }
+                read = "^";
+            } else if (read[0] != '^'){
+                cout << "ERR: Something is wrong with input reads!" << endl;
+                abort();
+            } else {
+                read += line;
+            }
+        }
+        if (read.size() > 0) {
+            reads.emplace_back(read);
+        } else {
+            cout << "ERR: Something is wrong with input reads!" << endl;
+            abort();
         }
         cout << fmt::format("The number of reads is {}", reads.size()) << endl;
         ofstream paf_file;
@@ -53,7 +75,7 @@ int main(int argc, char *argv[]) {
             if (globals::program::generate_paf) {
                 my_dag.print_last_read_to_paf(paf_file);
             }
-            if (i % 50 == 0) {
+            if (i % DOT_GENERATION_FREQUENCY == 0) {
                 if (globals::program::save) {
                     my_dag.save_state(format("{}dag.data", globals::filenames::output_prefix));
                 }
@@ -66,6 +88,12 @@ int main(int argc, char *argv[]) {
         if (globals::program::generate_paf) {
             paf_file.close();
         }
+    }
+    if (globals::program::save) {
+        my_dag.save_state(format("{}dag.data", globals::filenames::output_prefix));
+    }
+    if (globals::program::generate_dot) {
+        my_dag.generate_compressed_dot(format("{}dag_comp.dot", globals::filenames::output_prefix));
     }
 
 

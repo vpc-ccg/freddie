@@ -71,7 +71,7 @@ void parse_flags(int argc, char *argv[]){
             i++;
             continue;
         }
-        if ((globals::program::save == -1) && (current_param == "--save")) {
+        if ((globals::program::save == -1) && (current_param == "-s" || current_param == "--save")) {
             globals::program::save = 1;
             if (i+1 >= argc) {
                 continue;
@@ -90,7 +90,7 @@ void parse_flags(int argc, char *argv[]){
                 continue;
             }
         }
-        if ((globals::program::generate_dot == -1) && (current_param == "--generate-dot")) {
+        if ((globals::program::generate_dot == -1) && (current_param == "-d" || current_param == "--generate-dot")) {
             globals::program::generate_dot = 1;
             if (i+1 >= argc) {
                 continue;
@@ -109,7 +109,7 @@ void parse_flags(int argc, char *argv[]){
                 continue;
             }
         }
-        if ((globals::program::generate_paf == -1) && (current_param == "--generate-paf")) {
+        if ((globals::program::generate_paf == -1) && (current_param == "-p" || current_param == "--generate-paf")) {
             globals::program::generate_paf = 1;
             if (i+1 >= argc) {
                 continue;
@@ -130,8 +130,9 @@ void parse_flags(int argc, char *argv[]){
         }
         cout << "Unrecognized parameter or repeated parameter: " << current_param << "\n";
         print_help();
-        exit(-1);
+        abort();
     }
+    process_flags();
 }
 
 void print_flags(){
@@ -148,17 +149,17 @@ void print_flags(){
 }
 
 void print_help(){
-    cout << "Freddi: Co-chaining of local alignments of long reads on gene DAGs" << "\n";
+    cout << "Freddie: Co-chaining of local alignments of long reads on gene DAG" << "\n";
     cout << "Usage: freddie [--PARAMETER VALUE]" << "\n";
     cout << "Example: freddie -r reads.fasta -g gene.fasta -o my_out." << "\n";
     cout << "Example: freddie -r reads.fasta -l gene.data -o my_out." << "\n";
-    cout << "Calib's paramters arguments:" << "\n";
-    cout << "\t-r\t--reads-fasta               \t(type: string;   OPTIONAL paramter needed to perform alignment)\n";
-    cout << "\t-g\t--gene-fasta                \t(type: string;   REQUIRED paramter if -l is not provided)\n";
-    cout << "\t-l\t--load                      \t(type: string;   REQUIRED paramter if -g is not provided)\n";
-    cout << "\t-o\t--output-prefix             \t(type: string;   Default: \"\")\n";
-    cout << "\t--save                          \t(type: bool;     Default: false)\n";
-    cout << "\t--generate_dot                  \t(type: bool;     Default: false)\n";
-    cout << "\t--generate_paf                  \t(type: bool;     Default: false)\n";
-    cout << "\t-h\t--help\n";
+    cout << "Freddie's paramters arguments:" << "\n";
+    cout << "    -r    --reads-fasta               (type: string;   OPTIONAL paramter needed to perform alignment)\n";
+    cout << "    -g    --gene-fasta                (type: string;   REQUIRED paramter if -l is not provided)\n";
+    cout << "    -l    --load                      (type: string;   REQUIRED paramter if -g is not provided)\n";
+    cout << "    -o    --output-prefix             (type: string;   Default: \"\")\n";
+    cout << "    -s    --save                      (type: bool;     Default: false)\n";
+    cout << "    -d    --generate_dot              (type: bool;     Default: false)\n";
+    cout << "    -p    --generate_paf              (type: bool;     Default: false)\n";
+    cout << "    -h    --help" << endl;
 }
