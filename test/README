@@ -1,0 +1,28 @@
+PLSCR3 transcripts were extracted using:
+awk 'match($0, "ENSG00000187838") {flag = 1} substr($0,1,1)==">" && !match($0, "ENSG00000187838") {flag=0} flag ' /groups/hachgrp/annotations/cDNA/94/Homo_sapiens.GRCh38.94.cdna.all.fa > /groups/hachgrp/projects/long-iso/script/freddie/test/PLSCR3_transcripts.fasta
+
+And the PLSCR3 gene:
+In [1]: GTF = '/groups/hachgrp/annotations/GTF/92/Homo_sapiens.GRCh38.92.gtf'
+   ...: PLSCR3_id = 'ENSG00000187838'
+   ...: PLSCR3_chr = '0'
+   ...: PLSCR3_start = 0
+   ...: PLSCR3_end = 0
+   ...:
+   ...: for line in open(GTF):
+   ...:     if (line[0] == '#'):
+   ...:         continue
+   ...:     line = line.rstrip().split('\t')
+   ...:     if (line[2] != 'gene'):
+   ...:         continue
+   ...:     if (PLSCR3_id in line[8]):
+   ...:         print(line)
+   ...:         PLSCR3_chr = line[0]
+   ...:         PLSCR3_start = int(line[3])
+   ...:         PLSCR3_end = int(line[4])
+   ...:         break
+['17', 'ensembl_havana', 'gene', '7389727', '7394843', '.', '-', '.', 'gene_id "ENSG00000187838"; gene_version "16"; gene_name "PLSCR3"; gene_source "ensembl_havana"; gene_biotype "protein_coding";']
+
+In [2]: DNA = '/groups/hachgrp/annotations/DNA/92/Homo_sapiens.GRCh38.dna.fa'
+   ...: from pyfaidx import Fasta
+   ...: PLSCR3_seq = Fasta(DNA)[PLSCR3_chr][PLSCR3_start-PAD_SIZE:PLSCR3_end+PAD_SIZE]
+   ...: print('>PLSCR3_{}\n{}'.format(PLSCR3_id, PLSCR3_seq), file=open(PLSCR3_path, 'w+'))
