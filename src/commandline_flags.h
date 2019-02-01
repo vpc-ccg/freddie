@@ -11,6 +11,13 @@ namespace globals {
         static std::string output_prefix;
         static std::string data;
     };
+    struct program {
+        static int align;
+        static int load;
+        static int save;
+        static int generate_dot;
+        static int generate_paf;
+    };
 }
 
 void parse_flags(int argc, char *argv[]);

@@ -1,16 +1,48 @@
 #include "commandline_flags.h"
 
-#include <iostream> // std::cout
 #include "fmt/format.h"
+#include <iostream> // std::cout
+#include <unordered_set>
 
 using std::cout;
 using std::endl;
 using std::string;
+using std::unordered_set;
 
 string globals::filenames::reads_fasta = "";
 string globals::filenames::gene_fasta = "";
 string globals::filenames::output_prefix = "";
 string globals::filenames::data = "";
+int globals::program::save = -1;
+int globals::program::generate_dot = -1;
+int globals::program::generate_paf = -1;
+int globals::program::align = -1;
+int globals::program::load = -1;
+
+const unordered_set<string> false_vals({"false", "f", "0"});
+const unordered_set<string> true_vals({"true", "t", "1"});
+
+void process_flags() {
+    globals::program::load = globals::filenames::data != "" ? 1 : 0;
+    globals::program::align = globals::filenames::reads_fasta != "" ? 1 : 0;
+
+    if (!((globals::program::load == 1) ^ (globals::filenames::gene_fasta != ""))) {
+        cout << "Provide either just gene fasta or just data file to load!\n";
+        print_help();
+        exit(-1);
+    }
+    if (globals::program::generate_paf == 1 && globals::program::align != 1) {
+        cout << "Cannot generate PAF file without input reads FASTA file!\n";
+        print_help();
+        exit(-1);
+    }
+    if (globals::program::generate_dot == 1 && globals::program::load != 1 && globals::program::align != 1) {
+        cout << "Cannot generate DOT file without loading saved DATA file or input reads FASTA file!\n";
+        print_help();
+        exit(-1);
+    }
+
+}
 
 void parse_flags(int argc, char *argv[]){
     for (int i = 1; i < argc; i++) {
@@ -39,17 +71,64 @@ void parse_flags(int argc, char *argv[]){
             i++;
             continue;
         }
+        if ((globals::program::save == -1) && (current_param == "--save")) {
+            globals::program::save = 1;
+            if (i+1 >= argc) {
+                continue;
+            }
+            string val = string(argv[i+1]);
+            if (val[0] == '-') {
+                continue;
+            }
+            if (false_vals.find(val) != false_vals.end()) {
+                globals::program::save = 0;
+                i++;
+                continue;
+            }
+            if (true_vals.find(val) != true_vals.end()) {
+                i++;
+                continue;
+            }
+        }
+        if ((globals::program::generate_dot == -1) && (current_param == "--generate-dot")) {
+            globals::program::generate_dot = 1;
+            if (i+1 >= argc) {
+                continue;
+            }
+            string val = string(argv[i+1]);
+            if (val[0] == '-') {
+                continue;
+            }
+            if (false_vals.find(val) != false_vals.end()) {
+                globals::program::generate_dot = 0;
+                i++;
+                continue;
+            }
+            if (true_vals.find(val) != true_vals.end()) {
+                i++;
+                continue;
+            }
+        }
+        if ((globals::program::generate_paf == -1) && (current_param == "--generate-paf")) {
+            globals::program::generate_paf = 1;
+            if (i+1 >= argc) {
+                continue;
+            }
+            string val = string(argv[i+1]);
+            if (val[0] == '-') {
+                continue;
+            }
+            if (false_vals.find(val) != false_vals.end()) {
+                globals::program::generate_paf = 0;
+                i++;
+                continue;
+            }
+            if (true_vals.find(val) != true_vals.end()) {
+                i++;
+                continue;
+            }
+        }
         cout << "Unrecognized parameter or repeated parameter: " << current_param << "\n";
-        print_help();
-        exit(-1);
-    }
-    if (!(globals::filenames::data == "") ^ (globals::filenames::gene_fasta == "")) {
-        cout << "Provide either just gene fasta or just data file to load!\n";
-        print_help();
-        exit(-1);
-    }
-    if (globals::filenames::reads_fasta == "") {
-        cout << "Missing reads input parameter!\n";
         print_help();
         exit(-1);
     }
@@ -61,6 +140,11 @@ void print_flags(){
     std::cout << fmt::format("\t{}:\t{}", "gene_fasta", globals::filenames::gene_fasta) << endl;
     std::cout << fmt::format("\t{}:\t{}", "output_prefix", globals::filenames::output_prefix) << endl;
     std::cout << fmt::format("\t{}:\t{}", "data", globals::filenames::data) << endl;
+    std::cout << fmt::format("\t{}:\t{}", "save", globals::program::save) << endl;
+    std::cout << fmt::format("\t{}:\t{}", "generate_dot", globals::program::generate_dot) << endl;
+    std::cout << fmt::format("\t{}:\t{}", "generate_paf", globals::program::generate_paf) << endl;
+    std::cout << fmt::format("\t{}:\t{}", "align", globals::program::align) << endl;
+    std::cout << fmt::format("\t{}:\t{}", "load", globals::program::load) << endl;
 }
 
 void print_help(){
@@ -69,9 +153,12 @@ void print_help(){
     cout << "Example: freddie -r reads.fasta -g gene.fasta -o my_out." << "\n";
     cout << "Example: freddie -r reads.fasta -l gene.data -o my_out." << "\n";
     cout << "Calib's paramters arguments:" << "\n";
-    cout << "\t-r\t--reads-fasta               \t(type: string;   REQUIRED paramter)\n";
+    cout << "\t-r\t--reads-fasta               \t(type: string;   OPTIONAL paramter needed to perform alignment)\n";
     cout << "\t-g\t--gene-fasta                \t(type: string;   REQUIRED paramter if -l is not provided)\n";
     cout << "\t-l\t--load                      \t(type: string;   REQUIRED paramter if -g is not provided)\n";
-    cout << "\t-o\t--output-prefix             \t(type: string;   Default \"\")\n";
+    cout << "\t-o\t--output-prefix             \t(type: string;   Default: \"\")\n";
+    cout << "\t--save                          \t(type: bool;     Default: false)\n";
+    cout << "\t--generate_dot                  \t(type: bool;     Default: false)\n";
+    cout << "\t--generate_paf                  \t(type: bool;     Default: false)\n";
     cout << "\t-h\t--help\n";
 }

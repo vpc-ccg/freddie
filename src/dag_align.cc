@@ -321,16 +321,17 @@ void dag_aligner::update_dag() {
     }
 }
 
-void dag_aligner::init_dag(const string& gene) {
-    init_dag(gene, vector<bool>(gene.size(), false));
+void dag_aligner::init_dag(const string& gene, const std::string& gene_name) {
+    init_dag(gene, gene_name, vector<bool>(gene.size(), false));
 }
 
-void dag_aligner::init_dag(const string& gene_in, const std::vector<bool>& exonic_indicator_in) {
+void dag_aligner::init_dag(const string& gene_in, const std::string& gene_name_in, const std::vector<bool>& exonic_indicator_in) {
     read_id = 0;
     children.clear();
     parents.clear();
     node_to_read.clear();
     gene = gene_in;
+    gene_name = gene_name_in;
     exonic_indicator = exonic_indicator_in;
     for (index_t i = 0; i < gene.size(); i++) {
         append_node();
@@ -409,8 +410,12 @@ void dag_aligner::generate_compressed_dot(const string& output_path) {
                 node--;
                 break;
             }
+            if (simple_path_size > 0 && read_coverage_size == 0 && parents[node].size() > 0) {
+                node--;
+                break;
+            }
             simple_path_size++;
-            read_coverage_size = node_to_read[node].size();
+            read_coverage_size += node_to_read[node].size();
             if (children[node].size() > 0) {
                 break;
             }
@@ -446,7 +451,7 @@ void dag_aligner::print_last_read_to_paf(ofstream& out_file) {
         ss << format("{}\t", local_mappings[i].first.first); //  Query start (0-based)
         ss << format("{}\t", local_mappings[i].first.second); //  Query end (0-based)
         ss << format("{}\t", "+"); //  Relative strand: "+" or "-"
-        ss << format("{}\t", "gene"); //  Target sequence name
+        ss << format("{}\t", gene_name); //  Target sequence name
         ss << format("{}\t", gene.size()); //  Target sequence length
         stringstream gene_starts;
         stringstream gene_ends;
@@ -510,6 +515,7 @@ void dag_aligner::print_matrix(const string& output_path){
 void dag_aligner::save_state(const std::string& output_path) {
     ofstream ofile;
     ofile.open(output_path);
+    ofile << gene_name << "\n";
     ofile << gene << "\n";
     for (const bool& i : exonic_indicator) {
         ofile << format("{:d}", i);
@@ -545,6 +551,7 @@ void dag_aligner::load_state(const std::string& output_path) {
     ifstream ifs;
     string buffer = "";
     ifs.open(output_path);
+    getline(ifs, gene_name);
     getline(ifs, gene);
     line_num++;
     getline(ifs, buffer);
@@ -566,7 +573,7 @@ void dag_aligner::load_state(const std::string& output_path) {
             abort();
         }
     }
-    init_dag(gene, exonic_indicator);
+    init_dag(gene, gene_name, exonic_indicator);
     getline(ifs, buffer);
     line_num++;
     read_id = stoi(buffer);

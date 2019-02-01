@@ -33,6 +33,7 @@ class dag_aligner {
 private:
     //// Private members
     // DAG
+    std::string gene_name;
     std::string gene;
     std::vector<bool> exonic_indicator;
     std::string read;
@@ -60,8 +61,8 @@ private:
     void cochain_mappings();
     void update_dag();
 public:
-    void init_dag(const std::string& gene);
-    void init_dag(const std::string& gene, const std::vector<bool>& exonic_indicator);
+    void init_dag(const std::string& gene, const std::string& gene_name);
+    void init_dag(const std::string& gene, const std::string& gene_name, const std::vector<bool>& exonic_indicator);
     void align_read(const std::string& read);
     void generate_dot(const std::string& output_path);
     void generate_compressed_dot(const std::string& output_path);

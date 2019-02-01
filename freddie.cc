@@ -20,37 +20,54 @@ int main(int argc, char *argv[]) {
     cout << format("🕺 Freddie 🕺: {}", string(GITINFO)) << endl;
     parse_flags(argc, argv);
     print_flags();
-    ifstream reads_file (globals::filenames::reads_fasta);
-    string line;
-    vector<string> reads;
-    while (getline (reads_file, line)) {
-        getline (reads_file, line);
-        reads.push_back("^" + line);
-    }
-    cout << fmt::format("The number of reads is {}", reads.size()) << endl;
 
     dag_aligner my_dag = dag_aligner();
-    ofstream paf_file;
-    if (globals::filenames::data != "") {
-        paf_file.open(format("{}dag.paf", globals::filenames::output_prefix), std::ios_base::app);
-        my_dag.load_state(format("{}dag.data", globals::filenames::output_prefix));
+    if (globals::program::load) {
+        my_dag.load_state(format(globals::filenames::data));
     } else {
-        paf_file.open(format("{}dag.paf", globals::filenames::output_prefix), std::ios_base::out);
         ifstream gene_file (globals::filenames::gene_fasta);
-        string gene;
-        getline(gene_file, gene);
-        getline(gene_file, gene);
-        cout << fmt::format("The length of the gene is {}", gene.size()) << endl;
-        my_dag.init_dag("^" + gene);
+        string gene_name;
+        getline(gene_file, gene_name);
+        gene_name += " ";
+        gene_name = gene_name.substr(1, gene_name.find(" ") - 1);
+        string gene_seq;
+        getline(gene_file, gene_seq);
+        cout << fmt::format("The length of the gene is {}", gene_seq.size()) << endl;
+        my_dag.init_dag("^" + gene_seq, gene_name);
     }
-    for (size_t i = 0; i < reads.size(); i++) {
-        my_dag.align_read(reads[i]);
-        my_dag.print_last_read_to_paf(paf_file);
-        my_dag.generate_dot(format("{}dag_{}.dot", globals::filenames::output_prefix, i));
-        my_dag.generate_compressed_dot(format("{}dag_comp_{}.dot", globals::filenames::output_prefix, i));
+    if (globals::program::align) {
+        ifstream reads_file (globals::filenames::reads_fasta);
+        string line;
+        vector<string> reads;
+        while (getline (reads_file, line)) {
+            getline (reads_file, line);
+            reads.push_back("^" + line);
+        }
+        cout << fmt::format("The number of reads is {}", reads.size()) << endl;
+        ofstream paf_file;
+        if (globals::program::generate_paf) {
+            paf_file.open(format("{}dag.paf", globals::filenames::output_prefix), std::ios_base::app);
+        }
+        for (size_t i = 0; i < reads.size(); i++) {
+            my_dag.align_read(reads[i]);
+            if (globals::program::generate_paf) {
+                my_dag.print_last_read_to_paf(paf_file);
+            }
+            if (i % 50 == 0) {
+                if (globals::program::save) {
+                    my_dag.save_state(format("{}dag.data", globals::filenames::output_prefix));
+                }
+                if (globals::program::generate_dot) {
+                    my_dag.generate_compressed_dot(format("{}dag_comp_{}.dot", globals::filenames::output_prefix, i));
+                }
+                cout << fmt::format("Done with read {}", i) << endl;
+            }
+        }
+        if (globals::program::generate_paf) {
+            paf_file.close();
+        }
     }
-    paf_file.close();
-    my_dag.save_state(format("{}dag.data", globals::filenames::output_prefix));
+
 
     return 0;
 }
