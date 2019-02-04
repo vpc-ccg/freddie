@@ -230,6 +230,9 @@ void dag_aligner::compress_align_paths() {
 }
 
 void dag_aligner::cochain_mappings() {
+    if (align_scores.size() == 0) {
+        return;
+    }
     constexpr size_t no_parent = -1;
     vector<size_t> D(align_scores.size(), 0);
     vector<size_t> B(align_scores.size(), no_parent);
@@ -303,6 +306,9 @@ void dag_aligner::cochain_mappings() {
 }
 
 void dag_aligner::update_dag() {
+    if (opt_chain.size() == 0) {
+        return;
+    }
     vector<interval_t> exons;
     for (const size_t& mapping_id : opt_chain) {
         for (const interval_t& gene_interval : local_mappings[mapping_id].second) {

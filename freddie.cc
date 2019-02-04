@@ -6,6 +6,7 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <math.h>  // log10
 
 using std::string;
 using std::vector;
@@ -16,7 +17,7 @@ using std::ofstream;
 using std::getline;
 using fmt::format;
 
-constexpr size_t DOT_GENERATION_FREQUENCY = 50;
+constexpr size_t DOT_GENERATION_FREQUENCY = 1;
 
 int main(int argc, char *argv[]) {
     cout << format("🕺 Freddie 🕺: {}", string(GITINFO)) << endl;
@@ -80,7 +81,7 @@ int main(int argc, char *argv[]) {
                     my_dag.save_state(format("{}dag.data", globals::filenames::output_prefix));
                 }
                 if (globals::program::generate_dot) {
-                    my_dag.generate_compressed_dot(format("{}dag_comp_{}.dot", globals::filenames::output_prefix, i));
+                    my_dag.generate_compressed_dot(format("{}dag_comp_{:0>{}d}.dot", globals::filenames::output_prefix, i, (int)floor(log10(reads.size()))+1));
                 }
                 cout << fmt::format("Done with read {}", i) << endl;
             }
@@ -88,6 +89,7 @@ int main(int argc, char *argv[]) {
         if (globals::program::generate_paf) {
             paf_file.close();
         }
+        cout << fmt::format("Done with read {}", reads.size()-1) << endl;
     }
     if (globals::program::save) {
         my_dag.save_state(format("{}dag.data", globals::filenames::output_prefix));

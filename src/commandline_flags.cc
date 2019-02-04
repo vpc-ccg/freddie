@@ -128,7 +128,7 @@ void parse_flags(int argc, char *argv[]){
                 continue;
             }
         }
-        cout << "Unrecognized parameter or repeated parameter: " << current_param << "\n";
+        cout << "Erro: Unrecognized parameter or repeated parameter: " << current_param << "\n";
         print_help();
         abort();
     }
