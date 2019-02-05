@@ -17,6 +17,7 @@
 
 using namespace dag_types;
 
+constexpr align_score_t EXONIC_S = 0;
 constexpr align_score_t MATCH_S = 1;
 constexpr align_score_t GAP_S = -6;
 constexpr align_score_t MISMATCH_S = -6;
@@ -96,7 +97,7 @@ void dag_aligner::local_aligner(const index_t& i, const index_t& j) {
     matrix_coordinate_t opt_b = INVALID_COORDINATE;
     align_score_t matching_score = 0;
     if (this->read[i] == this->gene[j]) {
-        matching_score += MATCH_S + MATCH_S*this->exonic_indicator[j];
+        matching_score += MATCH_S + EXONIC_S*this->exonic_indicator[j];
     } else {
         matching_score += MISMATCH_S;
     }
@@ -332,7 +333,7 @@ void dag_aligner::init_dag(const string& gene, const std::string& gene_name) {
 }
 
 void dag_aligner::init_dag(const string& gene_in, const std::string& gene_name_in, const std::vector<bool>& exonic_indicator_in) {
-    read_id = 0;
+    read_id = -1;
     children.clear();
     parents.clear();
     node_to_read.clear();
@@ -416,7 +417,7 @@ void dag_aligner::generate_compressed_dot(const string& output_path) {
                 node--;
                 break;
             }
-            if (simple_path_size > 0 && read_coverage_size == 0 && parents[node].size() > 0) {
+            if (simple_path_size > 0 && read_coverage_size == 0 && node_to_read[node].size() > 0) {
                 node--;
                 break;
             }
@@ -428,7 +429,7 @@ void dag_aligner::generate_compressed_dot(const string& output_path) {
             node++;
         }
         end_of_start[start] = node;
-        ofile << format("    {:d} [label=\"l:{:d} n:{:d} w:{:.2f}\"]", node, node, simple_path_size, read_coverage_size/simple_path_size) << endl;
+        ofile << format("    {:d} [label=\"i:{:d}-{:d} w:{:.2f}\"]", node, node-simple_path_size+1, node, read_coverage_size/simple_path_size) << endl;
     }
     ofile << endl;
     ofile << format("    edge[weight=10, arrowhead=none];") << endl;

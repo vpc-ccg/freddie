@@ -98,6 +98,5 @@ int main(int argc, char *argv[]) {
         my_dag.generate_compressed_dot(format("{}dag_comp.dot", globals::filenames::output_prefix));
     }
 
-
     return 0;
 }
