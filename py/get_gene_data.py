@@ -33,7 +33,7 @@ def parse_args():
                         type=int,
                         default=100,
                         help="Pad size before and after the gene")
-    parser.add_argument("-temp",
+    parser.add_argument("-c",
                         "--threads",
                         type=int,
                         default=32,
@@ -59,18 +59,27 @@ def get_coordinates(gene, gtf):
             return line[0], int(line[3]), int(line[4])
 
 def align_reads(minimap2, threads, genome, reads, sam):
+    print('Aligning reads using command:')
+    cmd = "{} -aY -x splice -t {} --secondary=no {} {} > {}".format(minimap2, threads, genome, reads, sam)
+    print(cmd)
     import os
-    os.system("{} -aY -x splice -k 14 -t {} --secondary=no {} {} > {}".format(minimap2, threads, genome, reads, sam))
+    os.system(cmd)
 
 def output_gene_reads(sam, chr, start, end, padding, out):
+    print('Outputing {} reads of the gene at coordinates ({}) {}-{} and left padding of {}'.format(sam, chr, start, end, padding))
     import pysam
     sam = pysam.AlignmentFile(sam)
     if (sam.has_index()):
+        print('{} has an index. Using that'.format(sam))
         sam = sam.fetch(contig=chr, start=max(start-padding,0), stop=end)
     else:
+        print('{} has no index. Scanning the whole thing'.format(sam))
         sam = sam.fetch(until_eof=True)
     for read in sam:
-        print('>{}\n{}'.format(read.qname, read.query), file=out)
+        if (read.flag > 255 or read.mapping_quality < 60):
+            continue
+        if (read.reference_name == chr and read.reference_start > start-padding and read.reference_start < end):
+            print('>{} {}:{}-{}\n{}'.format(read.qname, read.reference_name, read.reference_start, read.reference_end, read.query), file=out)
 
 def output_gene(genome, gene, chr, start, end, out):
     print('Outputting {} from reference {}'.format(gene, genome))
@@ -143,12 +152,14 @@ def main():
         try:
             sam = pysam.AlignmentFile(args.reads)
             sam.close()
-            sam = args.alignments
+            print('Reads {} file is in SAM format'.format(args.reads))
+            sam = args.reads
         except ValueError:
+            print('Reads {} file is NOT in SAM format. Assuming FASTA/Q format'.format(args.reads))
             sam = '{}genome.sam'.format(args.output)
-            align_reads(args.minimap2, args.dna, args.threads, args.reads, sam)
+            align_reads(args.minimap2, args.threads, args.dna, args.reads, sam)
         out = open('{}reads.fasta'.format(args.output), 'w+')
-        output_gene_reads(sam, chr, start, end, args.padding, out)
+        output_gene_reads(sam, chr, start, end, args.pad_size, out)
         out.close()
 
     out = open('{}gene.fasta'.format(args.output), 'w+')
