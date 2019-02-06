@@ -56,7 +56,7 @@ def get_coordinates(gene, gtf):
             continue
         if (gene in line[8]):
             print(line)
-            return line[0], int(line[3]), int(line[4])
+            return line[0], line[6], int(line[3]), int(line[4])
 
 def align_reads(minimap2, threads, genome, reads, sam):
     print('Aligning reads using command:')
@@ -65,9 +65,10 @@ def align_reads(minimap2, threads, genome, reads, sam):
     import os
     os.system(cmd)
 
-def output_gene_reads(sam, chr, start, end, padding, out):
+def output_gene_reads(sam, chr, strand, start, end, padding, out):
     print('Outputing {} reads of the gene at coordinates ({}) {}-{} and left padding of {}'.format(sam, chr, start, end, padding))
     import pysam
+    from Bio.Seq import Seq
     sam = pysam.AlignmentFile(sam)
     if (sam.has_index()):
         print('{} has an index. Using that'.format(sam))
@@ -79,16 +80,28 @@ def output_gene_reads(sam, chr, start, end, padding, out):
         if (read.flag > 255 or read.mapping_quality < 60):
             continue
         if (read.reference_name == chr and read.reference_start > start-padding and read.reference_start < end):
-            print('>{} {}:{}-{}\n{}'.format(read.qname, read.reference_name, read.reference_start, read.reference_end, read.query), file=out)
+            print('>{} {}:{}-{}'.format(read.qname, read.reference_name, read.reference_start, read.reference_end), end='', file=out)
+            if (strand == '+'):
+                print(read.query, file=out)
+            elif (strand == '-'):
+                print(Seq(read.query).reverse_complement(), file=out)
+            else:
+                print('strand_error:"{}"'.format(strand), file=out)
 
-def output_gene(genome, gene, chr, start, end, out):
+def output_gene(genome, gene, chr, strand, start, end, out):
     print('Outputting {} from reference {}'.format(gene, genome))
     import pyfaidx
     from Bio.Seq import Seq
     genome = pyfaidx.Fasta(genome)
-    print('>{}\n{}'.format(gene, genome[chr][start:end]), file=out)
+    print('>{}'.format(gene), file=out)
+    if (strand == '+'):
+        print(genome[chr][start:end], file=out)
+    elif (strand == '-'):
+        print(str(Seq(str(genome[chr][start:end])).reverse_complement()), file=out)
+    else:
+        print('strand_error:"{}"'.format(strand), file=out)
 
-def output_transcripts(genome, gtf, gene, gene_start, out_tsv, out_seq):
+def output_transcripts(genome, gtf, gene, chr, strand, gene_start, gene_end, out_tsv, out_seq):
     print('Outputting {} transcripts from {}'.format(gene, gtf))
     import pyfaidx
     from Bio.Seq import Seq
@@ -107,15 +120,14 @@ def output_transcripts(genome, gtf, gene, gene_start, out_tsv, out_seq):
             continue
 
         exon_start, exon_end = int(line[3]), int(line[4])
-        chr, strand = line[0], line[6]
-        key = (info['transcript_id'], chr, strand)
+        key = info['transcript_id']
         if key in transcript_infos:
             transcript_infos[key].append([exon_start, exon_end])
         else:
             transcript_infos[key] = [[exon_start, exon_end]]
 
     genome = pyfaidx.Fasta(genome)
-    for (tid, chr, strand), exons in transcript_infos.items():
+    for tid, exons in transcript_infos.items():
         if (strand == '+'):
             sorted(exons)
         else:
@@ -124,11 +136,14 @@ def output_transcripts(genome, gtf, gene, gene_start, out_tsv, out_seq):
         print('>{}'.format(tid), file=out_seq)
         for start,end in exons:
             if (strand == '+'):
-                exon = str(Seq(str(genome[chr][start:end])))
+                exon = str(genome[chr][start:end])
                 interval = '{}-{}'.format(start-gene_start, end-gene_start)
-            else:
+            elif (strand == '-'):
                 exon = str(Seq(str(genome[chr][start:end])).reverse_complement())
-                interval = '{}-{}'.format(end-gene_start, start-gene_start)
+                interval = '{}-{}'.format(gene_end-end, gene_end-start)
+            else:
+                exon = 'err_strand'
+                interval = strand
             print('{}'.format(exon), file=out_seq, end='')
             print('{}'.format(interval), file=out_tsv, end=',')
         print('', file=out_tsv)
@@ -145,7 +160,7 @@ def main():
     else:
         args.gene = 'gene_name "{}"'.format(args.gene)
 
-    chr, start, end = get_coordinates(args.gene, args.gtf)
+    chr, strand, start, end = get_coordinates(gene=args.gene, gtf=args.gtf)
 
     if (args.reads):
         import pysam
@@ -157,18 +172,18 @@ def main():
         except ValueError:
             print('Reads {} file is NOT in SAM format. Assuming FASTA/Q format'.format(args.reads))
             sam = '{}genome.sam'.format(args.output)
-            align_reads(args.minimap2, args.threads, args.dna, args.reads, sam)
+            align_reads(minimap2=args.minimap2, threads=args.threads, genome=args.dna, reads=args.reads, sam=sam)
         out = open('{}reads.fasta'.format(args.output), 'w+')
-        output_gene_reads(sam, chr, start, end, args.pad_size, out)
+        output_gene_reads(sam=sam, chr=chr, strand=strand, start=start, end=end, padding=args.pad_size, out=out)
         out.close()
 
     out = open('{}gene.fasta'.format(args.output), 'w+')
-    output_gene(args.dna, args.gene, chr, start, end, out)
+    output_gene(genome=args.dna, gene=args.gene, chr=chr, strand=strand, start=start, end=end, out=out)
     out.close()
 
     out_tsv = open('{}trasncripts.tsv'.format(args.output), 'w+')
     out_seq = open('{}trasncripts.fasta'.format(args.output), 'w+')
-    output_transcripts(args.dna, args.gtf, args.gene, start, out_tsv, out_seq)
+    output_transcripts(genome=args.dna, gtf=args.gtf, gene=args.gene, chr=chr, strand=strand,  gene_start=start, gene_end=end, out_tsv=out_tsv, out_seq=out_seq)
     out_tsv.close()
     out_seq.close()
 
