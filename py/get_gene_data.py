@@ -80,7 +80,7 @@ def output_gene_reads(sam, chr, strand, start, end, padding, out):
         if (read.flag > 255 or read.mapping_quality < 60):
             continue
         if (read.reference_name == chr and read.reference_start > start-padding and read.reference_start < end):
-            print('>{} {}:{}-{}'.format(read.qname, read.reference_name, read.reference_start, read.reference_end), end='', file=out)
+            print('>{} {}:{}-{}'.format(read.qname, read.reference_name, read.reference_start, read.reference_end), file=out)
             if (strand == '+'):
                 print(read.query, file=out)
             elif (strand == '-'):
