@@ -11,6 +11,7 @@ using std::unordered_set;
 
 string globals::filenames::reads_fasta = "";
 string globals::filenames::gene_fasta = "";
+string globals::filenames::transcript_tsv = "";
 string globals::filenames::output_prefix = "";
 string globals::filenames::data = "";
 int globals::program::save = -1;
@@ -58,6 +59,11 @@ void parse_flags(int argc, char *argv[]){
         }
         if ((globals::filenames::gene_fasta == "") && (current_param == "-g" || current_param == "--gene-fasta")) {
             globals::filenames::gene_fasta = string(argv[i+1]);
+            i++;
+            continue;
+        }
+        if ((globals::filenames::transcript_tsv == "") && (current_param == "-a" || current_param == "--transcript-tsv")) {
+            globals::filenames::transcript_tsv = string(argv[i+1]);
             i++;
             continue;
         }

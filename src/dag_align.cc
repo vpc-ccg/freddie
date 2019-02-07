@@ -11,10 +11,6 @@
 #include <utility> // move()
 #include <iterator> // next()
 
-#define TEST_GENE "AANNAANNCCNNGG"
-#define TEST_READ2 "AAAGG"
-#define TEST_READ1 "AAAACC"
-
 using namespace dag_types;
 
 constexpr align_score_t EXONIC_S = 0;
@@ -41,6 +37,16 @@ using std::function;
 using std::reverse;
 using std::move;
 using std::next;
+
+vector<string> split(const std::string &s, char delim) {
+    vector<string> result;
+    stringstream ss(s);
+    string item;
+    while (getline(ss, item, delim)) {
+        result.push_back(item);
+    }
+    return result;
+}
 
 void dag_aligner::clear_read_structures(){
     D.clear();
@@ -343,6 +349,25 @@ void dag_aligner::init_dag(const string& gene_in, const std::string& gene_name_i
     for (index_t i = 0; i < gene.size(); i++) {
         append_node();
     }
+    if (globals::filenames::transcript_tsv != "") {
+        children_transcript = children;
+        parents_transcript = parents;
+        node_to_transcript = node_to_read;
+        ifstream tsv(globals::filenames::transcript_tsv);
+        string line;
+        while (getline(tsv, line)) {
+            for (const string& interval : split(split(line, '\t')[1], ',')) {
+                if (interval.size() < 3) {
+                    continue;
+                }
+                int start = stoi(split(interval, '-')[0]);
+                int end = stoi(split(interval, '-')[1]);
+                cout << start << endl;
+                cout << end << end;;
+            }
+        }
+
+    }
 }
 
 void dag_aligner::align_read(const string& read_in) {
@@ -625,33 +650,3 @@ void dag_aligner::load_state(const std::string& output_path) {
     }
     ifs.close();
 }
-
-//
-// void print_cochain(const read_gene_mappings_t& chain) {
-//     for (read_gene_mapping_t mapping : chain) {
-//         read_interval_t& read_interval = mapping.first;
-//         cout << "R" << "("<<read_interval.first<<","<<read_interval.second<<") "<<endl;
-//         for (gene_interval_t gene_interval : mapping.second) {
-//             cout << "G" << "("<<gene_interval.first<<","<<gene_interval.second<<")"<<'-';
-//         }
-//         cout << endl;
-//     }
-// }
-//
-// void print_mapping_interval(const size_t& interval_id) {
-//     size_t start, end, length;
-//
-//     start = read_gene_mapping.first.first;
-//     end = read_gene_mapping.first.second;
-//     length = end - start + 1;
-//     cout << score << ": ";
-//     cout << read.substr(start-1, length) <<"("<<start<<","<<end<<")" << " --> ";
-//     for (auto & fragment : read_gene_mapping.second) {
-//         start = fragment.first;
-//         end = fragment.second;
-//         length = end - start + 1;
-//         cout << gene.substr(start-1, length) <<"("<<start<<","<<end<<")-";
-//     }
-//     cout << endl;
-// }
-//

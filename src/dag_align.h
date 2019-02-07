@@ -41,6 +41,9 @@ private:
     dag_types::neighbors_t parents;
     dag_types::neighbors_t children;
     std::vector<dag_types::read_id_list_t> node_to_read;
+    dag_types::neighbors_t parents_transcript;
+    dag_types::neighbors_t children_transcript;
+    std::vector<dag_types::read_id_list_t> node_to_transcript;
     // Alignment matrix
     dag_types::align_matrix_t D;
     dag_types::backtrack_matrix_t B;
