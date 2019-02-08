@@ -349,24 +349,57 @@ void dag_aligner::init_dag(const string& gene_in, const std::string& gene_name_i
     for (index_t i = 0; i < gene.size(); i++) {
         append_node();
     }
+    transcripts.clear();
     if (globals::filenames::transcript_tsv != "") {
-        children_transcript = children;
-        parents_transcript = parents;
-        node_to_transcript = node_to_read;
+        node_to_transcript_edges.clear();
         ifstream tsv(globals::filenames::transcript_tsv);
         string line;
         while (getline(tsv, line)) {
-            for (const string& interval : split(split(line, '\t')[1], ',')) {
-                if (interval.size() < 3) {
+            vector<string> columns = split(line, '\t');
+            if (columns.size() != 4) {
+                cout << "ERR: Incorrect number of columns in line:" << endl;
+                cout << line << endl;
+                abort();
+            }
+            uint16_t tid = transcripts.size();
+            string tname = columns[0];
+            string chr = columns[1];
+            string strand = columns[2];
+            transcripts.push_back(format("{}:{}:{}", tname, chr, strand));
+            vector<string> intervals = split(columns[3], ',');
+            for (const string& s : intervals) {
+                if (s.size() == 0) {
                     continue;
                 }
-                int start = stoi(split(interval, '-')[0]);
-                int end = stoi(split(interval, '-')[1]);
-                cout << start << endl;
-                cout << end << end;;
+                vector<string> interval = split(s, '-');
+                if (interval.size() != 2) {
+                    cout << "ERR: Malformated interval in line:" << endl;
+                    cout << line << endl;
+                    abort();
+                }
+                int start = stoi(interval[0]) + 1;
+                int end = stoi(interval[1]) + 1;
+                if (start < 0 || end < 0) {
+                    cout << "ERR: Malformated interval in line:" << endl;
+                    cout << line << endl;
+                    abort();
+                }
+                transcript_splice_junctions.insert((index_t) start);
+                transcript_splice_junctions.insert((index_t) end);
+            }
+            for (size_t i = 1; i < intervals.size(); i++) {
+                vector<string> interval_last = split(intervals[i-1], '-');
+                vector<string> interval_current = split(intervals[i], '-');
+                int source = stoi(interval_last[1]) + 1;
+                int target = stoi(interval_current[0]) + 1;
+                if (node_to_transcript_edges.find(source) == node_to_transcript_edges.end()) {
+                    node_to_transcript_edges[source] = transcript_edges_t(1, transcript_edge_t(target, tid));
+                } else {
+                    node_to_transcript_edges[source].push_back(transcript_edge_t(target, tid));
+                }
+
             }
         }
-
     }
 }
 
@@ -612,40 +645,55 @@ void dag_aligner::load_state(const std::string& output_path) {
     for (index_t i = 0; i < gene.length(); i++) {
         getline(ifs, buffer);
         line_num++;
-        istringstream iss(buffer);
-        istream_iterator<index_t> isi(iss);
-        index_t parents_size = *isi;
-        isi++;
-        parents[i] = move(node_set_t(isi, istream_iterator<index_t>()));
-        if (parents[i].size() != parents_size) {
-            cout << format("ERR: specified number of parents ({}) does not match number of found parents ({}). Line: {}\n", parents_size, parents[i].size(), line_num);
+        vector<string> cols = split(buffer, ' ');
+        int parents_size = stoi(cols[0]);
+        if (parents_size != (int) cols.size()-1) {
+            cout << format("ERR: specified number of parents ({}) does not match number of found parents ({}). Line: {}\n", parents_size, cols.size()-1, line_num);
             abort();
+        }
+        for (size_t j = 1; j < cols.size(); j++){
+            int parent = stoi(cols[j]);
+            if (parent < 0) {
+                cout << format("ERR: Negative parent value {}. Line: {}\n", parent, line_num);
+                abort();
+            }
+            parents[i].insert((index_t) parent);
         }
     }
     for (index_t i = 0; i < gene.length(); i++) {
         getline(ifs, buffer);
         line_num++;
-        istringstream iss(buffer);
-        istream_iterator<index_t> isi(iss);
-        index_t children_size = *isi;
-        isi++;
-        children[i] = move(node_set_t(isi, istream_iterator<index_t>()));
-        if (children[i].size() != children_size) {
-            cout << format("ERR: specified number of children ({}) does not match number of found children ({}). Line: {}\n", children_size, children[i].size(), line_num);
+        vector<string> cols = split(buffer, ' ');
+        int children_size = stoi(cols[0]);
+        if (children_size != (int) cols.size()-1) {
+            cout << format("ERR: specified number of children ({}) does not match number of found children ({}). Line: {}\n", children_size, cols.size()-1, line_num);
             abort();
+        }
+        for (size_t j = 1; j < cols.size(); j++){
+            int child = stoi(cols[j]);
+            if (child < 0) {
+                cout << format("ERR: Negative child value {}. Line: {}\n", child, line_num);
+                abort();
+            }
+            children[i].insert((index_t) child);
         }
     }
     for (index_t i = 0; i < gene.length(); i++) {
         getline(ifs, buffer);
         line_num++;
-        istringstream iss(buffer);
-        istream_iterator<index_t> isi(iss);
-        index_t reads_size = *isi;
-        isi++;
-        node_to_read[i] = move(read_id_list_t(isi, istream_iterator<index_t>()));
-        if (node_to_read[i].size() != reads_size) {
-            cout << format("ERR: specified number of reads for a node ({}) does not match number of found reads ({}). Line: {}\n", reads_size, node_to_read[i].size(), line_num);
+        vector<string> cols = split(buffer, ' ');
+        int reads_size = stoi(cols[0]);
+        if (reads_size != (int) cols.size()-1) {
+            cout << format("ERR: specified number of reads ({}) does not match number of found reads ({}). Line: {}\n", reads_size, cols.size()-1, line_num);
             abort();
+        }
+        for (size_t j = 1; j < cols.size(); j++){
+            int read = stoi(cols[j]);
+            if (read < 0) {
+                cout << format("ERR: Negative read value {}. Line: {}\n", read, line_num);
+                abort();
+            }
+            node_to_read[i].push_back((read_id_t) read);
         }
     }
     ifs.close();

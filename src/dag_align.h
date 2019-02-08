@@ -2,6 +2,7 @@
 #define FREDDIE_DAGALIGN_H
 
 #include <vector>
+#include <unordered_map>
 #include <set>
 #include <functional> //std::function
 #include <utility> //std::pair stuff
@@ -15,6 +16,8 @@ namespace dag_types {
     typedef std::set<index_t> node_set_t;
     typedef std::vector<node_set_t> neighbors_t;
     typedef std::vector<read_id_t> read_id_list_t;
+    typedef std::pair<uint16_t,index_t> transcript_edge_t;
+    typedef std::vector<transcript_edge_t> transcript_edges_t;
     // Alignment matrix
     typedef int32_t align_score_t;
     typedef std::pair<index_t, index_t> matrix_coordinate_t;
@@ -41,9 +44,10 @@ private:
     dag_types::neighbors_t parents;
     dag_types::neighbors_t children;
     std::vector<dag_types::read_id_list_t> node_to_read;
-    dag_types::neighbors_t parents_transcript;
-    dag_types::neighbors_t children_transcript;
-    std::vector<dag_types::read_id_list_t> node_to_transcript;
+    // transcript GTF annotaions
+    dag_types::node_set_t transcript_splice_junctions;
+    std::vector<std::string> transcripts;
+    std::unordered_map<dag_types::index_t, dag_types::transcript_edges_t> node_to_transcript_edges;
     // Alignment matrix
     dag_types::align_matrix_t D;
     dag_types::backtrack_matrix_t B;
@@ -73,9 +77,5 @@ public:
     void print_matrix(const std::string& output_path);
     void save_state(const std::string& output_path);
     void load_state(const std::string& output_path);
-    // void print_mapping_interval(size_t interval_id);
-    // void print_cochain(const read_gene_mappings_t& chain);
-    // void generate_dot(const std::string output_path);
-    // void process_gene_test();
 };
 #endif //FREDDIE_DAGALIGN_H
