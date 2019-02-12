@@ -149,6 +149,7 @@ void print_flags(){
     std::cout << fmt::format("\t{}:\t{}", "data", globals::filenames::data) << endl;
     std::cout << fmt::format("\t{}:\t{}", "save", globals::program::save) << endl;
     std::cout << fmt::format("\t{}:\t{}", "generate_dot", globals::program::generate_dot) << endl;
+    std::cout << fmt::format("\t{}:\t{}", "transcript_tsv", globals::filenames::transcript_tsv) << endl;
     std::cout << fmt::format("\t{}:\t{}", "generate_paf", globals::program::generate_paf) << endl;
     std::cout << fmt::format("\t{}:\t{}", "align", globals::program::align) << endl;
     std::cout << fmt::format("\t{}:\t{}", "load", globals::program::load) << endl;
@@ -166,6 +167,7 @@ void print_help(){
     cout << "    -o    --output-prefix             (type: string;   Default: \"\")\n";
     cout << "    -s    --save                      (type: bool;     Default: false)\n";
     cout << "    -d    --generate_dot              (type: bool;     Default: false)\n";
+    cout << "    -a    --transcript-tsv            (type: string;   OPTIONAL parameter needed to annotate the DAG visualization)\n";
     cout << "    -p    --generate_paf              (type: bool;     Default: false)\n";
     cout << "    -h    --help" << endl;
 }
