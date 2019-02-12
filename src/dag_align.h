@@ -13,11 +13,12 @@
 namespace dag_types {
     typedef uint32_t read_id_t;
     typedef uint32_t index_t;
+    typedef uint16_t tid_t;
     typedef std::set<index_t> node_set_t;
     typedef std::vector<node_set_t> neighbors_t;
     typedef std::vector<read_id_t> read_id_list_t;
-    typedef std::pair<uint16_t,index_t> transcript_edge_t;
-    typedef std::vector<transcript_edge_t> transcript_edges_t;
+    // typedef std::pair<tid_t,index_t> transcript_edge_t;
+    // typedef std::vector<transcript_edge_t> transcript_edges_t;
     // Alignment matrix
     typedef int32_t align_score_t;
     typedef std::pair<index_t, index_t> matrix_coordinate_t;
@@ -45,9 +46,10 @@ private:
     dag_types::neighbors_t children;
     std::vector<dag_types::read_id_list_t> node_to_read;
     // transcript GTF annotaions
-    dag_types::node_set_t transcript_splice_junctions;
+    dag_types::node_set_t transcript_junctions;
     std::vector<std::string> transcripts;
-    std::unordered_map<dag_types::index_t, dag_types::transcript_edges_t> node_to_transcript_edges;
+    std::vector<std::vector<dag_types::interval_t>> transcript_intervals; 
+    // std::unordered_map<dag_types::index_t, dag_types::transcript_edges_t> node_to_transcript_edges;
     // Alignment matrix
     dag_types::align_matrix_t D;
     dag_types::backtrack_matrix_t B;

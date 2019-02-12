@@ -2,14 +2,14 @@
 #include "commandline_flags.h"
 #include "fmt/format.h"
 
-#include <sstream>  // std::stringstream, istringstream
+#include <sstream>  // std::stringstream
 #include <queue>
 #include <unordered_map>
 #include <algorithm> // std::reverse
 #include <functional> // std::function
 #include <cstdlib> // abort()
 #include <utility> // move()
-#include <iterator> // next()
+#include <iterator> // next(), std::inserter
 
 using namespace dag_types;
 
@@ -20,14 +20,13 @@ constexpr align_score_t MISMATCH_S = -6;
 constexpr size_t MAX_MAPPINGS = 10;
 constexpr align_score_t MIN_SCORE = 30;
 constexpr matrix_coordinate_t INVALID_COORDINATE = {-1,-1};
+constexpr double DOT_CANVAS_WIDTH = 100.0; //in inches
 
 using fmt::format;
 using std::cout;
 using std::endl;
 using std::string;
 using std::stringstream;
-using std::istringstream;
-using std::istream_iterator;
 using std::ifstream;
 using std::ofstream;
 using std::queue;
@@ -37,6 +36,22 @@ using std::function;
 using std::reverse;
 using std::move;
 using std::next;
+using std::set;
+
+const vector<string> DOT_COLORS = { // http://colorbrewer2.org/#type=qualitative&scheme=Paired&n=12
+    "#a6cee3",
+    "#1f78b4",
+    "#b2df8a",
+    "#33a02c",
+    "#fb9a99",
+    "#e31a1c",
+    "#fdbf6f",
+    "#ff7f00",
+    "#cab2d6",
+    "#6a3d9a",
+    "#ffff99",
+    "#b15928",
+};
 
 vector<string> split(const std::string &s, char delim) {
     vector<string> result;
@@ -350,8 +365,9 @@ void dag_aligner::init_dag(const string& gene_in, const std::string& gene_name_i
         append_node();
     }
     transcripts.clear();
+    transcript_intervals.clear();
+    transcript_junctions.clear();
     if (globals::filenames::transcript_tsv != "") {
-        node_to_transcript_edges.clear();
         ifstream tsv(globals::filenames::transcript_tsv);
         string line;
         while (getline(tsv, line)) {
@@ -361,12 +377,13 @@ void dag_aligner::init_dag(const string& gene_in, const std::string& gene_name_i
                 cout << line << endl;
                 abort();
             }
-            uint16_t tid = transcripts.size();
+            tid_t tid = transcripts.size();
             string tname = columns[0];
             string chr = columns[1];
             string strand = columns[2];
-            transcripts.push_back(format("{}:{}:{}", tname, chr, strand));
+            transcripts.push_back(format("{}:{}:{}:{}", tid, tname, chr, strand));
             vector<string> intervals = split(columns[3], ',');
+            vector<interval_t> result;
             for (const string& s : intervals) {
                 if (s.size() == 0) {
                     continue;
@@ -384,21 +401,11 @@ void dag_aligner::init_dag(const string& gene_in, const std::string& gene_name_i
                     cout << line << endl;
                     abort();
                 }
-                transcript_splice_junctions.insert((index_t) start);
-                transcript_splice_junctions.insert((index_t) end);
+                transcript_junctions.insert((index_t) start);
+                transcript_junctions.insert((index_t) end);
+                result.push_back(interval_t(start, end));
             }
-            for (size_t i = 1; i < intervals.size(); i++) {
-                vector<string> interval_last = split(intervals[i-1], '-');
-                vector<string> interval_current = split(intervals[i], '-');
-                int source = stoi(interval_last[1]) + 1;
-                int target = stoi(interval_current[0]) + 1;
-                if (node_to_transcript_edges.find(source) == node_to_transcript_edges.end()) {
-                    node_to_transcript_edges[source] = transcript_edges_t(1, transcript_edge_t(target, tid));
-                } else {
-                    node_to_transcript_edges[source].push_back(transcript_edge_t(target, tid));
-                }
-
-            }
+            transcript_intervals.emplace_back(result);
         }
     }
 }
@@ -461,46 +468,83 @@ void dag_aligner::generate_compressed_dot(const string& output_path) {
     ofile.open(output_path);
     ofile << "digraph graphname{" << endl;
     ofile << "    rankdir=LR;" << endl;
-    unordered_map<index_t, index_t> end_of_start;
+    vector<index_t> junctions;
+    unordered_map<index_t,size_t> junction_idx;
+    junctions.push_back(0);
+    ofile << format("    {:d} [label={:d}] //{}", 0, 0, "start") << endl;
     for (index_t node = 1; node < children.size(); node++) {
-        index_t start = node;
-        index_t simple_path_size = 0;
-        double read_coverage_size = 0.0;
-        while (true) {
-            if (node == children.size()) {
-                node--;
-                break;
-            }
-            if (parents[node].size() > 0 && simple_path_size > 0) {
-                node--;
-                break;
-            }
-            if (simple_path_size > 0 && read_coverage_size == 0 && node_to_read[node].size() > 0) {
-                node--;
-                break;
-            }
-            simple_path_size++;
-            read_coverage_size += node_to_read[node].size();
-            if (children[node].size() > 0) {
-                break;
-            }
-            node++;
+        bool flag = false;
+        string comment = "";
+        if (transcript_junctions.find(node) != transcript_junctions.end()) {
+            flag = true;
+            comment += "S";
         }
-        end_of_start[start] = node;
-        ofile << format("    {:d} [label=\"i:{:d}-{:d} w:{:.2f}\"]", node, node-simple_path_size+1, node, read_coverage_size/simple_path_size) << endl;
+        if (node_to_read[node].size() == 0 && node_to_read[node-1].size() > 0) {
+            flag = true;
+            comment += "0";
+        }
+        if (node_to_read[node-1].size() == 0 && node_to_read[node].size() > 0) {
+            flag = true;
+            comment += "1";
+        }
+        if (children[node].size() > 0) {
+            flag = true;
+            comment += "C";
+        }
+        if (parents[node].size() > 0) {
+            flag = true;
+            comment += "P";
+        }
+        if (node == children.size() -1) {
+            flag = true;
+            comment += "E";
+        }
+        if (flag) {
+            junction_idx[node] = junctions.size();
+            junctions.push_back(node);
+            ofile << format("    {:d} [label={:d}] //{}", node, node, comment) << endl;
+        }
     }
-    ofile << endl;
-    ofile << format("    edge[weight=10, arrowhead=none];") << endl;
-    for (const auto& x : end_of_start) {
-        if (x.first <= 1) {
-            continue;
+    ofile << format("    edge[weight=1000, arrowhead=none];") << endl;
+    for (size_t i = 1; i < junctions.size(); i++) {
+        index_t start  = junctions[i-1];
+        index_t end  = junctions[i];
+        double len = end-start;
+        double coverage = 0.0;
+        for (index_t node = start; node < end; node++) {
+            coverage += node_to_read[node].size();
         }
-        ofile << format("    {}->{}", x.first-1, x.second) << endl;
+        string space_padding((end-start)/2, ' ');
+        ofile << format("    {}->{} [label=\"{}{:.2f}{}\"]", start, end, space_padding, coverage/len, space_padding) << endl;
     }
     ofile << format("    edge[weight=1, arrowhead=normal];") << endl;
     for (size_t node = 1; node < children.size() - 1; node++) {
         for (index_t child : children[node]) {
-            ofile << format("    {}->{}", node, end_of_start[child]) << endl;
+            set<read_id_t> s;
+            s.insert(node_to_read[node].begin(),node_to_read[node].end());
+            s.insert(node_to_read[child].begin(),node_to_read[child].end());
+            for (const index_t rid : node_to_read[node+1]) {
+                s.erase(rid);
+            }
+            ofile << format("    {}->{} [label={:d}]", node, child, s.size()) << endl;
+        }
+    }
+    ofile << format("    edge[weight=1, arrowhead=none];") << endl;
+    string transcript_dot_format = "    {}->{} [style={} color=\"{}\" label=\"t{:d}{}{:d}\"]";
+    for (tid_t tid = 0; tid < transcript_intervals.size(); tid++) {
+        for (size_t i = 0; i < transcript_intervals[tid].size(); i++) {
+            index_t start = transcript_intervals[tid][i].first;
+            index_t end = transcript_intervals[tid][i].second;
+            for (size_t j = junction_idx[start]; j < junction_idx[end]; j++) {
+                index_t source = junctions[j];
+                index_t target = junctions[j+1];
+                ofile << format(transcript_dot_format, source, target, "bold", DOT_COLORS[tid%DOT_COLORS.size()], tid, "e", i) << endl;
+            }
+            if (i+1 == transcript_intervals[tid].size()) {
+                continue;
+            }
+            index_t next_start = transcript_intervals[tid][i+1].first;
+            ofile << format(transcript_dot_format, end, next_start, "dotted", DOT_COLORS[tid%DOT_COLORS.size()], tid, "i", i) << endl;
         }
     }
     ofile << "}" << endl;
