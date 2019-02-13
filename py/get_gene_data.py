@@ -46,7 +46,7 @@ def parse_args():
     args = parser.parse_args()
     return args
 
-def get_coordinates(gene, gtf):
+def get_coordinates_zero_based_end_exclusive(gene, gtf):
     print('Getting {} coordinates from {}'.format(gene, gtf))
     for line in open(gtf):
         if (line[0] == '#'):
@@ -56,7 +56,7 @@ def get_coordinates(gene, gtf):
             continue
         if (gene in line[8]):
             print(line)
-            return line[0], line[6], int(line[3]), int(line[4])
+            return line[0], line[6], int(line[3])-1, int(line[4])
 
 def align_reads(minimap2, threads, genome, reads, sam):
     print('Aligning reads using command:')
@@ -119,7 +119,7 @@ def output_transcripts(genome, gtf, gene, chr, strand, gene_start, gene_end, out
         if (info['gene_biotype'] != 'protein_coding'):
             continue
 
-        exon_start, exon_end = int(line[3]), int(line[4])
+        exon_start, exon_end = int(line[3])-1, int(line[4])
         key = info['transcript_id']
         if key in transcript_infos:
             transcript_infos[key].append([exon_start, exon_end])
@@ -137,10 +137,10 @@ def output_transcripts(genome, gtf, gene, chr, strand, gene_start, gene_end, out
         for start,end in exons:
             if (strand == '+'):
                 exon = str(genome[chr][start:end])
-                interval = '{}-{}'.format(start-gene_start, end-gene_start)
+                interval = '{}-{}'.format(start-gene_start, end-gene_start-1)
             elif (strand == '-'):
                 exon = str(Seq(str(genome[chr][start:end])).reverse_complement())
-                interval = '{}-{}'.format(gene_end-end, gene_end-start)
+                interval = '{}-{}'.format(gene_end-end, gene_end-start-1)
             else:
                 exon = 'err_strand'
                 interval = strand
@@ -151,6 +151,9 @@ def output_transcripts(genome, gtf, gene, chr, strand, gene_start, gene_end, out
 
 def main():
     args = parse_args()
+    import os
+    if not os.path.exists(args.output):
+        os.mkdir(args.output)
     if (args.gene[0:4]=='ENSG'):
         try:
             int(args.gene[4:])
@@ -160,7 +163,7 @@ def main():
     else:
         args.gene = 'gene_name "{}"'.format(args.gene)
 
-    chr, strand, start, end = get_coordinates(gene=args.gene, gtf=args.gtf)
+    chr, strand, start, end = get_coordinates_zero_based_end_exclusive(gene=args.gene, gtf=args.gtf)
 
     if (args.reads):
         import pysam
