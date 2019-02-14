@@ -20,6 +20,7 @@ constexpr align_score_t MISMATCH_S = -6;
 constexpr size_t MAX_MAPPINGS = 10;
 constexpr align_score_t MIN_SCORE = 30;
 constexpr matrix_coordinate_t INVALID_COORDINATE = {-1,-1};
+constexpr index_t COCHAINING_PERMISSIBILITY = 10; //in inches
 constexpr double DOT_CANVAS_WIDTH = 100.0; //in inches
 
 using fmt::format;
@@ -272,11 +273,11 @@ void dag_aligner::cochain_mappings() {
         const interval_t& child_first_gene_interval = mappings[child].second[0];
         const interval_t& parent_last_gene_interval = mappings[parent].second[mappings[parent].second.size()-1];
         // The start of the child read interval CANNOT come before the end of the parent read inverval
-        if (child_read_interval.first <= parent_read_interval.second) {
+        if (child_read_interval.first + COCHAINING_PERMISSIBILITY <= parent_read_interval.second) {
             return false;
         }
         // The start of the child first gene interval CANNOT come before the end of the parent last gene inverval
-        if (child_first_gene_interval.first <= parent_last_gene_interval.second) {
+        if (child_first_gene_interval.first + COCHAINING_PERMISSIBILITY <= parent_last_gene_interval.second) {
             return false;
         }
         return true;
@@ -396,7 +397,7 @@ void dag_aligner::init_dag(const string& gene_in, const std::string& gene_name_i
                 }
                 int start = stoi(interval[0]) + 1;
                 int end = stoi(interval[1]) + 1;
-                if (start < 0 || end < 0) {
+                if (start < 1 || end < 1 || start > (long) gene.size() || end > (long) gene.size()) {
                     cout << "ERR: Malformated interval in line:" << endl;
                     cout << line << endl;
                     abort();
@@ -470,8 +471,8 @@ void dag_aligner::generate_compressed_dot(const string& output_path) {
     ofile << "    rankdir=LR;" << endl;
     vector<index_t> junctions;
     unordered_map<index_t,size_t> junction_idx;
-    junctions.push_back(0);
-    ofile << format("    {:d} [label={:d}] //{}", 0, 0, "start") << endl;
+    // junctions.push_back(0);
+    // ofile << format("    {:d} [label={:d}] //{}", 0, 0, "start") << endl;
     for (index_t node = 1; node < children.size(); node++) {
         bool flag = false;
         string comment = "";
@@ -479,11 +480,11 @@ void dag_aligner::generate_compressed_dot(const string& output_path) {
             flag = true;
             comment += "S";
         }
-        if (node_to_read[node].size() == 0 && node_to_read[node-1].size() > 0) {
+        if (node_to_read[node].size() > 1 && node_to_read[node-1].size() == 0) {
             flag = true;
-            comment += "0";
+            comment += "1";
         }
-        if (node_to_read[node-1].size() == 0 && node_to_read[node].size() > 0) {
+        if (node + 1 < children.size() && node_to_read[node].size() > 0 && node_to_read[node+1].size() == 0) {
             flag = true;
             comment += "1";
         }
@@ -502,31 +503,48 @@ void dag_aligner::generate_compressed_dot(const string& output_path) {
         if (flag) {
             junction_idx[node] = junctions.size();
             junctions.push_back(node);
-            ofile << format("    {:d} [label={:d}] //{}", node, node, comment) << endl;
+            ofile << format("    {:d} [label=\"{:d}:{:d}\"] //{}", node, node, node_to_read[node].size(), comment) << endl;
         }
     }
     ofile << format("    edge[weight=1000, arrowhead=none];") << endl;
     for (size_t i = 1; i < junctions.size(); i++) {
         index_t start  = junctions[i-1];
         index_t end  = junctions[i];
-        double len = end-start;
-        double coverage = 0.0;
-        for (index_t node = start; node < end; node++) {
-            coverage += node_to_read[node].size();
+        double len = end-start-1;
+        if (len == 0) {
+            ofile << format("    {}->{}", start, end) << endl;
+        } else {
+            double coverage = 0.0;
+            for (index_t node = start + 1; node < end; node++) {
+                coverage += node_to_read[node].size();
+            }
+            string space_padding((end-start)/2, ' ');
+            ofile << format("    {}->{} [label=\"{}{:.2f}{}\"]", start, end, space_padding, coverage/len, space_padding) << endl;
         }
-        string space_padding((end-start)/2, ' ');
-        ofile << format("    {}->{} [label=\"{}{:.2f}{}\"]", start, end, space_padding, coverage/len, space_padding) << endl;
     }
     ofile << format("    edge[weight=1, arrowhead=normal];") << endl;
     for (size_t node = 1; node < children.size() - 1; node++) {
         for (index_t child : children[node]) {
             set<read_id_t> s;
-            s.insert(node_to_read[node].begin(),node_to_read[node].end());
-            s.insert(node_to_read[child].begin(),node_to_read[child].end());
-            for (const index_t rid : node_to_read[node+1]) {
-                s.erase(rid);
+            for (const index_t& rid : node_to_read[node]) {
+                for (const index_t& rid_2 : node_to_read[child]) {
+                    if (rid == rid_2) {
+                        s.insert(rid);
+                        break;
+                    }
+                }
             }
-            ofile << format("    {}->{} [label={:d}]", node, child, s.size()) << endl;
+            for (size_t node_2 = node + 1; node_2 < child; node_2++) {
+                for (const index_t& rid : node_to_read[node_2]) {
+                    s.erase(rid);
+                }
+            }
+            stringstream comment;
+            comment << format("{}->{}: ", node, child);
+            for (const index_t& rid : s) {
+                comment << format("{},", rid);
+            }
+            ofile << format("    {}->{} [label={:d}] // {}", node, child, s.size(), comment.str()) << endl;
         }
     }
     ofile << format("    edge[weight=1, arrowhead=none];") << endl;
