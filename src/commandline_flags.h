@@ -8,16 +8,12 @@ namespace globals {
     struct filenames {
         static std::string reads_fasta;
         static std::string gene_fasta;
+        static std::string reads_paf;
         static std::string transcript_tsv;
-        static std::string output_prefix;
-        static std::string data;
     };
     struct program {
         static int align;
-        static int load;
-        static int save;
-        static int generate_dot;
-        static int generate_paf;
+        static int plot;
     };
 }
 

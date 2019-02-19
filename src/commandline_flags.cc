@@ -1,173 +1,96 @@
 #include "commandline_flags.h"
 
 #include "fmt/format.h"
-#include <iostream> // std::cout
-#include <unordered_set>
+#include <iostream> // std::cout, std::cerr
 
 using std::cout;
+using std::cerr;
 using std::endl;
 using std::string;
-using std::unordered_set;
+using namespace globals;
 
-string globals::filenames::reads_fasta = "";
-string globals::filenames::gene_fasta = "";
-string globals::filenames::transcript_tsv = "";
-string globals::filenames::output_prefix = "";
-string globals::filenames::data = "";
-int globals::program::save = -1;
-int globals::program::generate_dot = -1;
-int globals::program::generate_paf = -1;
-int globals::program::align = -1;
-int globals::program::load = -1;
-
-const unordered_set<string> false_vals({"false", "f", "0"});
-const unordered_set<string> true_vals({"true", "t", "1"});
-
-void process_flags() {
-    globals::program::load = globals::filenames::data != "" ? 1 : 0;
-    globals::program::align = globals::filenames::reads_fasta != "" ? 1 : 0;
-
-    if (!((globals::program::load == 1) ^ (globals::filenames::gene_fasta != ""))) {
-        cout << "Provide either just gene fasta or just data file to load!\n";
-        print_help();
-        exit(-1);
-    }
-    if (globals::program::generate_paf == 1 && globals::program::align != 1) {
-        cout << "Cannot generate PAF file without input reads FASTA file!\n";
-        print_help();
-        exit(-1);
-    }
-    if (globals::program::generate_dot == 1 && globals::program::load != 1 && globals::program::align != 1) {
-        cout << "Cannot generate DOT file without loading saved DATA file or input reads FASTA file!\n";
-        print_help();
-        exit(-1);
-    }
-
-}
+string filenames::gene_fasta = "";
+string filenames::reads_fasta = "";
+string filenames::reads_paf = "";
+string filenames::transcript_tsv = "";
+int program::align = -1;
+int program::plot = -1;
 
 void parse_flags(int argc, char *argv[]){
-    for (int i = 1; i < argc; i++) {
-        string current_param(argv[i]);
-        if (current_param == "-h" || current_param == "--help") {
-            print_help();
-            exit(0);
-        }
-        if ((globals::filenames::reads_fasta == "") && (current_param == "-r" || current_param == "--reads-fasta")) {
-            globals::filenames::reads_fasta = string(argv[i+1]);
-            i++;
-            continue;
-        }
-        if ((globals::filenames::gene_fasta == "") && (current_param == "-g" || current_param == "--gene-fasta")) {
-            globals::filenames::gene_fasta = string(argv[i+1]);
-            i++;
-            continue;
-        }
-        if ((globals::filenames::transcript_tsv == "") && (current_param == "-a" || current_param == "--transcript-tsv")) {
-            globals::filenames::transcript_tsv = string(argv[i+1]);
-            i++;
-            continue;
-        }
-        if ((globals::filenames::output_prefix == "") && (current_param == "-o" || current_param == "--output-prefix")) {
-            globals::filenames::output_prefix = string(argv[i+1]);
-            i++;
-            continue;
-        }
-        if ((globals::filenames::data == "") && (current_param == "-l" || current_param == "--load")) {
-            globals::filenames::data = string(argv[i+1]);
-            i++;
-            continue;
-        }
-        if ((globals::program::save == -1) && (current_param == "-s" || current_param == "--save")) {
-            globals::program::save = 1;
-            if (i+1 >= argc) {
-                continue;
-            }
-            string val = string(argv[i+1]);
-            if (val[0] == '-') {
-                continue;
-            }
-            if (false_vals.find(val) != false_vals.end()) {
-                globals::program::save = 0;
-                i++;
-                continue;
-            }
-            if (true_vals.find(val) != true_vals.end()) {
-                i++;
-                continue;
-            }
-        }
-        if ((globals::program::generate_dot == -1) && (current_param == "-d" || current_param == "--generate-dot")) {
-            globals::program::generate_dot = 1;
-            if (i+1 >= argc) {
-                continue;
-            }
-            string val = string(argv[i+1]);
-            if (val[0] == '-') {
-                continue;
-            }
-            if (false_vals.find(val) != false_vals.end()) {
-                globals::program::generate_dot = 0;
-                i++;
-                continue;
-            }
-            if (true_vals.find(val) != true_vals.end()) {
-                i++;
-                continue;
-            }
-        }
-        if ((globals::program::generate_paf == -1) && (current_param == "-p" || current_param == "--generate-paf")) {
-            globals::program::generate_paf = 1;
-            if (i+1 >= argc) {
-                continue;
-            }
-            string val = string(argv[i+1]);
-            if (val[0] == '-') {
-                continue;
-            }
-            if (false_vals.find(val) != false_vals.end()) {
-                globals::program::generate_paf = 0;
-                i++;
-                continue;
-            }
-            if (true_vals.find(val) != true_vals.end()) {
-                i++;
-                continue;
-            }
-        }
-        cout << "Erro: Unrecognized parameter or repeated parameter: " << current_param << "\n";
+    if (argc < 2) {
         print_help();
         abort();
     }
-    process_flags();
+    string command = string(argv[1]);
+    if (command == "align") {
+        program::align = 1;
+    }
+    else if (command == "plot") {
+        program::plot = 1;
+    } else {
+        print_help();
+        abort();
+    }
+    for (int i = 2; i < argc; i++) {
+        string current_param(argv[i]);
+        if (program::align == 1) {
+            if ((filenames::gene_fasta == "") && (current_param == "-g" || current_param == "--gene-fasta")) {
+                filenames::gene_fasta = string(argv[i+1]);
+                i++;
+                continue;
+            }
+            if ((filenames::reads_fasta == "") && (current_param == "-r" || current_param == "--reads-fasta")) {
+                filenames::reads_fasta = string(argv[i+1]);
+                i++;
+                continue;
+            }
+            if ((filenames::reads_paf == "") && (current_param == "-p" || current_param == "--reads-paf")) {
+                filenames::reads_paf = string(argv[i+1]);
+                i++;
+                continue;
+            }
+        }
+        if (program::plot == 1) {
+            if ((filenames::reads_paf == "") && (current_param == "-p" || current_param == "--reads-paf")) {
+                filenames::reads_paf = string(argv[i+1]);
+                i++;
+                continue;
+            }
+            if ((filenames::transcript_tsv == "") && (current_param == "-a" || current_param == "--transcript-tsv")) {
+                filenames::transcript_tsv = string(argv[i+1]);
+                i++;
+                continue;
+            }
+        }
+        cerr << "Error: An unrecognized or repeated parameter: " << current_param << "\n";
+        print_help();
+        abort();
+    }
 }
 
 void print_flags(){
-    cout << "Parameters:" << endl;
-    std::cout << fmt::format("\t{}:\t{}", "reads_fasta", globals::filenames::reads_fasta) << endl;
-    std::cout << fmt::format("\t{}:\t{}", "gene_fasta", globals::filenames::gene_fasta) << endl;
-    std::cout << fmt::format("\t{}:\t{}", "output_prefix", globals::filenames::output_prefix) << endl;
-    std::cout << fmt::format("\t{}:\t{}", "data", globals::filenames::data) << endl;
-    std::cout << fmt::format("\t{}:\t{}", "save", globals::program::save) << endl;
-    std::cout << fmt::format("\t{}:\t{}", "generate_dot", globals::program::generate_dot) << endl;
-    std::cout << fmt::format("\t{}:\t{}", "transcript_tsv", globals::filenames::transcript_tsv) << endl;
-    std::cout << fmt::format("\t{}:\t{}", "generate_paf", globals::program::generate_paf) << endl;
-    std::cout << fmt::format("\t{}:\t{}", "align", globals::program::align) << endl;
-    std::cout << fmt::format("\t{}:\t{}", "load", globals::program::load) << endl;
+    cerr << "Globals:" << endl;
+    cerr << fmt::format("\t{}:\t{}", "align", program::align) << endl;
+    cerr << fmt::format("\t{}:\t{}", "plot", program::plot) << endl;
+    cerr << fmt::format("\t{}:\t{}", "gene_fasta", filenames::gene_fasta) << endl;
+    cerr << fmt::format("\t{}:\t{}", "reads_fasta", filenames::reads_fasta) << endl;
+    cerr << fmt::format("\t{}:\t{}", "reads_paf", filenames::reads_paf) << endl;
+    cerr << fmt::format("\t{}:\t{}", "transcript_tsv", filenames::transcript_tsv) << endl;
 }
 
 void print_help(){
-    cout << "Freddie: Co-chaining of local alignments of long reads on gene DAG" << "\n";
-    cout << "Usage: freddie [--PARAMETER VALUE]" << "\n";
-    cout << "Example: freddie -r reads.fasta -g gene.fasta -o my_out." << "\n";
-    cout << "Example: freddie -r reads.fasta -l gene.data -o my_out." << "\n";
-    cout << "Freddie's paramters arguments:" << "\n";
-    cout << "    -r    --reads-fasta               (type: string;   OPTIONAL paramter needed to perform alignment)\n";
-    cout << "    -g    --gene-fasta                (type: string;   REQUIRED paramter if -l is not provided)\n";
-    cout << "    -l    --load                      (type: string;   REQUIRED paramter if -g is not provided)\n";
-    cout << "    -o    --output-prefix             (type: string;   Default: \"\")\n";
-    cout << "    -s    --save                      (type: bool;     Default: false)\n";
-    cout << "    -d    --generate_dot              (type: bool;     Default: false)\n";
-    cout << "    -a    --transcript-tsv            (type: string;   OPTIONAL parameter needed to annotate the DAG visualization)\n";
-    cout << "    -p    --generate_paf              (type: bool;     Default: false)\n";
-    cout << "    -h    --help" << endl;
+    cerr << "Freddie: Co-chaining of local alignments of long reads on gene DAG" << "\n";
+    cerr << "Usage: freddie COMMAND [--PARAMETER VALUE]" << "\n";
+    cerr << "Example: freddie align -r reads.fasta -g gene.fasta > reads.paf" << "\n";
+    cerr << "Example: freddie plot -p reads.paf -a transcripts.tsv > reads.paf" << "\n";
+    cerr << "Freddie's commands:" << "\n";
+    cerr << "    align                        (Align reads on a gene; stdout a PAF-like file)" << "\n";
+    cerr << "    plot                         (Takes a PAF-like file; stdout a DOT file)" << "\n";
+    cerr << "Freddie's align:" << "\n";
+    cerr << "    -g    --gene-fasta           (type: string;   REQUIRED paramter)" << "\n";
+    cerr << "    -r    --reads-fasta          (type: string;   REQUIRED paramter)" << "\n";
+    cerr << "    -p    --reads-paf            (type: string;   OPTIONAL paramter. Loads previous read alignments. Reads from -r file found here will be skipped)" << "\n";
+    cerr << "Freddie's plot:" << "\n";
+    cerr << "    -p    --reads-paf            (type: string;   REQUIRED paramter)" << "\n";
+    cerr << "    -a    --transcript-tsv       (type: string;   OPTIONAL parameter. Annotates the DAG visualization)" << "\n";
 }
