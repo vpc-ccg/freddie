@@ -17,8 +17,14 @@ namespace dag_types {
     typedef std::set<index_t> node_set_t;
     typedef std::vector<node_set_t> neighbors_t;
     typedef std::vector<read_id_t> read_id_list_t;
-    // typedef std::pair<tid_t,index_t> transcript_edge_t;
-    // typedef std::vector<transcript_edge_t> transcript_edges_t;
+    typedef std::pair<index_t, index_t> edge_t;
+    struct edge_hash {
+        std::size_t operator () (const std::pair<index_t,index_t> &p) const {
+            auto h1 = std::hash<index_t>{}(p.first);
+            auto h2 = std::hash<index_t>{}(p.second);
+            return h1 ^ h2;
+        }
+    };
     // Alignment matrix
     typedef int32_t align_score_t;
     typedef std::pair<index_t, index_t> matrix_coordinate_t;
@@ -44,12 +50,14 @@ private:
     dag_types::read_id_t read_id;
     dag_types::neighbors_t parents;
     dag_types::neighbors_t children;
-    std::vector<dag_types::read_id_list_t> node_to_read;
+    std::vector<dag_types::read_id_list_t> node_to_reads;
+    std::unordered_map<dag_types::edge_t, dag_types::read_id_list_t, dag_types::edge_hash> edge_to_reads;
+    std::vector<std::string> read_names;
+    std::unordered_map<std::string, dag_types::read_id_t> read_name_to_id;
     // transcript GTF annotaions
     dag_types::node_set_t transcript_junctions;
     std::vector<std::string> transcripts;
-    std::vector<std::vector<dag_types::interval_t>> transcript_intervals; 
-    // std::unordered_map<dag_types::index_t, dag_types::transcript_edges_t> node_to_transcript_edges;
+    std::vector<std::vector<dag_types::interval_t>> transcript_intervals;
     // Alignment matrix
     dag_types::align_matrix_t D;
     dag_types::backtrack_matrix_t B;
@@ -70,14 +78,11 @@ private:
     void cochain_mappings();
     void update_dag();
 public:
-    void init_dag(const std::string& gene, const std::string& gene_name);
-    void init_dag(const std::string& gene, const std::string& gene_name, const std::vector<bool>& exonic_indicator);
-    void align_read(const std::string& read);
-    void generate_dot(const std::string& output_path);
-    void generate_compressed_dot(const std::string& output_path);
-    void print_last_read_to_paf(std::ofstream& out_file);
-    void print_matrix(const std::string& output_path);
-    void save_state(const std::string& output_path);
-    void load_state(const std::string& output_path);
+    void init_dag(const std::string& gene_name, const std::string& gene);
+    void init_dag(const std::string& gene_name, const std::string& gene, const std::vector<bool>& exonic_indicator);
+    void align_read(const std::string& read_name, const std::string& read);
+    void print_last_read_alignments();
+    void generate_dot();
+    void load_state(const std::string& file_path);
 };
 #endif //FREDDIE_DAGALIGN_H

@@ -1,5 +1,6 @@
 #include "dag_align.h"
 #include "commandline_flags.h"
+#include "utils.h"
 #include "fmt/format.h"
 
 #include <sstream>  // std::stringstream
@@ -38,6 +39,7 @@ using std::reverse;
 using std::move;
 using std::next;
 using std::set;
+using std::make_pair;
 
 const vector<string> DOT_COLORS = { // http://colorbrewer2.org/#type=qualitative&scheme=Paired&n=12
     "#a6cee3",
@@ -54,16 +56,6 @@ const vector<string> DOT_COLORS = { // http://colorbrewer2.org/#type=qualitative
     "#b15928",
 };
 
-vector<string> split(const std::string &s, char delim) {
-    vector<string> result;
-    stringstream ss(s);
-    string item;
-    while (getline(ss, item, delim)) {
-        result.push_back(item);
-    }
-    return result;
-}
-
 void dag_aligner::clear_read_structures(){
     D.clear();
     B.clear();
@@ -79,14 +71,14 @@ index_t dag_aligner::append_node() {
         cout << "ERR:Graph corrupted. parents.size()!=children.size()" << endl;
         abort();
     }
-    if (node_to_read.size() != children.size()) {
-        cout << "ERR:Graph corrupted. node_to_read.size()!=children.size()" << endl;
+    if (node_to_reads.size() != children.size()) {
+        cout << "ERR:Graph corrupted. node_to_reads.size()!=children.size()" << endl;
         abort();
     }
     index_t new_node = children.size();
     children.push_back(node_set_t());
     parents.push_back(node_set_t());
-    node_to_read.push_back(read_id_list_t());
+    node_to_reads.push_back(read_id_list_t());
     return new_node;
 }
 
@@ -340,25 +332,26 @@ void dag_aligner::update_dag() {
     }
     for (const interval_t& exon : exons) {
         for (index_t node = exon.first; node <= exon.second; node++) {
-            node_to_read[node].push_back(read_id);
+            node_to_reads[node].push_back(read_id);
         }
     }
     for (size_t i = 1; i < exons.size(); i++) {
-        index_t source = exons[i-1].second;
-        index_t target = exons[i-0].first;
-        add_edge(source, target);
+        edge_t e(exons[i-1].second, exons[i-0].first);
+        add_edge(e.first, e.second);
+        edge_to_reads[e].push_back(read_id);
     }
 }
 
-void dag_aligner::init_dag(const string& gene, const std::string& gene_name) {
-    init_dag(gene, gene_name, vector<bool>(gene.size(), false));
+//// Public functions
+void dag_aligner::init_dag(const string& gene_name_in, const std::string& gene_in) {
+    init_dag(gene_name_in, gene_in, vector<bool>(gene.size(), false));
 }
 
-void dag_aligner::init_dag(const string& gene_in, const std::string& gene_name_in, const std::vector<bool>& exonic_indicator_in) {
+void dag_aligner::init_dag(const string& gene_name_in, const std::string& gene_in, const vector<bool>& exonic_indicator_in) {
     read_id = -1;
     children.clear();
     parents.clear();
-    node_to_read.clear();
+    node_to_reads.clear();
     gene = gene_in;
     gene_name = gene_name_in;
     exonic_indicator = exonic_indicator_in;
@@ -411,10 +404,16 @@ void dag_aligner::init_dag(const string& gene_in, const std::string& gene_name_i
     }
 }
 
-void dag_aligner::align_read(const string& read_in) {
+void dag_aligner::align_read(const string& read_name_in, const string& read_in) {
     clear_read_structures();
     read = read_in;
-    read_id++;
+    if (read_name_to_id.find(read_name_in) == read_name_to_id.end()) {
+        read_id = read_names.size();
+        read_names.push_back(read_name_in);
+        read_name_to_id[read_name_in] = read_id;
+    } else {
+        read_id = read_name_to_id[read_name_in];
+    }
     index_t read_l = read.size();
     index_t gene_l = gene.size();
     D = align_matrix_t(read_l, align_row_t(gene_l, 0));
@@ -439,40 +438,14 @@ void dag_aligner::align_read(const string& read_in) {
 }
 
 // A function to generate a .DOT file of the DAG
-void dag_aligner::generate_dot(const string& output_path) {
-    stringstream output;
-    output << "digraph graphname{" << endl;
-    output << "    rankdir=LR;" << endl;
-    for (index_t node = 0; node < children.size(); node++) {
-        string outline = "peripheries=";
-        outline +=  exonic_indicator[node] ? "2" : "1";
-        output << "    " << node <<" [label=\"" << node << ":" << gene[node] << ":" << node_to_read[node].size() << "\" "<< outline <<"]" << endl;
-    }
-    output << endl;
-    for (index_t node = 0; node < children.size() - 1; node++) {
-        output << "    " << node <<"->" << node + 1 << endl;
-    }
-    for (index_t node = 0; node < children.size(); node++) {
-        for (index_t child : children[node]) {
-            output << "    " << node <<"->" << child << endl;
-        }
-    }
-    output << "}" << endl;
-    ofstream ofile;
-    ofile.open(output_path);
-    ofile << output.str();
-    ofile.close();
-}
-
-void dag_aligner::generate_compressed_dot(const string& output_path) {
-    ofstream ofile;
-    ofile.open(output_path);
-    ofile << "digraph graphname{" << endl;
-    ofile << "    rankdir=LR;" << endl;
+void dag_aligner::generate_dot() {
+    stringstream ss;
+    ss << "digraph graphname{" << endl;
+    ss << "    rankdir=LR;" << endl;
     vector<index_t> junctions;
     unordered_map<index_t,size_t> junction_idx;
     // junctions.push_back(0);
-    // ofile << format("    {:d} [label={:d}] //{}", 0, 0, "start") << endl;
+    // ss << format("    {:d} [label={:d}] //{}", 0, 0, "start") << endl;
     for (index_t node = 1; node < children.size(); node++) {
         bool flag = false;
         string comment = "";
@@ -480,11 +453,11 @@ void dag_aligner::generate_compressed_dot(const string& output_path) {
             flag = true;
             comment += "S";
         }
-        if (node_to_read[node].size() > 1 && node_to_read[node-1].size() == 0) {
+        if (node_to_reads[node].size() > 1 && node_to_reads[node-1].size() == 0) {
             flag = true;
             comment += "1";
         }
-        if (node + 1 < children.size() && node_to_read[node].size() > 0 && node_to_read[node+1].size() == 0) {
+        if (node + 1 < children.size() && node_to_reads[node].size() > 0 && node_to_reads[node+1].size() == 0) {
             flag = true;
             comment += "1";
         }
@@ -503,31 +476,31 @@ void dag_aligner::generate_compressed_dot(const string& output_path) {
         if (flag) {
             junction_idx[node] = junctions.size();
             junctions.push_back(node);
-            ofile << format("    {:d} [label=\"{:d}:{:d}\"] //{}", node, node, node_to_read[node].size(), comment) << endl;
+            ss << format("    {:d} [label=\"{:d}:{:d}\"] //{}", node, node, node_to_reads[node].size(), comment) << endl;
         }
     }
-    ofile << format("    edge[weight=1000, arrowhead=none];") << endl;
+    ss << format("    edge[weight=1000, arrowhead=none];") << endl;
     for (size_t i = 1; i < junctions.size(); i++) {
         index_t start  = junctions[i-1];
         index_t end  = junctions[i];
         double len = end-start-1;
         if (len == 0) {
-            ofile << format("    {}->{}", start, end) << endl;
+            ss << format("    {}->{}", start, end) << endl;
         } else {
             double coverage = 0.0;
             for (index_t node = start + 1; node < end; node++) {
-                coverage += node_to_read[node].size();
+                coverage += node_to_reads[node].size();
             }
             string space_padding((end-start)/2, ' ');
-            ofile << format("    {}->{} [label=\"{}{:.2f}{}\"]", start, end, space_padding, coverage/len, space_padding) << endl;
+            ss << format("    {}->{} [label=\"{}{:.2f}{}\"]", start, end, space_padding, coverage/len, space_padding) << endl;
         }
     }
-    ofile << format("    edge[weight=1, arrowhead=normal];") << endl;
+    ss << format("    edge[weight=1, arrowhead=normal];") << endl;
     for (size_t node = 1; node < children.size() - 1; node++) {
         for (index_t child : children[node]) {
             set<read_id_t> s;
-            for (const index_t& rid : node_to_read[node]) {
-                for (const index_t& rid_2 : node_to_read[child]) {
+            for (const index_t& rid : node_to_reads[node]) {
+                for (const index_t& rid_2 : node_to_reads[child]) {
                     if (rid == rid_2) {
                         s.insert(rid);
                         break;
@@ -535,7 +508,7 @@ void dag_aligner::generate_compressed_dot(const string& output_path) {
                 }
             }
             for (size_t node_2 = node + 1; node_2 < child; node_2++) {
-                for (const index_t& rid : node_to_read[node_2]) {
+                for (const index_t& rid : node_to_reads[node_2]) {
                     s.erase(rid);
                 }
             }
@@ -544,10 +517,10 @@ void dag_aligner::generate_compressed_dot(const string& output_path) {
             for (const index_t& rid : s) {
                 comment << format("{},", rid);
             }
-            ofile << format("    {}->{} [label={:d}] // {}", node, child, s.size(), comment.str()) << endl;
+            ss << format("    {}->{} [label={:d}] // {}", node, child, s.size(), comment.str()) << endl;
         }
     }
-    ofile << format("    edge[weight=1, arrowhead=none];") << endl;
+    ss << format("    edge[weight=1, arrowhead=none];") << endl;
     string transcript_dot_format = "    {}->{} [style={} color=\"{}\" label=\"t{:d}{}{:d}\"]";
     for (tid_t tid = 0; tid < transcript_intervals.size(); tid++) {
         for (size_t i = 0; i < transcript_intervals[tid].size(); i++) {
@@ -556,21 +529,20 @@ void dag_aligner::generate_compressed_dot(const string& output_path) {
             for (size_t j = junction_idx[start]; j < junction_idx[end]; j++) {
                 index_t source = junctions[j];
                 index_t target = junctions[j+1];
-                ofile << format(transcript_dot_format, source, target, "bold", DOT_COLORS[tid%DOT_COLORS.size()], tid, "e", i) << endl;
+                ss << format(transcript_dot_format, source, target, "bold", DOT_COLORS[tid%DOT_COLORS.size()], tid, "e", i) << endl;
             }
             if (i+1 == transcript_intervals[tid].size()) {
                 continue;
             }
             index_t next_start = transcript_intervals[tid][i+1].first;
-            ofile << format(transcript_dot_format, end, next_start, "dotted", DOT_COLORS[tid%DOT_COLORS.size()], tid, "i", i) << endl;
+            ss << format(transcript_dot_format, end, next_start, "dotted", DOT_COLORS[tid%DOT_COLORS.size()], tid, "i", i) << endl;
         }
     }
-    ofile << "}" << endl;
-    ofile.close();
+    ss << "}" << endl;
+    cout << ss.str();
 }
 
-
-void dag_aligner::print_last_read_to_paf(ofstream& out_file) {
+void dag_aligner::print_last_read_alignments() {
     stringstream ss;
     for (size_t i = 0; i < align_paths.size(); i++) {
         ss << format("{}\t", read_id); //  Query sequence name
@@ -599,164 +571,14 @@ void dag_aligner::print_last_read_to_paf(ofstream& out_file) {
         // ss << format("{}\t", 0); //  Mapping quality (0-255; 255 for missing)
         ss << format("tg:c:{:d}\n", opt_chain_indicator[i]);
     }
-    out_file << ss.str();
-    out_file.flush();
-}
-
-// Printing here is formatted to (kinda) work with "column -t" Linux program
-void dag_aligner::print_matrix(const string& output_path){
-    stringstream ss;
-    ss << "\\\t";
-    ss << format("0(^)");
-    for (index_t j = 1; j < D[0].size(); j++) {
-        ss << format("\t{}({})", j, gene[j-1]);
-    }
-    ss << "\n";
-    ss << "0(^)";
-    for (index_t j = 0; j < D[0].size(); j++) {
-        if (B[0][j] == INVALID_COORDINATE) {
-            ss << format("\t{}({},{})", D[0][j], "x", "x");
-        } else {
-            ss << format("\t{}({},{})", D[0][j], B[0][j].first, B[0][j].second);
-        }
-    }
-    ss << "\n";
-    for (index_t i = 1; i < D.size(); i++) {
-        ss << format("{}({})", i, read[i-1]);
-        for (index_t j = 0; j < D[i].size(); j++) {
-            if (B[i][j] == INVALID_COORDINATE) {
-                ss << format("\t{}({},{})", D[i][j], "x", "x");
-            }
-            else {
-                ss << format("\t{}({},{})", D[i][j], B[i][j].first, B[i][j].second);
-            }
-        }
-        ss << "\n";
-    }
-    ofstream ofile;
-    ofile.open(output_path);
-    ofile << ss.str();
-    ofile.close();
-}
-
-void dag_aligner::save_state(const std::string& output_path) {
-    ofstream ofile;
-    ofile.open(output_path);
-    ofile << gene_name << "\n";
-    ofile << gene << "\n";
-    for (const bool& i : exonic_indicator) {
-        ofile << format("{:d}", i);
-    }
-    ofile << "\n";
-    ofile << read_id << "\n";
-    for (index_t i = 0; i < gene.length(); i++) {
-        ofile << format("{:d}", parents[i].size());
-        for (const index_t& p : parents[i]) {
-            ofile << format(" {:d}", p);
-        }
-        ofile << "\n";
-    }
-    for (index_t i = 0; i < gene.length(); i++) {
-        ofile << format("{:d}", children[i].size());
-        for (const index_t& c : children[i]) {
-            ofile << format(" {:d}", c);
-        }
-        ofile << "\n";
-    }
-    for (index_t i = 0; i < gene.length(); i++) {
-        ofile << format("{:d}", node_to_read[i].size());
-        for (const index_t& r : node_to_read[i]) {
-            ofile << format(" {:d}", r);
-        }
-        ofile << "\n";
-    }
-    ofile.close();
+    cout << ss.str();
 }
 
 void dag_aligner::load_state(const std::string& output_path) {
-    size_t line_num = 0;
+    // size_t line_num = 0;
     ifstream ifs;
     string buffer = "";
     ifs.open(output_path);
     getline(ifs, gene_name);
-    getline(ifs, gene);
-    line_num++;
-    getline(ifs, buffer);
-    line_num++;
-    if (buffer.size() != gene.size()) {
-        cout << format("ERR: exonic_indicator line size != gene.size. Line: {}\n", line_num);
-        abort();
-    }
-    exonic_indicator.resize(gene.size());
-    for (size_t i = 0; i < buffer.size(); i++) {
-        if (buffer[i] == '0') {
-            exonic_indicator[i] = false;
-        }
-        else if (buffer[i] == '1') {
-            exonic_indicator[i] = true;
-        }
-        else {
-            cout << format("ERR: exonic_indicator contains neither a 0 or 1. Line: {}\n", line_num);
-            abort();
-        }
-    }
-    init_dag(gene, gene_name, exonic_indicator);
-    getline(ifs, buffer);
-    line_num++;
-    read_id = stoi(buffer);
-    for (index_t i = 0; i < gene.length(); i++) {
-        getline(ifs, buffer);
-        line_num++;
-        vector<string> cols = split(buffer, ' ');
-        int parents_size = stoi(cols[0]);
-        if (parents_size != (int) cols.size()-1) {
-            cout << format("ERR: specified number of parents ({}) does not match number of found parents ({}). Line: {}\n", parents_size, cols.size()-1, line_num);
-            abort();
-        }
-        for (size_t j = 1; j < cols.size(); j++){
-            int parent = stoi(cols[j]);
-            if (parent < 0) {
-                cout << format("ERR: Negative parent value {}. Line: {}\n", parent, line_num);
-                abort();
-            }
-            parents[i].insert((index_t) parent);
-        }
-    }
-    for (index_t i = 0; i < gene.length(); i++) {
-        getline(ifs, buffer);
-        line_num++;
-        vector<string> cols = split(buffer, ' ');
-        int children_size = stoi(cols[0]);
-        if (children_size != (int) cols.size()-1) {
-            cout << format("ERR: specified number of children ({}) does not match number of found children ({}). Line: {}\n", children_size, cols.size()-1, line_num);
-            abort();
-        }
-        for (size_t j = 1; j < cols.size(); j++){
-            int child = stoi(cols[j]);
-            if (child < 0) {
-                cout << format("ERR: Negative child value {}. Line: {}\n", child, line_num);
-                abort();
-            }
-            children[i].insert((index_t) child);
-        }
-    }
-    for (index_t i = 0; i < gene.length(); i++) {
-        getline(ifs, buffer);
-        line_num++;
-        vector<string> cols = split(buffer, ' ');
-        int reads_size = stoi(cols[0]);
-        if (reads_size != (int) cols.size()-1) {
-            cout << format("ERR: specified number of reads ({}) does not match number of found reads ({}). Line: {}\n", reads_size, cols.size()-1, line_num);
-            abort();
-        }
-        for (size_t j = 1; j < cols.size(); j++){
-            int read = stoi(cols[j]);
-            if (read < 0) {
-                cout << format("ERR: Negative read value {}. Line: {}\n", read, line_num);
-                abort();
-            }
-            node_to_read[i].push_back((read_id_t) read);
-        }
-    }
     ifs.close();
 }
