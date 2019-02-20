@@ -25,6 +25,7 @@ constexpr index_t COCHAINING_PERMISSIBILITY = 10; //in inches
 constexpr double DOT_CANVAS_WIDTH = 100.0; //in inches
 
 using fmt::format;
+using std::cerr;
 using std::cout;
 using std::endl;
 using std::string;
@@ -68,11 +69,11 @@ void dag_aligner::clear_read_structures(){
 
 index_t dag_aligner::append_node() {
     if (parents.size() != children.size()) {
-        cout << "ERR:Graph corrupted. parents.size()!=children.size()" << endl;
+        cerr << "Error:Graph corrupted. parents.size()!=children.size()" << endl;
         abort();
     }
     if (node_to_reads.size() != children.size()) {
-        cout << "ERR:Graph corrupted. node_to_reads.size()!=children.size()" << endl;
+        cerr << "Error:Graph corrupted. node_to_reads.size()!=children.size()" << endl;
         abort();
     }
     index_t new_node = children.size();
@@ -84,11 +85,11 @@ index_t dag_aligner::append_node() {
 
 void dag_aligner::add_edge(const index_t& source, const index_t& target) {
     if (source >= target) {
-        cout << format("Source can't be >= target: {} -> {}", source, target) << endl;
+        cerr << format("Error: Source can't be >= target: {} -> {}", source, target) << endl;
         abort();
     }
     if (target >= parents.size()) {
-        cout << format("Target can't be >= parents.size(): {} -> {}", target, parents.size()) << endl;
+        cerr << format("Error: Target can't be >= parents.size(): {} -> {}", target, parents.size()) << endl;
         abort();
     }
     if (target - 1 == source) {
@@ -367,8 +368,7 @@ void dag_aligner::init_dag(const string& gene_name_in, const std::string& gene_i
         while (getline(tsv, line)) {
             vector<string> columns = split(line, '\t');
             if (columns.size() != 4) {
-                cout << "ERR: Incorrect number of columns in line:" << endl;
-                cout << line << endl;
+                cerr << format("Error: Incorrect number of columns at {}:\n{}", globals::filenames::transcript_tsv, line) << endl;
                 abort();
             }
             tid_t tid = transcripts.size();
@@ -384,15 +384,13 @@ void dag_aligner::init_dag(const string& gene_name_in, const std::string& gene_i
                 }
                 vector<string> interval = split(s, '-');
                 if (interval.size() != 2) {
-                    cout << "ERR: Malformated interval in line:" << endl;
-                    cout << line << endl;
+                    cerr << format("Error: Malformated interval at {}:\n{}", globals::filenames::transcript_tsv, line) << endl;
                     abort();
                 }
                 int start = stoi(interval[0]) + 1;
                 int end = stoi(interval[1]) + 1;
                 if (start < 1 || end < 1 || start > (long) gene.size() || end > (long) gene.size()) {
-                    cout << "ERR: Malformated interval in line:" << endl;
-                    cout << line << endl;
+                    cerr << format("Error: Malformated interval at {}:\n{}", globals::filenames::transcript_tsv, line) << endl;
                     abort();
                 }
                 transcript_junctions.insert((index_t) start);
@@ -546,21 +544,21 @@ void dag_aligner::print_last_read_alignments() {
     stringstream ss;
     for (size_t i = 0; i < align_paths.size(); i++) {
         ss << format("{}\t", read_id); //  Query sequence name
-        ss << format("{}\t", read.size()); //  Query sequence length
+        ss << format("{}\t", read.size()-1); //  Query sequence length
         ss << format("{}\t", local_mappings[i].first.first); //  Query start (0-based)
         ss << format("{}\t", local_mappings[i].first.second); //  Query end (0-based)
         ss << format("{}\t", "+"); //  Relative strand: "+" or "-"
         ss << format("{}\t", gene_name); //  Target sequence name
-        ss << format("{}\t", gene.size()); //  Target sequence length
+        ss << format("{}\t", gene.size()-1); //  Target sequence length
         stringstream gene_starts;
         stringstream gene_ends;
         for (const interval_t& exon : local_mappings[i].second) {
             if (exon == local_mappings[i].second[0]) {
-                gene_starts << format("{}", exon.first);
-                gene_ends << format("{}", exon.second);
+                gene_starts << format("{}", exon.first-1);
+                gene_ends << format("{}", exon.second-1);
             } else {
-                gene_starts << format(",{}", exon.first);
-                gene_ends << format(",{}", exon.second);
+                gene_starts << format(",{}", exon.first-1);
+                gene_ends << format(",{}", exon.second-1);
             }
         }
         ss << format("{}\t", gene_starts.str());  //  Target start on original strand (0-based)
@@ -574,11 +572,78 @@ void dag_aligner::print_last_read_alignments() {
     cout << ss.str();
 }
 
-void dag_aligner::load_state(const std::string& output_path) {
-    // size_t line_num = 0;
+void dag_aligner::load_state(const std::string& paf_path) {
     ifstream ifs;
-    string buffer = "";
-    ifs.open(output_path);
-    getline(ifs, gene_name);
+    ifs.open(paf_path);
+    size_t line_num = 0;
+    string buffer, rid, gid;
+    int rlen = -1;
+    int glen = -1;
+    vector<interval_t> exons;
+    while (true) {
+        bool eof = !getline(ifs, buffer);
+        vector<string> fields;
+        if (!eof) {
+            fields = split(buffer, '\t');
+        }
+        if (!eof && line_num == 0) {
+            gid = fields[5];
+            glen = stoi(fields[6]) + 1;
+            if (glen < 1) {
+                cerr << format("Error: Negative gene length at {}:{}", paf_path, line_num) << endl;
+                abort();
+            }
+            init_dag(gid, string(glen, '^'));
+        }
+        if (eof || fields[0] != rid) {
+            read_id = read_names.size()-1;
+            read_name_to_id[rid] = read_id;
+            for (const interval_t& exon : exons) {
+                for (index_t node = exon.first; node <= exon.second; node++) {
+                    node_to_reads[node].push_back(read_id);
+                }
+            }
+            for (size_t i = 1; i < exons.size(); i++) {
+                edge_t e(exons[i-1].second, exons[i-0].first);
+                add_edge(e.first, e.second);
+                edge_to_reads[e].push_back(read_id);
+            }
+            exons.clear();
+            if (!eof) {
+                rid = fields[0];
+                if (read_name_to_id.find(rid) != read_name_to_id.end()) {
+                    cerr << format("Error: PAF file not sorted by read name. Check at {}:{}", paf_path, line_num) << endl;
+                    abort();
+                }
+                rlen = stoi(fields[1]) + 1;
+                if (rlen < 1) {
+                    cerr << format("Error: Negative read length at {}:{}", paf_path, line_num) << endl;
+                    abort();
+                }
+                read_names.push_back(rid);
+            }
+        }
+        if (eof) {
+            break;
+        }
+        if (rlen != stoi(fields[1]) + 1) {
+            cerr << format("Error: Read has inconsistent length at {}:{}", paf_path, line_num) << endl;
+            abort();
+        }
+        vector<index_t> starts, ends;
+        for (const string& start : split(fields[7], ',')) {
+            starts.push_back(stoi(start));
+        }
+        for (const string& end : split(fields[7], ',')) {
+            ends.push_back(stoi(end));
+        }
+        if (starts.size() != ends.size()) {
+            cerr << format("Error: unbalanced number of ends ({}) and starts ({}) at {}:{}", starts.size(), ends.size(), paf_path, line_num) << endl;
+        }
+        for (size_t i = 0; i < starts.size(); i++) {
+            exons.push_back(interval_t(starts[i], ends[i]));
+        }
+        line_num++;
+    }
     ifs.close();
 }

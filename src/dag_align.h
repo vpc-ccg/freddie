@@ -83,6 +83,6 @@ public:
     void align_read(const std::string& read_name, const std::string& read);
     void print_last_read_alignments();
     void generate_dot();
-    void load_state(const std::string& file_path);
+    void load_state(const std::string& paf_path);
 };
 #endif //FREDDIE_DAGALIGN_H
