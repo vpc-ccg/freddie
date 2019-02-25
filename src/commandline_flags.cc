@@ -19,7 +19,7 @@ int program::plot = -1;
 void parse_flags(int argc, char *argv[]){
     if (argc < 2) {
         print_help();
-        abort();
+        exit(-1);
     }
     string command = string(argv[1]);
     if (command == "align") {
@@ -29,7 +29,7 @@ void parse_flags(int argc, char *argv[]){
         program::plot = 1;
     } else {
         print_help();
-        abort();
+        exit(-1);
     }
     for (int i = 2; i < argc; i++) {
         string current_param(argv[i]);
@@ -64,7 +64,7 @@ void parse_flags(int argc, char *argv[]){
         }
         cerr << "Error: An unrecognized or repeated parameter: " << current_param << "\n";
         print_help();
-        abort();
+        exit(-1);
     }
 }
 
@@ -82,7 +82,7 @@ void print_help(){
     cerr << "Freddie: Co-chaining of local alignments of long reads on gene DAG" << "\n";
     cerr << "Usage: freddie COMMAND [--PARAMETER VALUE]" << "\n";
     cerr << "Example: freddie align -r reads.fasta -g gene.fasta > reads.paf" << "\n";
-    cerr << "Example: freddie plot -p reads.paf -a transcripts.tsv > reads.paf" << "\n";
+    cerr << "Example: freddie plot -p reads.paf -a transcripts.tsv > reads.dot" << "\n";
     cerr << "Freddie's commands:" << "\n";
     cerr << "    align                        (Align reads on a gene; stdout a PAF-like file)" << "\n";
     cerr << "    plot                         (Takes a PAF-like file; stdout a DOT file)" << "\n";

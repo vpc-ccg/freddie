@@ -84,5 +84,6 @@ public:
     void print_last_read_alignments();
     void generate_dot();
     void load_state(const std::string& paf_path);
+    void print_dag();
 };
 #endif //FREDDIE_DAGALIGN_H

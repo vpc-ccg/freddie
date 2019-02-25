@@ -30,13 +30,12 @@ bool fasta_get_record(string& name, string& seq, ifstream& fasta_file) {
     if (fasta_file.eof()) {
         return false;
     }
-    if (c != '>') {
-        cerr << "Error: not fasta format; record not starting with '>' char" << endl;
-        abort();
-    }
-    if (getline(fasta_file, name)) {
+    if (!getline(fasta_file, name)) {
         cerr << "Error: not fasta format; orphan '>' char" << endl;
         abort();
+    }
+    if (c!='>') {
+        name = c + name;
     }
     while(true) {
         fasta_file.get(c);

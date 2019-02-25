@@ -22,12 +22,14 @@ using namespace globals;
 void align(dag_aligner& my_dag) {
     ifstream fasta;
     string name, seq;
+    cerr << format("Reading {} fasta file...", globals::filenames::gene_fasta) << endl;
     fasta = ifstream(globals::filenames::gene_fasta);
     name = "";
     seq = "^";
     if (fasta_get_record(name, seq, fasta) == false) {
         cerr << "Error: empty gene FASTA file." << endl;
     }
+    cerr << format("Gene {} of length {} is read.", name, seq.size()-1) << endl;
 
     my_dag.init_dag(name, seq);
     if (filenames::reads_paf != "") {
@@ -47,6 +49,7 @@ void align(dag_aligner& my_dag) {
 }
 
 void plot(dag_aligner& my_dag) {
+    my_dag.load_state(format(filenames::reads_paf));
     my_dag.generate_dot();
 }
 
