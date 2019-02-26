@@ -87,7 +87,7 @@ index_t dag_aligner::append_node() {
 void dag_aligner::add_edge(const index_t& source, const index_t& target) {
     if (source >= target) {
         cerr << format("Error: Source can't be >= target: {} -> {}", source, target) << endl;
-        abort();
+        return;
     }
     if (target >= parents.size()) {
         cerr << format("Error: Target can't be >= parents.size(): {} -> {}", target, parents.size()) << endl;
