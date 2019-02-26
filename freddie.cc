@@ -9,6 +9,10 @@
 #include <vector>
 #include <math.h>  // log10
 
+#ifndef GITINFO
+#define GITINFO "@ unknown git commit"
+#endif
+
 using std::cerr;
 using std::endl;
 using std::string;
