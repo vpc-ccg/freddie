@@ -443,8 +443,7 @@ void dag_aligner::generate_dot() {
     ss << "    rankdir=LR;" << endl;
     vector<index_t> junctions;
     unordered_map<index_t,size_t> junction_idx;
-    // junctions.push_back(0);
-    // ss << format("    {:d} [label={:d}] //{}", 0, 0, "start") << endl;
+    // Getting a vector of all DOT vertices
     for (index_t node = 1; node < children.size(); node++) {
         bool flag = false;
         string comment = "";
@@ -475,9 +474,10 @@ void dag_aligner::generate_dot() {
         if (flag) {
             junction_idx[node] = junctions.size();
             junctions.push_back(node);
-            ss << format("    {:d} [label=\"{:d}:{:d}\"] //{}", node, node, node_to_reads[node].size(), comment) << endl;
+            ss << format("    {:d} [label=\"{:d}:{:d}\"] //{}", node, node-1, node_to_reads[node].size(), comment) << endl;
         }
     }
+    // Adding edges of normal coverage between vertices
     ss << format("    edge[weight=1000, arrowhead=none];") << endl;
     for (size_t i = 1; i < junctions.size(); i++) {
         index_t start  = junctions[i-1];
@@ -494,31 +494,19 @@ void dag_aligner::generate_dot() {
             ss << format("    {}->{} [label=\"{}{:.2f}{}\"]", start, end, space_padding, coverage/len, space_padding) << endl;
         }
     }
+    // Adding edges of jumping coverage between vertices
     ss << format("    edge[weight=1, arrowhead=normal];") << endl;
     for (size_t node = 1; node < children.size() - 1; node++) {
         for (index_t child : children[node]) {
-            set<read_id_t> s;
-            for (const index_t& rid : node_to_reads[node]) {
-                for (const index_t& rid_2 : node_to_reads[child]) {
-                    if (rid == rid_2) {
-                        s.insert(rid);
-                        break;
-                    }
-                }
-            }
-            for (size_t node_2 = node + 1; node_2 < child; node_2++) {
-                for (const index_t& rid : node_to_reads[node_2]) {
-                    s.erase(rid);
-                }
-            }
+            edge_t e(node, child);
             stringstream comment;
-            comment << format("{}->{}: ", node, child);
-            for (const index_t& rid : s) {
+            for (const index_t& rid : edge_to_reads[e]) {
                 comment << format("{},", rid);
             }
-            ss << format("    {}->{} [label={:d}] // {}", node, child, s.size(), comment.str()) << endl;
+            ss << format("    {}->{} [label={:d}] // {}", node, child, edge_to_reads[e].size(), comment.str()) << endl;
         }
     }
+    // Adding transcript_tsv edges
     ss << format("    edge[weight=1, arrowhead=none];") << endl;
     string transcript_dot_format = "    {}->{} [style={} color=\"{}\" label=\"t{:d}{}{:d}\"]";
     for (tid_t tid = 0; tid < transcript_intervals.size(); tid++) {
@@ -671,14 +659,14 @@ void dag_aligner::load_state(const string& paf_path) {
 }
 
 void dag_aligner::print_dag() {
-    cerr << gene << endl;
     for (index_t node = 0; node < children.size(); node++) {
         if (children[node].size() == 0) {
             continue;
         }
         cerr << node << " -> ";
         for (const index_t& child : children[node]) {
-            cerr << child << " ";
+            edge_t e(node, child);
+            cerr << format("{}({}) ", child, edge_to_reads[e].size());
         }
         cerr << endl;
     }
