@@ -43,11 +43,54 @@ def parse_args():
                         type=str,
                         required=True,
                         help="Output directory")
+    parser.add_argument("-so",
+                        "--sam-output",
+                        type=str,
+                        default="",
+                        help="Output path for SAM file. Default is genome.sam under --output directory")
     args = parser.parse_args()
     return args
 
+import sys
+
+def query_yes_no(question, default=None):
+    """Ask a yes/no question via input() and return their answer.
+
+    "question" is a string that is presented to the user.
+    "default" is the presumed answer if the user just hits <Enter>.
+        It must be "yes" (the default), "no" or None (meaning
+        an answer is required of the user).
+
+    The "answer" return value is True for "yes" or False for "no".
+
+    Copied from: https://stackoverflow.com/questions/3041986/apt-command-line-interface-like-yes-no-input
+    """
+    valid = {"yes": True, "y": True, "ye": True,
+             "no": False, "n": False}
+    if default is None:
+        prompt = " [y/n] "
+    elif default == "yes":
+        prompt = " [Y/n] "
+    elif default == "no":
+        prompt = " [y/N] "
+    else:
+        raise ValueError("invalid default answer: '%s'" % default)
+
+    while True:
+        sys.stdout.write(question + prompt)
+        choice = input().lower()
+        if default is not None and choice == '':
+            return valid[default]
+        elif choice in valid:
+            return valid[choice]
+        else:
+            sys.stdout.write("Please respond with 'yes' or 'no' "
+                             "(or 'y' or 'n').\n")
+
 def get_coordinates_zero_based_end_exclusive(gene, gtf):
     print('Getting {} coordinates from {}'.format(gene, gtf))
+    gene_info = dict()
+    found = False
     for line in open(gtf):
         if (line[0] == '#'):
             continue
@@ -55,17 +98,43 @@ def get_coordinates_zero_based_end_exclusive(gene, gtf):
         if (line[2] != 'gene'):
             continue
         if (gene in line[8]):
-            print(line)
-            return line[0], line[6], int(line[3])-1, int(line[4])
+            if len(gene_info) == 0:
+                info = {x.split()[0] : x.split()[1].strip('"') for x in line[8].strip('; ').split(';')}
+                gene_info['gene_id']   = info['gene_id']
+                gene_info['gene_name'] = info['gene_name']
+                gene_info['chr']       = line[0]
+                gene_info['strand']    = line[6]
+                gene_info['start']     = int(line[3])-1
+                gene_info['end']       = int(line[4])
+                found = True
+                result = line
+            else:
+                print("There are multiple gene records in GTF with GTF gene identifier {}. We will pick only the first one. Offending line:".format(gene))
+                print(line)
+    if found:
+        print(result)
+        return gene_info
+    else:
+        print('Could not find GTF gene identifier {} in {} GTF file'.format(gene, gtf))
+        exit(-1)
 
 def align_reads(minimap2, threads, genome, reads, sam):
+    import os
+    if os.path.isfile(sam):
+        if not query_yes_no(question='====\nSAM output file already exists "{}".\nDo you want to overwrite it?'.format(sam)):
+            print('Existing..')
+            exit()
     print('Aligning reads using command:')
     cmd = "{} -aY -x splice -t {} --secondary=no {} {} > {}".format(minimap2, threads, genome, reads, sam)
     print(cmd)
     import os
     os.system(cmd)
 
-def output_gene_reads(sam, chr, strand, start, end, padding, out):
+def output_gene_reads(sam, gene_info, padding, out):
+    chr = gene_info['chr']
+    strand = gene_info['strand']
+    start = gene_info['start']
+    end = gene_info['end']
     print('Outputing {} reads of the gene at coordinates ({}) {}-{} and left padding of {}'.format(sam, chr, start, end, padding))
     import pysam
     from Bio.Seq import Seq
@@ -88,12 +157,18 @@ def output_gene_reads(sam, chr, strand, start, end, padding, out):
             else:
                 print('strand_error:"{}"'.format(strand), file=out)
 
-def output_gene(genome, gene, chr, strand, start, end, out):
-    print('Outputting {} from reference {}'.format(gene, genome))
+def output_gene(genome, gene_info, out):
+    gene_id = gene_info['gene_id']
+    gene_name = gene_info['gene_name']
+    chr = gene_info['chr']
+    strand = gene_info['strand']
+    start = gene_info['start']
+    end = gene_info['end']
+    print('Outputting {} ({}) from reference {}'.format(gene_name, gene_id, genome))
     import pyfaidx
     from Bio.Seq import Seq
     genome = pyfaidx.Fasta(genome)
-    print('>{}'.format(gene), file=out)
+    print('>{}.{}'.format(gene_id, gene_name), file=out)
     if (strand == '+'):
         print(genome[chr][start:end], file=out)
     elif (strand == '-'):
@@ -101,8 +176,14 @@ def output_gene(genome, gene, chr, strand, start, end, out):
     else:
         print('strand_error:"{}"'.format(strand), file=out)
 
-def output_transcripts(genome, gtf, gene, chr, strand, gene_start, gene_end, out_tsv, out_seq):
-    print('Outputting {} transcripts from {}'.format(gene, gtf))
+def output_transcripts(genome, gtf, gene_info, out_tsv, out_seq):
+    gene_id = gene_info['gene_id']
+    gene_name = gene_info['gene_name']
+    chr = gene_info['chr']
+    strand = gene_info['strand']
+    gene_start = gene_info['start']
+    gene_end = gene_info['end']
+    print('Outputting {} transcripts from {}'.format(gene_name, gtf))
     import pyfaidx
     from Bio.Seq import Seq
 
@@ -113,7 +194,7 @@ def output_transcripts(genome, gtf, gene, chr, strand, gene_start, gene_end, out
         line = line.rstrip().split('\t')
         if (line[2] != 'exon'):
             continue
-        if (not gene in line[8]):
+        if (not gene_id in line[8]):
             continue
         info = {x.split()[0] : x.split()[1].strip('"') for x in line[8].strip('; ').split(';')}
         if (info['gene_biotype'] != 'protein_coding'):
@@ -152,18 +233,19 @@ def output_transcripts(genome, gtf, gene, chr, strand, gene_start, gene_end, out
 def main():
     args = parse_args()
     import os
-    if not os.path.exists(args.output):
-        os.mkdir(args.output)
+    args.output = args.output.rstrip('/')
+    args.output += '/'
+    os.makedirs(args.output, exist_ok=True)
     if (args.gene[0:4]=='ENSG'):
         try:
             int(args.gene[4:])
-            args.gene = 'gene_id "{}"'.format(args.gene)
+            gene_gtf_id = 'gene_id "{}"'.format(args.gene)
         except:
-            args.gene = 'gene_name "{}"'.format(args.gene)
+            gene_gtf_id = 'gene_name "{}"'.format(args.gene)
     else:
-        args.gene = 'gene_name "{}"'.format(args.gene)
+        gene_gtf_id = 'gene_name "{}"'.format(args.gene)
 
-    chr, strand, start, end = get_coordinates_zero_based_end_exclusive(gene=args.gene, gtf=args.gtf)
+    gene_info = get_coordinates_zero_based_end_exclusive(gene=gene_gtf_id, gtf=args.gtf)
 
     if (args.reads):
         import pysam
@@ -174,19 +256,22 @@ def main():
             sam = args.reads
         except ValueError:
             print('Reads {} file is NOT in SAM format. Assuming FASTA/Q format'.format(args.reads))
-            sam = '{}genome.sam'.format(args.output)
+            if (args.sam_output == ""):
+                sam = '{}genome.sam'.format(args.output)
+            else:
+                sam = args.sam_output
             align_reads(minimap2=args.minimap2, threads=args.threads, genome=args.dna, reads=args.reads, sam=sam)
         out = open('{}reads.fasta'.format(args.output), 'w+')
-        output_gene_reads(sam=sam, chr=chr, strand=strand, start=start, end=end, padding=args.pad_size, out=out)
+        output_gene_reads(sam=sam, gene_info=gene_info, padding=args.pad_size, out=out)
         out.close()
 
     out = open('{}gene.fasta'.format(args.output), 'w+')
-    output_gene(genome=args.dna, gene=args.gene, chr=chr, strand=strand, start=start, end=end, out=out)
+    output_gene(genome=args.dna, gene_info=gene_info, out=out)
     out.close()
 
     out_tsv = open('{}trasncripts.tsv'.format(args.output), 'w+')
     out_seq = open('{}trasncripts.fasta'.format(args.output), 'w+')
-    output_transcripts(genome=args.dna, gtf=args.gtf, gene=args.gene, chr=chr, strand=strand,  gene_start=start, gene_end=end, out_tsv=out_tsv, out_seq=out_seq)
+    output_transcripts(genome=args.dna, gtf=args.gtf, gene_info=gene_info, out_tsv=out_tsv, out_seq=out_seq)
     out_tsv.close()
     out_seq.close()
 
