@@ -1,5 +1,5 @@
 CXX=g++
-CXXFLAGS=-std=c++14 -I src/ -I extern/ -Wall -Wextra
+CXXFLAGS=-std=c++11 -I src/ -I extern/ -Wall -Wextra
 LDFLAGS=
 
 

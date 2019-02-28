@@ -6,8 +6,6 @@
 #include <iostream>
 #include <fstream>
 #include <string>
-#include <vector>
-#include <math.h>  // log10
 
 #ifndef GITINFO
 #define GITINFO "@ unknown git commit"
@@ -16,35 +14,36 @@
 using std::cerr;
 using std::endl;
 using std::string;
-using std::vector;
 using std::ifstream;
-using std::ofstream;
 using fmt::format;
 
 using namespace globals;
 
 void align(dag_aligner& my_dag) {
-    ifstream fasta;
     string name, seq;
     cerr << format("Reading {} fasta file...", globals::filenames::gene_fasta) << endl;
-    fasta = ifstream(globals::filenames::gene_fasta);
+    ifstream gene_fasta(globals::filenames::gene_fasta);
     name = "";
     seq = "^";
-    if (fasta_get_record(name, seq, fasta) == false) {
+    if (fasta_get_record(name, seq, gene_fasta) == false) {
         cerr << "Error: empty gene FASTA file." << endl;
+        abort();
     }
     cerr << format("Gene {} of length {} is read.", name, seq.size()-1) << endl;
-
     my_dag.init_dag(name, seq);
+    if (fasta_get_record(name, seq, gene_fasta) == true) {
+        cerr << "Error: Gene FASTA has more than one record." << endl;
+        abort();
+    }
     if (filenames::reads_paf != "") {
         my_dag.load_state(format(filenames::reads_paf));
     }
 
-    fasta = ifstream(globals::filenames::reads_fasta);
+    ifstream reads_fasta(globals::filenames::reads_fasta);
     while (true) {
         name = "";
         seq = "^";
-        if (fasta_get_record(name, seq, fasta) == false) {
+        if (fasta_get_record(name, seq, reads_fasta) == false) {
             break;
         }
         my_dag.align_read(name, seq);
