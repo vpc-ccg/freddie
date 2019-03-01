@@ -218,10 +218,10 @@ def output_transcripts(genome, gtf, gene_info, out_tsv, out_seq):
         for start,end in exons:
             if (strand == '+'):
                 exon = str(genome[chr][start:end])
-                interval = '{}-{}'.format(start-gene_start, end-gene_start-1)
+                interval = '{}-{}'.format(start-gene_start, end-gene_start)
             elif (strand == '-'):
                 exon = str(Seq(str(genome[chr][start:end])).reverse_complement())
-                interval = '{}-{}'.format(gene_end-end, gene_end-start-1)
+                interval = '{}-{}'.format(gene_end-end, gene_end-start)
             else:
                 exon = 'err_strand'
                 interval = strand

@@ -389,7 +389,7 @@ void dag_aligner::init_dag(const string& gene_name_in, const string& gene_in, co
                     abort();
                 }
                 int start = stoi(interval[0]) + 1;
-                int end = stoi(interval[1]) + 1;
+                int end = stoi(interval[1]);
                 if (start < 1 || end < 1 || start > (long) gene.size() || end > (long) gene.size()) {
                     cerr << format("Error: Malformated interval at {}:\n{}", globals::filenames::transcript_tsv, line) << endl;
                     abort();
