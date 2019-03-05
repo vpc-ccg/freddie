@@ -10,6 +10,7 @@ namespace globals {
         static std::string gene_fasta;
         static std::string reads_paf;
         static std::string transcript_tsv;
+        static std::string sim_read_tsv;
     };
     struct program {
         static int align;
