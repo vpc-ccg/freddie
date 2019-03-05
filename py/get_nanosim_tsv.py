@@ -43,7 +43,8 @@ def output_nanosim_reads_tsv(transcript_infos, nanosim_reads_fasta, out_path):
     for line in open(nanosim_reads_fasta):
         if line[0] != '>':
             continue
-        rname = line[1:].rstrip()
+        rname = line[1:].rstrip().split()[0]
+        comment = line[1:].rstrip().split()[1]
         line = rname.split('_')
         tid = line[0]
         start_on_transcript = int(line[1])
@@ -85,7 +86,7 @@ def output_nanosim_reads_tsv(transcript_infos, nanosim_reads_fasta, out_path):
                 gene_ends.append(exon[1])
                 r_measured+=exon_len
             else:
-                gene_ends.append(gene_starts[-1]+ (aln-r_measured))
+                gene_ends.append(gene_starts[-1] + (aln-r_measured))
                 r_measured += gene_ends[-1]-gene_starts[-1]
         assert(r_measured == aln)
         for exon in transcript_infos[tid]['exons'][eidx:]:
@@ -98,8 +99,6 @@ def output_nanosim_reads_tsv(transcript_infos, nanosim_reads_fasta, out_path):
 def main():
     args = parse_args()
     transcript_infos = get_transcript_infos(args.transcript_tsv)
-    # for kv in transcript_infos.items():
-    #     print(kv)
     output_nanosim_reads_tsv(transcript_infos, args.nanosim_reads, args.output)
 if __name__ == "__main__":
     main()
