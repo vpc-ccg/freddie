@@ -36,7 +36,7 @@ def parse_args():
     parser.add_argument("-c",
                         "--threads",
                         type=int,
-                        default=32,
+                        default=8,
                         help="Number of threads for minimap2. Default: 32")
     parser.add_argument("-o",
                         "--output",
@@ -104,8 +104,12 @@ def get_coordinates_zero_based_end_exclusive(gene, gtf):
                 gene_info['gene_name'] = info['gene_name']
                 gene_info['chr']       = line[0]
                 gene_info['strand']    = line[6]
-                gene_info['start']     = int(line[3])-1
-                gene_info['end']       = int(line[4])
+                one_based_start_inc    = int(line[3])
+                zero_based_start_inc = one_based_start_inc - 1
+                gene_info['start'] = zero_based_start_inc
+                one_based_end_inc      = int(line[4])
+                zero_based_end_exl = one_based_end_inc
+                gene_info['end'] = zero_based_end_exl
                 found = True
                 result = line
             else:
@@ -200,7 +204,14 @@ def output_transcripts(genome, gtf, gene_info, out_tsv, out_seq):
         if (info['gene_biotype'] != 'protein_coding'):
             continue
 
-        exon_start, exon_end = int(line[3])-1, int(line[4])
+        one_based_start_inc  = int(line[3])
+        zero_based_start_inc = one_based_start_inc - 1
+        exon_start = zero_based_start_inc
+
+        one_based_end_inc = int(line[4])
+        zero_based_end_exl = one_based_end_inc
+        exon_end = zero_based_end_exl
+
         key = info['transcript_id']
         if key in transcript_infos:
             transcript_infos[key].append([exon_start, exon_end])
@@ -216,17 +227,21 @@ def output_transcripts(genome, gtf, gene_info, out_tsv, out_seq):
         print('{}\t{}\t{}\t'.format(tid, chr, strand), file=out_tsv, end='')
         print('>{}'.format(tid), file=out_seq)
         for start,end in exons:
+            exon = str(genome[chr][start:end])
+            assert(len(exon) == end-start)
             if (strand == '+'):
-                exon = str(genome[chr][start:end])
                 interval = '{}-{}'.format(start-gene_start, end-gene_start)
             elif (strand == '-'):
-                exon = str(Seq(str(genome[chr][start:end])).reverse_complement())
+                exon = str(Seq(exon).reverse_complement())
                 interval = '{}-{}'.format(gene_end-end, gene_end-start)
             else:
                 exon = 'err_strand'
                 interval = strand
             print('{}'.format(exon), file=out_seq, end='')
-            print('{}'.format(interval), file=out_tsv, end=',')
+            if [start,end]==exons[-1]:
+                print('{}'.format(interval), file=out_tsv, end='')
+            else:
+                print('{}'.format(interval), file=out_tsv, end=',')
         print('', file=out_tsv)
         print('', file=out_seq)
 
