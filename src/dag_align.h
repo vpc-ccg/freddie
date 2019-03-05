@@ -58,6 +58,12 @@ private:
     dag_types::node_set_t transcript_junctions;
     std::vector<std::string> transcripts;
     std::vector<std::vector<dag_types::interval_t>> transcript_intervals;
+    // simulated reads annotaions
+    dag_types::node_set_t sim_read_junctions;
+    std::vector<std::string> sim_reads;
+    std::vector<std::vector<dag_types::interval_t>> sim_read_intervals;
+    // aligned reads annotaions
+    std::vector<std::vector<dag_types::interval_t>> aln_read_intervals;
     // Alignment matrix
     dag_types::align_matrix_t D;
     dag_types::backtrack_matrix_t B;

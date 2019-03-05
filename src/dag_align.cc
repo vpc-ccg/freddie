@@ -401,6 +401,44 @@ void dag_aligner::init_dag(const string& gene_name_in, const string& gene_in, co
             transcript_intervals.emplace_back(result);
         }
     }
+    if (globals::filenames::sim_read_tsv != "") {
+        ifstream tsv(globals::filenames::sim_read_tsv);
+        string line;
+        while (getline(tsv, line)) {
+            vector<string> columns = split(line, '\t');
+            if (columns.size() != 4) {
+                cerr << format("Error: Incorrect number of columns at {}:\n{}", globals::filenames::sim_read_tsv, line) << endl;
+                abort();
+            }
+            index_t sim_rid = sim_reads.size();
+            string rname = columns[0];
+            string chr = columns[1];
+            string strand = columns[2];
+            sim_reads.push_back(format("{}:{}:{}:{}", sim_rid, rname, chr, strand));
+            vector<string> intervals = split(columns[3], ',');
+            vector<interval_t> result;
+            for (const string& s : intervals) {
+                if (s.size() == 0) {
+                    continue;
+                }
+                vector<string> interval = split(s, '-');
+                if (interval.size() != 2) {
+                    cerr << format("Error: Malformated interval at {}:\n{}", globals::filenames::sim_read_tsv, line) << endl;
+                    abort();
+                }
+                int start = stoi(interval[0]) + 1;
+                int end = stoi(interval[1]);
+                if (start < 1 || end < 1 || start > (long) gene.size() || end > (long) gene.size()) {
+                    cerr << format("Error: Malformated interval at {}:\n{}", globals::filenames::sim_read_tsv, line) << endl;
+                    abort();
+                }
+                sim_read_junctions.insert((index_t) start);
+                sim_read_junctions.insert((index_t) end);
+                result.push_back(interval_t(start, end));
+            }
+            sim_read_intervals.emplace_back(result);
+        }
+    }
 }
 
 void dag_aligner::align_read(const string& read_name_in, const string& read_in) {
@@ -449,7 +487,11 @@ void dag_aligner::generate_dot() {
         string comment = "";
         if (transcript_junctions.find(node) != transcript_junctions.end()) {
             flag = true;
-            comment += "S";
+            comment += "TS";
+        }
+        if (sim_read_junctions.find(node) != sim_read_junctions.end()) {
+            flag = true;
+            comment += "RS";
         }
         if (node_to_reads[node].size() > 1 && node_to_reads[node-1].size() == 0) {
             flag = true;
@@ -525,6 +567,49 @@ void dag_aligner::generate_dot() {
             ss << format(transcript_dot_format, end, next_start, "dotted", DOT_COLORS[tid%DOT_COLORS.size()], tid, "i", i) << endl;
         }
     }
+    // Adding sim_read_tsv edges
+    ss << format("    edge[weight=1, arrowhead=none];") << endl;
+    string sim_read_dot_format = "    {}->{} [style={} color=\"{}\" label=\"sim{:d}{}{:d}\"]";
+    string aln_read_dot_format = "    {}->{} [style={} color=\"{}\" label=\"aln{:d}{}{:d}\"]";
+    for (index_t sim_rid = 0; sim_rid < sim_read_intervals.size(); sim_rid++) {
+        for (size_t i = 0; i < sim_read_intervals[sim_rid].size(); i++) {
+            index_t start = sim_read_intervals[sim_rid][i].first;
+            index_t end = sim_read_intervals[sim_rid][i].second;
+            for (size_t j = junction_idx[start]; j < junction_idx[end]; j++) {
+                index_t source = junctions[j];
+                index_t target = junctions[j+1];
+                ss << format(sim_read_dot_format, source, target, "bold", DOT_COLORS[sim_rid%DOT_COLORS.size()], sim_rid, "e", i) << endl;
+            }
+            if (i+1 == sim_read_intervals[sim_rid].size()) {
+                continue;
+            }
+            index_t next_start = sim_read_intervals[sim_rid][i+1].first;
+            ss << format(sim_read_dot_format, end, next_start, "dotted", DOT_COLORS[sim_rid%DOT_COLORS.size()], sim_rid, "i", i) << endl;
+        }
+        if (read_name_to_id.find(sim_reads[sim_rid]) == read_name_to_id.end()) {
+            cerr << format("Error: Could not find sim_reads[sim_rid] (sim_rid={}) sim_reads in read_name_to_id (size={}) unordered_map", sim_rid, read_name_to_id.size()) << endl;
+            for (const auto& kv : read_name_to_id) {
+                cerr << format("    {} : {}", kv.first, kv.second) << endl;
+            }
+            abort();
+            continue;
+        }
+        index_t rid = read_name_to_id[sim_reads[sim_rid]];
+        for (size_t i = 0; i < aln_read_intervals[rid].size(); i++) {
+            index_t start = sim_read_intervals[rid][i].first;
+            index_t end = sim_read_intervals[rid][i].second;
+            for (size_t j = junction_idx[start]; j < junction_idx[end]; j++) {
+                index_t source = junctions[j];
+                index_t target = junctions[j+1];
+                ss << format(aln_read_dot_format, source, target, "solid", DOT_COLORS[sim_rid%DOT_COLORS.size()], sim_rid, "e", i) << endl;
+            }
+            if (i+1 == sim_read_intervals[sim_rid].size()) {
+                continue;
+            }
+            index_t next_start = sim_read_intervals[rid][i+1].first;
+            ss << format(aln_read_dot_format, end, next_start, "dashed", DOT_COLORS[sim_rid%DOT_COLORS.size()], sim_rid, "i", i) << endl;
+        }
+    }
     ss << "}" << endl;
     cout << ss.str();
 }
@@ -597,16 +682,20 @@ void dag_aligner::load_state(const string& paf_path) {
         if (eof || fields[0] != rname) {
             read_id = read_names.size()-1;
             read_name_to_id[rname] = read_id;
-            for (const interval_t& exon : exons) {
-                for (index_t node = exon.first; node <= exon.second; node++) {
-                    node_to_reads[node].push_back(read_id);
-                }
-            }
+            cerr << format("    {}:{}", rname, read_name_to_id[rname]);
+
             sort(exons.begin(), exons.end());
+            aln_read_intervals.push_back(exons);
+
             for (size_t i = 1; i < exons.size(); i++) {
                 edge_t e(exons[i-1].second, exons[i-0].first);
                 add_edge(e.first, e.second);
                 edge_to_reads[e].push_back(read_id);
+            }
+            for (const interval_t& exon : exons) {
+                for (index_t node = exon.first; node <= exon.second; node++) {
+                    node_to_reads[node].push_back(read_id);
+                }
             }
             exons.clear();
             if (!eof) {
