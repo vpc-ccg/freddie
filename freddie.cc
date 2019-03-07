@@ -1,5 +1,5 @@
 #include "commandline_flags.h"
-#include "dag_align.h"
+#include "dag.h"
 #include "utils.h"
 #include "fmt/format.h"
 

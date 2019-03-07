@@ -1,14 +1,13 @@
-#ifndef FREDDIE_DAGALIGN_H
-#define FREDDIE_DAGALIGN_H
+#ifndef FREDDIE_DAG_H
+#define FREDDIE_DAG_H
 
 #include <vector>
 #include <unordered_map>
 #include <set>
-#include <functional> //std::function
 #include <utility> //std::pair stuff
 #include <string>
 #include <iostream>
-#include <fstream>  // std::ofstream
+#include <fstream>  // std::ofstream, std::ifstream
 
 namespace dag_types {
     typedef uint32_t read_id_t;
@@ -92,4 +91,4 @@ public:
     void load_state(const std::string& paf_path);
     void print_dag();
 };
-#endif //FREDDIE_DAGALIGN_H
+#endif //FREDDIE_DAG_H
