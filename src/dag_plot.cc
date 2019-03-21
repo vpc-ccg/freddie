@@ -153,7 +153,7 @@ void dag_aligner::generate_dot() {
             ss << format(sim_read_dot_format, end, next_start, "dotted", DOT_COLORS[sim_rid%DOT_COLORS.size()], sim_rid, "i", i) << endl;
         }
         if (read_name_to_id.find(sim_reads[sim_rid]) == read_name_to_id.end()) {
-            cerr << format("Error: Could not find sim_reads[sim_rid] (sim_rid={}) sim_reads in read_name_to_id (size={}) unordered_map", sim_rid, read_name_to_id.size()) << endl;
+            cerr << format("Error: Could not find sim_reads[sim_rid] ({}) (sim_rid={}) sim_reads in read_name_to_id (size={}) unordered_map", sim_reads[sim_rid], sim_rid, read_name_to_id.size()) << endl;
             for (const auto& kv : read_name_to_id) {
                 cerr << format("    {} : {}", kv.first, kv.second) << endl;
             }

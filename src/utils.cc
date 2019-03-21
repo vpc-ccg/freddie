@@ -51,5 +51,6 @@ bool fasta_get_record(string& name, string& seq, ifstream& fasta_file) {
         }
         seq += c;
     }
+    name = name.substr(0, name.find(" ", 0));
     return true;
 }

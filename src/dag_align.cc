@@ -311,22 +311,25 @@ void dag_aligner::print_last_read_alignments() {
         ss << format("{}\t", gene.size()-1); //  Target sequence length
         stringstream gene_starts;
         stringstream gene_ends;
+        stringstream aln_blk_len;
         for (const interval_t& exon : local_mappings[i].second) {
             if (exon == local_mappings[i].second[0]) {
                 gene_starts << format("{}", exon.first-1);
                 gene_ends << format("{}", exon.second-1);
+                aln_blk_len << format("{}", exon.second-exon.first);
             } else {
                 gene_starts << format(",{}", exon.first-1);
                 gene_ends << format(",{}", exon.second-1);
+                aln_blk_len << format(",{}", exon.second-exon.first);
             }
         }
         ss << format("{}\t", gene_starts.str());  //  Target start on original strand (0-based)
         ss << format("{}\t", gene_ends.str());  //  Target end on original strand (0-based)
-        ss << format("{}\t", align_scores[i]); //  Local alignment score
-        // ss << format("{}\t", 0); //  Number of residue matches
-        // ss << format("{}\t", 0); //  Alignment block length
-        // ss << format("{}\t", 0); //  Mapping quality (0-255; 255 for missing)
-        ss << format("tg:c:{:d}\n", opt_chain_indicator[i]);
+        ss << format("{}\t", 0); //  Number of residue matches
+        ss << format("{}\t", aln_blk_len.str()); //  Alignment block length
+        ss << format("{}\t", 255); //  Mapping quality (0-255; 255 for missing)
+        ss << format("s1:i:{:d}\t", align_scores[i]); //  Local alignment score
+        ss << format("oc:c:{:d}\n", opt_chain_indicator[i]);
     }
     cout << ss.str();
 }

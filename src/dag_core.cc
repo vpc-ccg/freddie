@@ -184,43 +184,60 @@ void dag_aligner::init_dag(const string& gene_name_in, const string& gene_in, co
 void dag_aligner::load_state(const string& paf_path) {
     ifstream ifs;
     ifs.open(paf_path);
-    size_t line_num = 0;
+    size_t line_num = -1;
     string buffer, rname, gname;
+    rname = "";
+    gname = "";
     int rlen = -1;
     int glen = -1;
     vector<interval_t> exons;
     while (true) {
+        line_num++;
         bool eof = !getline(ifs, buffer);
+        // Empty PAF file
+        if (eof && line_num == 0) {
+            cerr << format("Warning: empty PAF file: {}", paf_path) << endl;
+            break;
+        }
         vector<string> fields;
         if (!eof) {
             fields = split(buffer, '\t');
+            // Check # of fields
+            if (fields.size() < 12) {
+                cerr << format("Error: PAF file has invalid number of fields ({}) at: {}:{}", fields.size(), paf_path, line_num) << endl;
+                abort();
+            }
+            // Initialize DAG on first line
+            if (line_num == 0) {
+                gname = fields[5];
+                glen = stoi(fields[6]) + 1;
+                rname = fields[0];
+                rlen = stoi(fields[1]) + 1;
+                if (glen < 1) {
+                    cerr << format("Error: Negative gene length at {}:{}", paf_path, line_num) << endl;
+                    abort();
+                }
+                if (gene_name.size() > 0 && gene_name != gname) {
+                    cerr << format("Error: Gene name in {} does not match gene name in {}:{}", globals::filenames::gene_fasta, paf_path, line_num) << endl;
+                    abort();
+                }
+                if (gene.size() > 0 && gene.size() != (size_t)glen) {
+                    cerr << format("Error: Gene length in {} does not match gene length in {}:{}", globals::filenames::gene_fasta, paf_path, line_num) << endl;
+                    abort();
+                }
+                if (gene_name.size() == 0) {
+                    init_dag(gname, string(glen, '^'));
+                }
+            }
         }
-        if (!eof && line_num == 0) {
-            gname = fields[5];
-            glen = stoi(fields[6]) + 1;
-            if (glen < 1) {
-                cerr << format("Error: Negative gene length at {}:{}", paf_path, line_num) << endl;
-                abort();
-            }
-            if (gene_name.size() > 0 && gene_name != gname) {
-                cerr << format("Error: Gene name in {} does not match gene name in {}:{}", globals::filenames::gene_fasta, paf_path, line_num) << endl;
-                abort();
-            }
-            if (gene.size() > 0 && gene.size() != (size_t)glen) {
-                cerr << format("Error: Gene length in {} does not match gene length in {}:{}", globals::filenames::gene_fasta, paf_path, line_num) << endl;
-                abort();
-            }
-            if (gene_name.size() == 0) {
-                init_dag(gname, string(glen, '^'));
-            }
-        }
+        // Resolve read at end of file or at start of new read
         if (eof || fields[0] != rname) {
+            read_names.push_back(rname);
             read_id = read_names.size()-1;
             read_name_to_id[rname] = read_id;
-            cerr << format("    {}:{}", rname, read_name_to_id[rname]);
+            cerr << format("    {}:{}", rname, read_name_to_id[rname]) << endl;
 
             sort(exons.begin(), exons.end());
-            aln_read_intervals.push_back(exons);
 
             for (size_t i = 1; i < exons.size(); i++) {
                 edge_t e(exons[i-1].second, exons[i-0].first);
@@ -232,23 +249,23 @@ void dag_aligner::load_state(const string& paf_path) {
                     node_to_reads[node].push_back(read_id);
                 }
             }
+            aln_read_intervals.emplace_back(move(exons));
             exons.clear();
-            if (!eof) {
-                rname = fields[0];
-                if (read_name_to_id.find(rname) != read_name_to_id.end()) {
-                    cerr << format("Error: PAF file not sorted by read name. Check at {}:{}", paf_path, line_num) << endl;
-                    abort();
-                }
-                rlen = stoi(fields[1]) + 1;
-                if (rlen < 1) {
-                    cerr << format("Error: Negative read length at {}:{}", paf_path, line_num) << endl;
-                    abort();
-                }
-                read_names.push_back(rname);
-            }
         }
         if (eof) {
             break;
+        }
+        if (fields[0] != rname) {
+            rname = fields[0];
+            if (read_name_to_id.find(rname) != read_name_to_id.end()) {
+                cerr << format("Error: PAF file not sorted by read name. Check at {}:{}", paf_path, line_num) << endl;
+                abort();
+            }
+            rlen = stoi(fields[1]) + 1;
+            if (rlen < 1) {
+                cerr << format("Error: Negative read length at {}:{}", paf_path, line_num) << endl;
+                abort();
+            }
         }
         if (rlen != stoi(fields[1]) + 1) {
             cerr << format("Error: Read has inconsistent length at {}:{}", paf_path, line_num) << endl;
@@ -274,10 +291,30 @@ void dag_aligner::load_state(const string& paf_path) {
         if (starts.size() != ends.size()) {
             cerr << format("Error: unbalanced number of ends ({}) and starts ({}) at {}:{}", starts.size(), ends.size(), paf_path, line_num) << endl;
         }
-        for (size_t i = 0; i < starts.size(); i++) {
-            exons.push_back(interval_t(starts[i], ends[i]));
+        int oc_tag = -1;
+        for (size_t i = 12; i < fields.size(); i++) {
+            vector<string> vs = split(fields[i], ':');
+            if (vs.size() != 3) {
+                cerr << format("Error: Invalid tag format at {}:{}", paf_path, line_num) << endl;
+                abort();
+            }
+            if (fields[i].substr(0,5) == "oc:c:") {
+                if (oc_tag != -1) {
+                    cerr << format("Error: There is more than one oc tag at {}:{}", paf_path, line_num) << endl;
+                    abort();
+                }
+                oc_tag = stoi(vs[2]);
+                if (oc_tag != 0 && oc_tag != 1) {
+                    cerr << format("Error: Invalid oc tag value ({}) at {}:{}", oc_tag, paf_path, line_num) << endl;
+                    abort();
+                }
+            }
         }
-        line_num++;
+        if (oc_tag == 1) {
+            for (size_t i = 0; i < starts.size(); i++) {
+                exons.push_back(interval_t(starts[i], ends[i]));
+            }
+        }
     }
     ifs.close();
 }
