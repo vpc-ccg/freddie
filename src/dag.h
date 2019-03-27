@@ -10,12 +10,12 @@
 #include <fstream>  // std::ofstream, std::ifstream
 
 namespace dag_types {
-    typedef uint32_t read_id_t;
+    typedef uint32_t seq_id_t;
     typedef uint32_t index_t;
-    typedef uint16_t tid_t;
+
     typedef std::set<index_t> node_set_t;
     typedef std::vector<node_set_t> neighbors_t;
-    typedef std::vector<read_id_t> read_id_list_t;
+    typedef std::vector<seq_id_t> read_id_list_t;
     typedef std::pair<index_t, index_t> edge_t;
     struct edge_hash {
         std::size_t operator () (const std::pair<index_t,index_t> &p) const {
@@ -36,6 +36,10 @@ namespace dag_types {
     typedef uint32_t seq_idx_t;
     typedef std::pair<seq_idx_t, seq_idx_t> interval_t;
     typedef std::pair<interval_t, std::vector<interval_t>> mapping_t;
+    struct annot_s {
+        std::string name;
+        std::vector<dag_types::interval_t> intervals;
+    };
 }
 
 class dag_aligner {
@@ -46,21 +50,18 @@ private:
     std::string gene;
     std::vector<bool> exonic_indicator;
     std::string read;
-    dag_types::read_id_t read_id;
+    dag_types::seq_id_t read_id;
     dag_types::neighbors_t parents;
     dag_types::neighbors_t children;
     std::vector<dag_types::read_id_list_t> node_to_reads;
     std::unordered_map<dag_types::edge_t, dag_types::read_id_list_t, dag_types::edge_hash> edge_to_reads;
     std::vector<std::string> read_names;
-    std::unordered_map<std::string, dag_types::read_id_t> read_name_to_id;
-    // transcript GTF annotaions
-    dag_types::node_set_t transcript_junctions;
-    std::vector<std::string> transcripts;
-    std::vector<std::vector<dag_types::interval_t>> transcript_intervals;
-    // simulated reads annotaions
-    dag_types::node_set_t sim_read_junctions;
-    std::vector<std::string> sim_reads;
-    std::vector<std::vector<dag_types::interval_t>> sim_read_intervals;
+    std::unordered_map<std::string, dag_types::seq_id_t> read_name_to_id;
+    // Annotaions
+    dag_types::node_set_t t_annot_junctions;
+    std::vector<dag_types::annot_s> t_annots;
+    dag_types::node_set_t r_annot_junctions;
+    std::vector<dag_types::annot_s> r_annots;
     // aligned reads annotaions
     std::vector<std::vector<dag_types::interval_t>> aln_read_intervals;
     // Alignment matrix

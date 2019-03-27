@@ -20,6 +20,38 @@ using std::ifstream;
 using std::vector;
 using std::sort;
 
+
+void parse_tsv_line(const string& line, const long& gene_size, annot_s& annot) {
+    vector<string> columns = split(line, '\t');
+    if (columns.size() != 4) {
+        cerr << "Error: Incorrect number of columns at:" << endl << line << endl;
+        abort();
+    }
+    annot.name = columns[0];
+    // chr = columns[1];
+    // strand = columns[2];
+    for (const string& s : split(columns[3], ',')) {
+        if (s.size() == 0) {
+            continue;
+        }
+        vector<string> interval = split(s, '-');
+        if (interval.size() != 2) {
+            cerr << "Error: Malformated interval at:" << endl << line << endl;
+            abort();
+        }
+        int start = stoi(interval[0]) + 1;
+        int end = stoi(interval[1]);
+        if (start < 1 || end < 1 || start > gene_size || end > gene_size) {
+            cerr << "Error: Malformated interval at:" << endl << line << endl;
+            abort();
+        }
+        // transcript_junctions.insert((index_t) start);
+        // transcript_junctions.insert((index_t) end);
+        annot.intervals.push_back(interval_t(start, end));
+    }
+}
+
+
 void dag_aligner::clear_read_structures(){
     D.clear();
     B.clear();
@@ -89,94 +121,54 @@ void dag_aligner::init_dag(const string& gene_name_in, const string& gene_in) {
     init_dag(gene_name_in, gene_in, vector<bool>(gene_in.size(), false));
 }
 
+
+
 void dag_aligner::init_dag(const string& gene_name_in, const string& gene_in, const vector<bool>& exonic_indicator_in) {
+    //// Clearing structures
+    // Alignment stuff
     read_id = -1;
     children.clear();
     parents.clear();
     node_to_reads.clear();
+    // Annotaion stuff
+    t_annot_junctions.clear();
+    t_annots.clear();
+    r_annot_junctions.clear();
+    r_annots.clear();
+
+    // Initializing required structures
     gene = gene_in;
     gene_name = gene_name_in;
     exonic_indicator = exonic_indicator_in;
     for (index_t i = 0; i < gene.size(); i++) {
         append_node();
     }
-    transcripts.clear();
-    transcript_intervals.clear();
-    transcript_junctions.clear();
+
+    // Initializing transcripts annotations for plotting
     if (globals::filenames::transcript_tsv != "") {
         ifstream tsv(globals::filenames::transcript_tsv);
         string line;
         while (getline(tsv, line)) {
-            vector<string> columns = split(line, '\t');
-            if (columns.size() != 4) {
-                cerr << format("Error: Incorrect number of columns at {}:\n{}", globals::filenames::transcript_tsv, line) << endl;
-                abort();
+            annot_s annot;
+            parse_tsv_line(line, (long) gene.size(), annot);
+            for (const interval_t& interval : annot.intervals) {
+                t_annot_junctions.insert(interval.first);
+                t_annot_junctions.insert(interval.second);
             }
-            tid_t tid = transcripts.size();
-            string tname = columns[0];
-            string chr = columns[1];
-            string strand = columns[2];
-            transcripts.push_back(format("{}:{}:{}:{}", tid, tname, chr, strand));
-            vector<string> intervals = split(columns[3], ',');
-            vector<interval_t> result;
-            for (const string& s : intervals) {
-                if (s.size() == 0) {
-                    continue;
-                }
-                vector<string> interval = split(s, '-');
-                if (interval.size() != 2) {
-                    cerr << format("Error: Malformated interval at {}:\n{}", globals::filenames::transcript_tsv, line) << endl;
-                    abort();
-                }
-                int start = stoi(interval[0]) + 1;
-                int end = stoi(interval[1]);
-                if (start < 1 || end < 1 || start > (long) gene.size() || end > (long) gene.size()) {
-                    cerr << format("Error: Malformated interval at {}:\n{}", globals::filenames::transcript_tsv, line) << endl;
-                    abort();
-                }
-                transcript_junctions.insert((index_t) start);
-                transcript_junctions.insert((index_t) end);
-                result.push_back(interval_t(start, end));
-            }
-            transcript_intervals.emplace_back(result);
+            t_annots.emplace_back(annot);
         }
     }
     if (globals::filenames::sim_read_tsv != "") {
         ifstream tsv(globals::filenames::sim_read_tsv);
         string line;
         while (getline(tsv, line)) {
-            vector<string> columns = split(line, '\t');
-            if (columns.size() != 4) {
-                cerr << format("Error: Incorrect number of columns at {}:\n{}", globals::filenames::sim_read_tsv, line) << endl;
-                abort();
+            annot_s annot;
+            parse_tsv_line(line, (long) gene.size(), annot);
+            for (const interval_t& interval : annot.intervals) {
+                r_annot_junctions.insert(interval.first);
+                r_annot_junctions.insert(interval.second);
             }
-            index_t sim_rid = sim_reads.size();
-            string rname = columns[0];
-            string chr = columns[1];
-            string strand = columns[2];
-            sim_reads.push_back(format("{}:{}:{}:{}", sim_rid, rname, chr, strand));
-            vector<string> intervals = split(columns[3], ',');
-            vector<interval_t> result;
-            for (const string& s : intervals) {
-                if (s.size() == 0) {
-                    continue;
-                }
-                vector<string> interval = split(s, '-');
-                if (interval.size() != 2) {
-                    cerr << format("Error: Malformated interval at {}:\n{}", globals::filenames::sim_read_tsv, line) << endl;
-                    abort();
-                }
-                int start = stoi(interval[0]) + 1;
-                int end = stoi(interval[1]);
-                if (start < 1 || end < 1 || start > (long) gene.size() || end > (long) gene.size()) {
-                    cerr << format("Error: Malformated interval at {}:\n{}", globals::filenames::sim_read_tsv, line) << endl;
-                    abort();
-                }
-                sim_read_junctions.insert((index_t) start);
-                sim_read_junctions.insert((index_t) end);
-                result.push_back(interval_t(start, end));
-            }
-            sim_read_intervals.emplace_back(result);
+            r_annots.emplace_back(annot);
         }
     }
 }

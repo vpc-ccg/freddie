@@ -51,13 +51,13 @@ void dag_aligner::generate_dot() {
     for (index_t node = 1; node < children.size(); node++) {
         bool flag = false;
         string comment = "";
-        if (transcript_junctions.find(node) != transcript_junctions.end()) {
+        if (t_annot_junctions.find(node) != t_annot_junctions.end()) {
             flag = true;
-            comment += "TS";
+            comment += "tA";
         }
-        if (sim_read_junctions.find(node) != sim_read_junctions.end()) {
+        if (r_annot_junctions.find(node) != r_annot_junctions.end()) {
             flag = true;
-            comment += "RS";
+            comment += "rA";
         }
         if (node_to_reads[node].size() > 1 && node_to_reads[node-1].size() == 0) {
             flag = true;
@@ -117,66 +117,41 @@ void dag_aligner::generate_dot() {
     // Adding transcript_tsv edges
     ss << format("    edge[weight=1, arrowhead=none];") << endl;
     string transcript_dot_format = "    {}->{} [style={} color=\"{}\" label=\"t{:d}{}{:d}\"]";
-    for (tid_t tid = 0; tid < transcript_intervals.size(); tid++) {
-        for (size_t i = 0; i < transcript_intervals[tid].size(); i++) {
-            index_t start = transcript_intervals[tid][i].first;
-            index_t end = transcript_intervals[tid][i].second;
+    for (seq_id_t tid = 0; tid < t_annots.size(); tid++) {
+        for (size_t i = 0; i < t_annots[tid].intervals.size(); i++) {
+            index_t start = t_annots[tid].intervals[i].first;
+            index_t end   = t_annots[tid].intervals[i].second;
             for (size_t j = junction_idx[start]; j < junction_idx[end]; j++) {
                 index_t source = junctions[j];
                 index_t target = junctions[j+1];
                 ss << format(transcript_dot_format, source, target, "bold", DOT_COLORS[tid%DOT_COLORS.size()], tid, "e", i) << endl;
             }
-            if (i+1 == transcript_intervals[tid].size()) {
+            if (i+1 == t_annots[tid].intervals.size()) {
                 continue;
             }
-            index_t next_start = transcript_intervals[tid][i+1].first;
+            index_t next_start = t_annots[tid].intervals[i+1].first;
             ss << format(transcript_dot_format, end, next_start, "dotted", DOT_COLORS[tid%DOT_COLORS.size()], tid, "i", i) << endl;
         }
     }
     // Adding sim_read_tsv edges
     ss << format("    edge[weight=1, arrowhead=none];") << endl;
     string sim_read_dot_format = "    {}->{} [style={} color=\"{}\" label=\"sim{:d}{}{:d}\"]";
-    string aln_read_dot_format = "    {}->{} [style={} color=\"{}\" label=\"aln{:d}{}{:d}\"]";
-    for (index_t sim_rid = 0; sim_rid < sim_read_intervals.size(); sim_rid++) {
-        for (size_t i = 0; i < sim_read_intervals[sim_rid].size(); i++) {
-            index_t start = sim_read_intervals[sim_rid][i].first;
-            index_t end = sim_read_intervals[sim_rid][i].second;
+    for (seq_id_t rid = 0; rid < r_annots.size(); rid++) {
+        for (size_t i = 0; i < t_annots[rid].intervals.size(); i++) {
+            index_t start = t_annots[rid].intervals[i].first;
+            index_t end   = t_annots[rid].intervals[i].second;
             for (size_t j = junction_idx[start]; j < junction_idx[end]; j++) {
                 index_t source = junctions[j];
                 index_t target = junctions[j+1];
-                ss << format(sim_read_dot_format, source, target, "bold", DOT_COLORS[sim_rid%DOT_COLORS.size()], sim_rid, "e", i) << endl;
+                ss << format(transcript_dot_format, source, target, "bold", DOT_COLORS[rid%DOT_COLORS.size()], rid, "e", i) << endl;
             }
-            if (i+1 == sim_read_intervals[sim_rid].size()) {
+            if (i+1 == t_annots[rid].intervals.size()) {
                 continue;
             }
-            index_t next_start = sim_read_intervals[sim_rid][i+1].first;
-            ss << format(sim_read_dot_format, end, next_start, "dotted", DOT_COLORS[sim_rid%DOT_COLORS.size()], sim_rid, "i", i) << endl;
-        }
-        if (read_name_to_id.find(sim_reads[sim_rid]) == read_name_to_id.end()) {
-            cerr << format("Error: Could not find sim_reads[sim_rid] ({}) (sim_rid={}) sim_reads in read_name_to_id (size={}) unordered_map", sim_reads[sim_rid], sim_rid, read_name_to_id.size()) << endl;
-            for (const auto& kv : read_name_to_id) {
-                cerr << format("    {} : {}", kv.first, kv.second) << endl;
-            }
-            abort();
-            continue;
-        }
-        index_t rid = read_name_to_id[sim_reads[sim_rid]];
-        for (size_t i = 0; i < aln_read_intervals[rid].size(); i++) {
-            index_t start = sim_read_intervals[rid][i].first;
-            index_t end = sim_read_intervals[rid][i].second;
-            for (size_t j = junction_idx[start]; j < junction_idx[end]; j++) {
-                index_t source = junctions[j];
-                index_t target = junctions[j+1];
-                ss << format(aln_read_dot_format, source, target, "solid", DOT_COLORS[sim_rid%DOT_COLORS.size()], sim_rid, "e", i) << endl;
-            }
-            if (i+1 == sim_read_intervals[sim_rid].size()) {
-                continue;
-            }
-            index_t next_start = sim_read_intervals[rid][i+1].first;
-            ss << format(aln_read_dot_format, end, next_start, "dashed", DOT_COLORS[sim_rid%DOT_COLORS.size()], sim_rid, "i", i) << endl;
+            index_t next_start = t_annots[rid].intervals[i+1].first;
+            ss << format(transcript_dot_format, end, next_start, "dotted", DOT_COLORS[rid%DOT_COLORS.size()], rid, "i", i) << endl;
         }
     }
-    ss << "}" << endl;
     cout << ss.str();
 }
 
