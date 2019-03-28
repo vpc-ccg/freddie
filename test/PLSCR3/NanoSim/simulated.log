@@ -1,9 +1,0 @@
-2019-02-25 18:13:21: /home/borabi/bin/src/NanoSim/src/simulator.py linear -r trasncripts.fasta -c NanoSim/training -o NanoSim/simulated -n 25
-2019-02-25 18:13:21: Read error profile
-2019-02-25 18:13:21: Read KDF of unaligned reads
-2019-02-25 18:13:22: Read KDF of aligned reads
-2019-02-25 18:13:22: Read in reference genome
-..............
-2019-02-25 18:13:22: Start simulation of random reads
-2019-02-25 18:13:22: Start simulation of aligned reads
-2019-02-25 18:13:22: Finished!
