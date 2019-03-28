@@ -217,6 +217,7 @@ void dag_aligner::recalc_alignment_matrix() {
 }
 
 void dag_aligner::compress_align_paths() {
+    cerr << local_mappings.size() << endl;
     for (local_alignment_s& loc_aln : local_mappings) {
         // We know the read interval and the start of the first gene interval
         interval_t read_interval (loc_aln.path[0].first, loc_aln.path[loc_aln.path.size()-1].first);
@@ -235,13 +236,13 @@ void dag_aligner::compress_align_paths() {
         CIGAR_OP last_op = loc_aln.cigar[0];
         for (const CIGAR_OP& cigar_op : loc_aln.cigar) {
             if (last_op != cigar_op) {
-                cigar_str += format("{:d}{}", last_cnt, last_op);
+                cigar_str += format("{:d}{:c}", last_cnt, (char)last_op);
                 last_cnt = 0;
                 last_op = cigar_op;
             }
             last_cnt++;
         }
-        cigar_str += format("{:d}{}", last_cnt, last_op);
+        cigar_str += format("{:d}{:c}", last_cnt, (char)last_op);
         loc_aln.cigar_str = move(cigar_str);
         loc_aln.read_interval = move(read_interval);
         loc_aln.gene_intervals = move(gene_intervals);
@@ -320,6 +321,7 @@ void dag_aligner::cochain_mappings() {
         opt_chain.push_back(opt_chain_tail);
         local_mappings[opt_chain_tail].in_opt_chain = true;
     }
+    reverse(opt_chain.begin(), opt_chain.end());
 }
 
 void dag_aligner::update_dag(const string& read_name) {
@@ -340,11 +342,13 @@ void dag_aligner::update_dag(const string& read_name) {
     interval_t prev_exon;
     for (const mapping_s& mapping : aln_read.mappings) {
         for (const interval_t& exon : mapping.gene_intervals) {
+            cerr << format("({},{})", exon.first, exon.second) << endl;
             for (index_t node = exon.first; node <= exon.second; node++) {
                 nodes[node].read_ids.push_back(read_id);
             }
             if (first_exon) {
                 first_exon = false;
+                prev_exon = exon;
                 continue;
             }
             edge_t e(prev_exon.second, exon.first);
