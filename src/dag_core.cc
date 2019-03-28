@@ -3,6 +3,7 @@
 #include "utils.h"
 #include "fmt/format.h"
 
+#include <unordered_set>
 #include <sstream>  // std::stringstream
 #include <algorithm> // std::sort
 #include <cstdlib> // abort()
@@ -19,6 +20,7 @@ using std::stringstream;
 using std::ifstream;
 using std::vector;
 using std::sort;
+using std::unordered_set;
 
 
 void parse_tsv_line(const string& line, const long& gene_size, annot_s& annot) {
@@ -51,69 +53,20 @@ void parse_tsv_line(const string& line, const long& gene_size, annot_s& annot) {
     }
 }
 
-
-void dag_aligner::clear_read_structures(){
-    D.clear();
-    B.clear();
-    align_scores.clear();
-    align_paths.clear();
-    local_mappings.clear();
-    opt_chain_indicator.clear();
-    opt_chain.clear();
-}
-
-index_t dag_aligner::append_node() {
-    if (parents.size() != children.size()) {
-        cerr << "Error: Graph corrupted. parents.size()!=children.size()" << endl;
-        abort();
-    }
-    if (node_to_reads.size() != children.size()) {
-        cerr << "Error:Graph corrupted. node_to_reads.size()!=children.size()" << endl;
-        abort();
-    }
-    index_t new_node = children.size();
-    children.push_back(node_set_t());
-    parents.push_back(node_set_t());
-    node_to_reads.push_back(read_id_list_t());
-    return new_node;
-}
-
 void dag_aligner::add_edge(const index_t& source, const index_t& target) {
     if (source >= target) {
         cerr << format("Error: Source can't be >= target: {} -> {}", source, target) << endl;
         return;
     }
-    if (target >= parents.size()) {
-        cerr << format("Error: Target can't be >= parents.size(): {} -> {}", target, parents.size()) << endl;
+    if (target >= nodes.size()) {
+        cerr << format("Error: Target can't be >= nodes.size(): {} -> {}", target, nodes.size()) << endl;
         abort();
     }
     if (target - 1 == source) {
         return;
     }
-    children[source].insert(target);
-    parents[target].insert(source);
-}
-
-void dag_aligner::update_dag() {
-    if (opt_chain.size() == 0) {
-        return;
-    }
-    vector<interval_t> exons;
-    for (const size_t& mapping_id : opt_chain) {
-        for (const interval_t& gene_interval : local_mappings[mapping_id].second) {
-            exons.push_back(gene_interval);
-        }
-    }
-    for (const interval_t& exon : exons) {
-        for (index_t node = exon.first; node <= exon.second; node++) {
-            node_to_reads[node].push_back(read_id);
-        }
-    }
-    for (size_t i = 1; i < exons.size(); i++) {
-        edge_t e(exons[i-1].second, exons[i-0].first);
-        add_edge(e.first, e.second);
-        edge_to_reads[e].push_back(read_id);
-    }
+    nodes[source].children.insert(target);
+    nodes[target].parents.insert(source);
 }
 
 //// Public functions
@@ -121,28 +74,23 @@ void dag_aligner::init_dag(const string& gene_name_in, const string& gene_in) {
     init_dag(gene_name_in, gene_in, vector<bool>(gene_in.size(), false));
 }
 
-
-
 void dag_aligner::init_dag(const string& gene_name_in, const string& gene_in, const vector<bool>& exonic_indicator_in) {
     //// Clearing structures
     // Alignment stuff
-    read_id = -1;
-    children.clear();
-    parents.clear();
-    node_to_reads.clear();
+    aln_reads.clear();
+    edge_to_reads.clear();
+    read_name_to_id.clear();
+    nodes.clear();
     // Annotaion stuff
     t_annot_junctions.clear();
     t_annots.clear();
     r_annot_junctions.clear();
     r_annots.clear();
-
     // Initializing required structures
     gene = gene_in;
     gene_name = gene_name_in;
     exonic_indicator = exonic_indicator_in;
-    for (index_t i = 0; i < gene.size(); i++) {
-        append_node();
-    }
+    nodes.resize(gene.size());
 
     // Initializing transcripts annotations for plotting
     if (globals::filenames::transcript_tsv != "") {
@@ -182,92 +130,87 @@ void dag_aligner::load_state(const string& paf_path) {
     gname = "";
     int rlen = -1;
     int glen = -1;
-    vector<interval_t> exons;
     while (true) {
         line_num++;
+        string cg_tag = "";
+        align_score_t s1_tag = 0;
+        int oc_tag = 0;
         bool eof = !getline(ifs, buffer);
         // Empty PAF file
-        if (eof && line_num == 0) {
-            cerr << format("Warning: empty PAF file: {}", paf_path) << endl;
+        if (eof) {
+            if (line_num == 0) {
+                cerr << format("Warning: empty PAF file: {}", paf_path) << endl;
+            }
             break;
         }
         vector<string> fields;
-        if (!eof) {
-            fields = split(buffer, '\t');
-            // Check # of fields
-            if (fields.size() < 12) {
-                cerr << format("Error: PAF file has invalid number of fields ({}) at: {}:{}", fields.size(), paf_path, line_num) << endl;
+        fields = split(buffer, '\t');
+        // Check # of fields
+        if (fields.size() < 12) {
+            cerr << format("Error: PAF file has invalid number of fields ({}) at: {}:{}", fields.size(), paf_path, line_num) << endl;
+            abort();
+        }
+        // Initialize gene and gene_name on first line
+        if (line_num == 0) {
+            gname = fields[5];
+            glen = stoi(fields[6]) + 1;
+            if (glen < 1) {
+                cerr << format("Error: Negative gene length at {}:{}", paf_path, line_num) << endl;
                 abort();
             }
-            // Initialize DAG on first line
-            if (line_num == 0) {
-                gname = fields[5];
-                glen = stoi(fields[6]) + 1;
-                rname = fields[0];
-                rlen = stoi(fields[1]) + 1;
-                if (glen < 1) {
-                    cerr << format("Error: Negative gene length at {}:{}", paf_path, line_num) << endl;
-                    abort();
-                }
-                if (gene_name.size() > 0 && gene_name != gname) {
-                    cerr << format("Error: Gene name in {} does not match gene name in {}:{}", globals::filenames::gene_fasta, paf_path, line_num) << endl;
-                    abort();
-                }
-                if (gene.size() > 0 && gene.size() != (size_t)glen) {
-                    cerr << format("Error: Gene length in {} does not match gene length in {}:{}", globals::filenames::gene_fasta, paf_path, line_num) << endl;
-                    abort();
-                }
-                if (gene_name.size() == 0) {
-                    init_dag(gname, string(glen, '^'));
-                }
+            if (gene_name.size() > 0 && gene_name != gname) {
+                cerr << format("Error: Gene name in {} does not match gene name in {}:{}", globals::filenames::gene_fasta, paf_path, line_num) << endl;
+                abort();
+            }
+            if (gene.size() > 0 && gene.size() != (size_t)glen) {
+                cerr << format("Error: Gene length in {} does not match gene length in {}:{}", globals::filenames::gene_fasta, paf_path, line_num) << endl;
+                abort();
+            }
+            if (gene_name.size() == 0) {
+                init_dag(gname, string(glen, '^'));
             }
         }
-        // Resolve read at end of file or at start of new read
-        if (eof || fields[0] != rname) {
-            read_names.push_back(rname);
-            read_id = read_names.size()-1;
-            read_name_to_id[rname] = read_id;
-            cerr << format("    {}:{}", rname, read_name_to_id[rname]) << endl;
+        rname = fields[0];
+        if (rname.size() < 1) {
+            cerr << format("Error: Empty read length at {}:{}", paf_path, line_num) << endl;
+            abort();
+        }
+        rlen = stoi(fields[1]) + 1;
+        if (rlen < 1) {
+            cerr << format("Error: Negative read length at {}:{}", paf_path, line_num) << endl;
+            abort();
+        }
+        seq_id_t read_id;
+        if (read_name_to_id.find(rname) == read_name_to_id.end()) {
+            aln_read_s aln_read;
+            aln_read.name = rname;
+            aln_read.length = rlen;
+            read_name_to_id[rname] = aln_reads.size();
+            aln_reads.emplace_back(aln_read);
+        }
+        read_id = read_name_to_id[rname];
+        aln_read_s& aln_read = aln_reads[read_id];
 
-            sort(exons.begin(), exons.end());
-
-            for (size_t i = 1; i < exons.size(); i++) {
-                edge_t e(exons[i-1].second, exons[i-0].first);
-                add_edge(e.first, e.second);
-                edge_to_reads[e].push_back(read_id);
-            }
-            for (const interval_t& exon : exons) {
-                for (index_t node = exon.first; node <= exon.second; node++) {
-                    node_to_reads[node].push_back(read_id);
-                }
-            }
-            aln_read_intervals.emplace_back(move(exons));
-            exons.clear();
-        }
-        if (eof) {
-            break;
-        }
-        if (fields[0] != rname) {
-            rname = fields[0];
-            if (read_name_to_id.find(rname) != read_name_to_id.end()) {
-                cerr << format("Error: PAF file not sorted by read name. Check at {}:{}", paf_path, line_num) << endl;
-                abort();
-            }
-            rlen = stoi(fields[1]) + 1;
-            if (rlen < 1) {
-                cerr << format("Error: Negative read length at {}:{}", paf_path, line_num) << endl;
-                abort();
-            }
-        }
-        if (rlen != stoi(fields[1]) + 1) {
+        if (aln_read.length != (size_t)rlen) {
             cerr << format("Error: Read has inconsistent length at {}:{}", paf_path, line_num) << endl;
             abort();
         }
+        int32_t start = stoi(fields[2]) + 1;
+        if (start < 1) {
+            cerr << format("Error: Negative start ({}) at {}:{}", start, paf_path, line_num) << endl;
+            abort();
+        }
+        int32_t end = stoi(fields[3]) + 1;
+        if (end < 1) {
+            cerr << format("Error: Negative start ({}) at {}:{}", end, paf_path, line_num) << endl;
+            abort();
+        }
+
         vector<index_t> starts, ends;
         for (const string& start : split(fields[7], ',')) {
             int val = stoi(start)+1;
             if (val < 1) {
-                cerr << format("Error: Negative start ({}) at {}:{}", start, paf_path, line_num) << endl;
+                cerr << format("Error: Negative start ({}) at {}:{}", val, paf_path, line_num) << endl;
                 abort();
             }
             starts.push_back(val);
@@ -275,7 +218,7 @@ void dag_aligner::load_state(const string& paf_path) {
         for (const string& end : split(fields[8], ',')) {
             int val = stoi(end)+1;
             if (val < 1) {
-                cerr << format("Error: Negative start ({}) at {}:{}", end, paf_path, line_num) << endl;
+                cerr << format("Error: Negative start ({}) at {}:{}", val, paf_path, line_num) << endl;
                 abort();
             }
             ends.push_back(val);
@@ -283,30 +226,53 @@ void dag_aligner::load_state(const string& paf_path) {
         if (starts.size() != ends.size()) {
             cerr << format("Error: unbalanced number of ends ({}) and starts ({}) at {}:{}", starts.size(), ends.size(), paf_path, line_num) << endl;
         }
-        int oc_tag = -1;
+        unordered_set<string> found_tags;
         for (size_t i = 12; i < fields.size(); i++) {
             vector<string> vs = split(fields[i], ':');
             if (vs.size() != 3) {
                 cerr << format("Error: Invalid tag format at {}:{}", paf_path, line_num) << endl;
                 abort();
             }
-            if (fields[i].substr(0,5) == "oc:c:") {
-                if (oc_tag != -1) {
-                    cerr << format("Error: There is more than one oc tag at {}:{}", paf_path, line_num) << endl;
-                    abort();
-                }
+            string tag = fields[i].substr(0,5);
+            if (found_tags.find(tag) != found_tags.end()) {
+                cerr << format("Error: There is more than one {} tag at {}:{}", tag, paf_path, line_num) << endl;
+                abort();
+            }
+            if (tag == "oc:c:") {
                 oc_tag = stoi(vs[2]);
-                if (oc_tag != 0 && oc_tag != 1) {
-                    cerr << format("Error: Invalid oc tag value ({}) at {}:{}", oc_tag, paf_path, line_num) << endl;
-                    abort();
-                }
+            }
+            if (tag == "cg:Z:") {
+                cg_tag = vs[2];
+            }
+            if (tag == "s1:i:") {
+                s1_tag = stoi(vs[2]);
             }
         }
         if (oc_tag == 1) {
+            mapping_s mapping;
+            mapping.read_interval = interval_t(start, end);
+            vector<interval_t>& exons = mapping.gene_intervals;
             for (size_t i = 0; i < starts.size(); i++) {
                 exons.push_back(interval_t(starts[i], ends[i]));
             }
+            for (size_t i = 1; i < exons.size(); i++) {
+                edge_t e(exons[i-1].second, exons[i-0].first);
+                add_edge(e.first, e.second);
+                edge_to_reads[e].push_back(read_id);
+            }
+            for (const interval_t& exon : exons) {
+                for (index_t node = exon.first; node <= exon.second; node++) {
+                    nodes[node].read_ids.push_back(read_id);
+                }
+            }
+            mapping.cigar_str = cg_tag;
+            mapping.score = s1_tag;
+            aln_read.mappings.emplace_back(mapping);
+        } else if (oc_tag != 0) {
+            cerr << format("Error: Invalid oc tag value ({}) at {}:{}", oc_tag, paf_path, line_num) << endl;
+            abort();
         }
+
     }
     ifs.close();
 }
