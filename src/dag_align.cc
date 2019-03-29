@@ -217,7 +217,6 @@ void dag_aligner::recalc_alignment_matrix() {
 }
 
 void dag_aligner::compress_align_paths() {
-    cerr << local_mappings.size() << endl;
     for (local_alignment_s& loc_aln : local_mappings) {
         // We know the read interval and the start of the first gene interval
         interval_t read_interval (loc_aln.path[0].first, loc_aln.path[loc_aln.path.size()-1].first);
@@ -342,7 +341,6 @@ void dag_aligner::update_dag(const string& read_name) {
     interval_t prev_exon;
     for (const mapping_s& mapping : aln_read.mappings) {
         for (const interval_t& exon : mapping.gene_intervals) {
-            cerr << format("({},{})", exon.first, exon.second) << endl;
             for (index_t node = exon.first; node <= exon.second; node++) {
                 nodes[node].read_ids.push_back(read_id);
             }
