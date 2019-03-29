@@ -171,6 +171,7 @@ void dag_aligner::generate_dot() {
             ss << format(sim_read_dot_format, end, next_start, "dotted", DOT_COLORS[rid%DOT_COLORS.size()], rid, "i", i) << endl;
         }
     }
+    ss << "}" << endl;
     cout << ss.str();
 }
 
