@@ -1,3 +1,12 @@
+# NanoSim for dev
+extern/nanosim
+
+# JetBeans IDE
+.idea
+
+# Snakemake
+.snakemake
+
 # Prerequisites
 *.d
 
