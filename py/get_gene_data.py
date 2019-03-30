@@ -21,7 +21,7 @@ def parse_args():
     parser.add_argument("-r",
                         "--reads",
                         type=str,
-                        default=None,
+                        required=True,
                         help="Path to reads in FASTQ format or in SAM alignment to genome reference")
     parser.add_argument("-g",
                         "--gene",
