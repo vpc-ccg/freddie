@@ -20,7 +20,6 @@ genes:
 
 references:
     genome: /groups/hachgrp/annotations/DNA/92/Homo_sapiens.GRCh38.dna.fa
-    # transcriptome: /groups/hachgrp/annotations/cDNA/92/Homo_sapiens.GRCh38.92.cdna.all.fa
 
 annotations:
     gtf: /groups/hachgrp/annotations/GTF/92/Homo_sapiens.GRCh38.92.gtf
