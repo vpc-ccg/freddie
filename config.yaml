@@ -2,9 +2,9 @@ outpath:
     .
 
 samples:
-    22RV1.pcr-free-cDNA.ONT.180525: /groups/hachgrp/projects/long-iso/raw-data/22RV1.pcr-free-cDNA.ONT.180525/fastq/22RV1-cDNA-180525.pass.fastq
-    22RV1.pcr-free-cDNA.ONT.180528: /groups/hachgrp/projects/long-iso/raw-data/22RV1.pcr-free-cDNA.ONT.180528/fastq/22RV1-cDNA-180528.pass.fastq
-    22RV1.pcr-free-cDNA.ONT.180807: /groups/hachgrp/projects/long-iso/raw-data/22RV1.pcr-free-cDNA.ONT.180807/fastq/22RV1-cDNA-180807.pass.fastq
+    P000R000: /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R000/P000R000.pass.fastq
+    P000R001: /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R001/P000R001.pass.fastq
+    P000R002: /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R002/P000R002.pass.fastq
 
 exec:
     freddie: ./freddie

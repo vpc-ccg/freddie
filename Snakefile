@@ -37,7 +37,8 @@ rule all:
     input:
          expand(genes_d+'/{gene}/{sample}/{out_file}', gene=config['genes'], sample=config['samples'], out_file=gene_data),
          expand(genes_d+'/{gene}/{sample}/simulated{out_file}', gene=config['genes'], sample=config['samples'], out_file=nanosim_simulator_files),
-         # expand(genes_d+'/{gene}/{sample}/nanosim_stats/simulated.log', gene=config['genes'], sample=config['samples']),
+         expand(genes_d+'/{gene}/{sample}/simulated_reads.tsv', gene=config['genes'], sample=config['samples']),
+         expand(genes_d+'/{gene}/{sample}/simulated_reads.pdf', gene=config['genes'], sample=config['samples']),
 
 rule freddie_make:
     input:
@@ -133,10 +134,49 @@ rule nanosim_simulate:
     shell:
         '{input.script} linear -r {input.transcripts} -c {params.in_prefix} -o {params.out_prefix} -n {params.read_count}'
 
+rule get_nanosim_tsv:
+    input:
+        reads           = genes_d+'/{gene}/{sample}/simulated_reads.fasta',
+        transcripts_tsv = genes_d+'/{gene}/{sample}/transcripts.tsv',
+        script          = config['exec']['nanosim_tsv'],
+    output:
+        simulated_tsv=genes_d+'/{gene}/{sample}/simulated_reads.tsv',
+    conda:
+        'freddie.env'
+    shell:
+        '{input.script} -nsr {input.reads} -t {input.transcripts_tsv} -o {output.simulated_tsv}'
 
+rule freddie_align:
+    input:
+        reads = genes_d+'/{gene}/{sample}/simulated_reads.fasta',
+        gene = genes_d+'/{gene}/{sample}/gene.fasta',
+        script = config['exec']['freddie'],
+    output:
+        paf = genes_d+'/{gene}/{sample}/simulated_reads.paf',
+    conda:
+        'freddie.env'
+    shell:
+        '{input.script} align -g {input.gene} -r {input.reads} > {output.paf}'
 
+rule freddie_plot:
+    input:
+        paf = genes_d+'/{gene}/{sample}/simulated_reads.paf',
+        transcripts_tsv = genes_d+'/{gene}/{sample}/transcripts.tsv',
+        simulated_tsv = genes_d+'/{gene}/{sample}/simulated_reads.tsv',
+        script = config['exec']['freddie'],
+    output:
+        dot = genes_d+'/{gene}/{sample}/simulated_reads.dot',
+    conda:
+        'freddie.env'
+    shell:
+        '{input.script} plot -p {input.paf} -a {input.transcripts_tsv} -s {input.simulated_tsv} > {output.dot}'
 
-
-
-
-print()
+rule dot_to_pdf:
+    input:
+        dot = genes_d+'/{gene}/{sample}/simulated_reads.dot',
+    output:
+        pdf = genes_d+'/{gene}/{sample}/simulated_reads.pdf',
+    conda:
+        'freddie.env'
+    shell:
+        'cat {input.dot} | dot -T pdf > {output.pdf}'
