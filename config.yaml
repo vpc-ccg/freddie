@@ -1,28 +1,28 @@
 outpath:
-    .
+    /groups/hachgrp/projects/dev-long-iso/analysis/freddie-dev
 
 samples:
-    P000R000: /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R000/P000R000.pass.fastq
-    P000R001: /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R001/P000R001.pass.fastq
-    P000R002: /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R002/P000R002.pass.fastq
+    # P000R000 : /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R000/P000R000.pass.fastq
+    P000R001 : /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R001/P000R001.pass.fastq
+    # P000R002 : /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R002/P000R002.pass.fastq
 
 exec:
-    freddie: ./freddie
-    gene_data: py/get_gene_data.py
-    nanosim_tsv: py/get_nanosim_tsv.py
-    read_analysis: extern/nanosim/src/read_analysis.py
-    simulator: extern/nanosim/src/simulator.py
+    freddie       : ./freddie
+    gene_data     : py/get_gene_data.py
+    nanosim_tsv   : py/get_nanosim_tsv.py
+    read_analysis : extern/nanosim/src/read_analysis.py
+    simulator     : extern/nanosim/src/simulator.py
 
 genes:
-    AR: AR
-    PLSCR3: PLSCR3
-    E2F1: E2F1
+    # AR     : AR
+    # PLSCR3 : PLSCR3
+    E2F1   : E2F1
 
 references:
-    genome: /groups/hachgrp/annotations/DNA/92/Homo_sapiens.GRCh38.dna.fa
+    genome : /groups/hachgrp/annotations/DNA/92/Homo_sapiens.GRCh38.dna.fa
 
 annotations:
-    gtf: /groups/hachgrp/annotations/GTF/92/Homo_sapiens.GRCh38.92.gtf
+    gtf : /groups/hachgrp/annotations/GTF/92/Homo_sapiens.GRCh38.92.gtf
 
 url:
-    nanosim: https://github.com/bcgsc/NanoSim/archive/77a4393e18c67adddf60427a617499ac352bc9d8.zip
+    nanosim : https://github.com/bcgsc/NanoSim/archive/77a4393e18c67adddf60427a617499ac352bc9d8.zip

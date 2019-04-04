@@ -1,11 +1,20 @@
 configfile: 'config.yaml'
 
-outpath = config['outpath'].rstrip('/')
-if outpath in ['.', './'] :
-    outpath = ''
+def get_abs_path(path):
+    import os
+    abs_path = os.popen('readlink -f {}'.format(path)).read()
+    return abs_path.rstrip("\r\n")
+def make_slurm():
+    import os
+    os.makedirs('slurm'.format(outpath), mode=0o777, exist_ok=True)
 
-genes_d  = '{}genes'.format(outpath)
-mapped_d = '{}mapped'.format(outpath)
+outpath = get_abs_path(config['outpath'])
+make_slurm()
+config['exec']['freddie'] = get_abs_path(config['exec']['freddie'])
+
+genes_d  = '{}/genes'.format(outpath)
+mapped_d = '{}/mapped'.format(outpath)
+
 gene_data=[
     'transcripts.tsv',
     'transcripts.fasta',
@@ -13,19 +22,20 @@ gene_data=[
     'reads.fasta',
 ]
 nanosim_read_analysis_files=[
+    '_unaligned_length.pkl',
     '_aligned_region.pkl',
     '_aligned_reads.pkl',
     '_ht_length.pkl',
-    '_besthit.maf/sam',
-    '_match.hist/training_mis.hist/training_del.hist/training_ins.hist',
+    '_match.hist',
+    '_mis.hist',
+    '_del.hist',
+    '_ins.hist',
     '_first_match.hist',
     '_error_markov_model',
     '_ht_ratio.pkl',
-    '_maf/sam',
+    '.sam',
     '_match_markov_model',
     '_model_profile',
-    '_processed.maf',
-    '_unaligned_length.pkl',
     '_error_rate.tsv',
 ]
 nanosim_simulator_files=[
@@ -35,68 +45,86 @@ nanosim_simulator_files=[
 
 rule all:
     input:
-         expand(genes_d+'/{gene}/{sample}/{out_file}', gene=config['genes'], sample=config['samples'], out_file=gene_data),
-         expand(genes_d+'/{gene}/{sample}/simulated{out_file}', gene=config['genes'], sample=config['samples'], out_file=nanosim_simulator_files),
-         expand(genes_d+'/{gene}/{sample}/simulated_reads.tsv', gene=config['genes'], sample=config['samples']),
-         expand(genes_d+'/{gene}/{sample}/simulated_reads.pdf', gene=config['genes'], sample=config['samples']),
+         expand('{}/{{gene}}/{{sample}}/{{out_file}}'.format(genes_d),          gene=config['genes'], sample=config['samples'], out_file=gene_data),
+         expand('{}/{{gene}}/{{sample}}/simulated{{out_file}}'.format(genes_d), gene=config['genes'], sample=config['samples'], out_file=nanosim_simulator_files),
+         expand('{}/{{gene}}/{{sample}}/simulated_reads.tsv'.format(genes_d),   gene=config['genes'], sample=config['samples']),
+         expand('{}/{{gene}}/{{sample}}/simulated_reads.pdf'.format(genes_d),   gene=config['genes'], sample=config['samples']),
 
 rule freddie_make:
     input:
         'Makefile'
     output:
         config['exec']['freddie']
+    conda:
+        'freddie.env'
+    threads:
+        6
     shell:
-        'make -Bj'
+        'make -j {{threads}} -C {}'.format(config['exec']['freddie'][0:config['exec']['freddie'].rfind('/')])
 
 rule nanosim_make:
     output:
         config['exec']['read_analysis'],
         config['exec']['simulator'],
-        zipped=temp(config['url']['nanosim'].split('/')[-1]),
-        unzipped=temp(directory('NanoSim-{}/'.format(config['url']['nanosim'].split('/')[-1].split('.')[0]))),
+        zipped   = temp(config['url']['nanosim'].split('/')[-1]),
+        unzipped = temp(directory('NanoSim-{}/'.format(config['url']['nanosim'].split('/')[-1].split('.')[0]))),
     conda:
         'freddie.env'
     shell:
-        'wget ' + config['url']['nanosim'] + '; '
-        'unzip {output.zipped}; '
-        'cp {output.unzipped}/* extern/nanosim/ -r '
+        '''
+        wget {};
+        unzip {{output.zipped}};
+        cp {{output.unzipped}}/* extern/nanosim/ -r
+        '''.format(config['url']['nanosim'])
 
 rule minimap2_map:
     input:
         genome=config['references']['genome'],
         reads=lambda wildcards: config['samples'][wildcards.sample],
     output:
-        temp(mapped_d+'/{sample}.sam')
+        temp('{}/{{sample}}.sam'.format(mapped_d))
     conda:
         'freddie.env'
     threads:
         32
     shell:
-        'minimap2 -aY -x splice -t -eqx -x -t {threads} {input.genome} {input.reads} > {output}'
+        'minimap2 -aY -x splice -t -eqx -t {threads} {input.genome} {input.reads} > {output}'
 
 rule samtools_sort:
     input:
-        mapped_d+'/{sample}.sam'
+        '{}/{{sample}}.sam'.format(mapped_d),
     output:
-        bam=mapped_d+'/{sample}.sorted.bam',
-        index=mapped_d+'/{sample}.sorted.bam.bai'
+        bam='{}/{{sample}}.sorted.bam'.format(mapped_d),
     conda:
         'freddie.env'
-    threads: 32
+    threads:
+        32
     shell:
-        'samtools sort -T '+ mapped_d +'/{wildcards.sample}.tmp -m 2G -@ {threads} -O bam {input} > {output.bam} ; '
-        'samtools index -m 2G -@ {threads} {output.bam} ; '
+        'samtools sort -T {}/{{wildcards.sample}}.tmp -m 2G -@ {{threads}} -O bam {{input}} > {{output.bam}}'.format(mapped_d)
+
+rule samtools_index:
+    input:
+        bam='{}/{{sample}}.sorted.bam'.format(mapped_d),
+    output:
+        index='{}/{{sample}}.sorted.bam.bai'.format(mapped_d),
+    conda:
+        'freddie.env'
+    threads:
+        32
+    shell:
+        'samtools index -b -@ {threads} {input.bam}'
 
 rule get_gene_data:
     input:
-        reads  =  mapped_d+'/{sample}.sorted.bam',
+        reads  =  '{}/{{sample}}.sorted.bam'.format(mapped_d),
+        index  =  '{}/{{sample}}.sorted.bam.bai'.format(mapped_d),
         gtf    =  config['annotations']['gtf'],
         genome =  config['references']['genome'],
         script =  config['exec']['gene_data'],
     params:
-        out_dir=lambda wildcards: '{}/{}/{}'.format(genes_d, config['genes'][wildcards.gene], config['samples'][wildcards.sample])
+        out_dir=lambda wildcards: '{}/{}/{}'.format(genes_d, config['genes'][wildcards.gene], wildcards.sample)
     output:
-        [genes_d+'/{gene}/{sample}/'+out_file for out_file in gene_data]
+        ['{}/{{gene}}/{{sample}}/{}'.format(genes_d, out_file) for out_file in gene_data]
     conda:
         'freddie.env'
     shell:
@@ -104,28 +132,28 @@ rule get_gene_data:
 
 rule nanosim_read_analysis:
     input:
-        transcripts=genes_d+'/{gene}/{sample}/transcripts.fasta',
-        reads=genes_d+'/{gene}/{sample}/reads.fasta',
+        transcripts='{}/{{gene}}/{{sample}}/transcripts.fasta'.format(genes_d),
+        reads='{}/{{gene}}/{{sample}}/reads.fasta'.format(genes_d),
         script =  config['exec']['read_analysis'],
     params:
-        out_prefix=genes_d+'/{gene}/{sample}/training',
+        out_prefix='{}/{{gene}}/{{sample}}/training'.format(genes_d),
     output:
-        [genes_d+'/{gene}/{sample}/training'+training_file for  training_file in nanosim_read_analysis_files]
+        ['{}/{{gene}}/{{sample}}/training{}'.format(genes_d, training_file) for  training_file in nanosim_read_analysis_files]
     conda:
         'freddie.env'
     threads:
         32
     shell:
-        '{input.script} -i {input.reads} -r {input.transcripts} -r {input.reads} -t {threads} -o {params.out_prefix}'
+        '{input.script} -i {input.reads} -r {input.transcripts} -t {threads} -o {params.out_prefix}'
 
 rule nanosim_simulate:
     input:
-        [genes_d+'/{gene}/{sample}/training'+training_file for  training_file in nanosim_read_analysis_files],
-        transcripts=genes_d+'/{gene}/{sample}/transcripts.fasta',
+        ['{}/{{gene}}/{{sample}}/training{}'.format(genes_d, training_file) for  training_file in nanosim_read_analysis_files],
+        transcripts='{}/{{gene}}/{{sample}}/transcripts.fasta'.format(genes_d),
         script =  config['exec']['simulator'],
     params:
-        in_prefix=genes_d+'/{gene}/{sample}/training',
-        out_prefix=genes_d+'/{gene}/{sample}/simulated',
+        in_prefix='{}/{{gene}}/{{sample}}/training'.format(genes_d),
+        out_prefix='{}/{{gene}}/{{sample}}/simulated'.format(genes_d),
         read_count=10
     output:
         [genes_d+'/{gene}/{sample}/simulated'+simulation_file for  simulation_file in nanosim_simulator_files]
@@ -136,11 +164,11 @@ rule nanosim_simulate:
 
 rule get_nanosim_tsv:
     input:
-        reads           = genes_d+'/{gene}/{sample}/simulated_reads.fasta',
-        transcripts_tsv = genes_d+'/{gene}/{sample}/transcripts.tsv',
+        reads           = '{}/{{gene}}/{{sample}}/simulated_reads.fasta'.format(genes_d),
+        transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
         script          = config['exec']['nanosim_tsv'],
     output:
-        simulated_tsv=genes_d+'/{gene}/{sample}/simulated_reads.tsv',
+        simulated_tsv='{}/{{gene}}/{{sample}}/simulated_reads.tsv'.format(genes_d),
     conda:
         'freddie.env'
     shell:
@@ -148,11 +176,11 @@ rule get_nanosim_tsv:
 
 rule freddie_align:
     input:
-        reads = genes_d+'/{gene}/{sample}/simulated_reads.fasta',
-        gene = genes_d+'/{gene}/{sample}/gene.fasta',
+        reads = '{}/{{gene}}/{{sample}}/simulated_reads.fasta'.format(genes_d),
+        gene = '{}/{{gene}}/{{sample}}/gene.fasta'.format(genes_d),
         script = config['exec']['freddie'],
     output:
-        paf = genes_d+'/{gene}/{sample}/simulated_reads.paf',
+        paf = '{}/{{gene}}/{{sample}}/simulated_reads.paf'.format(genes_d),
     conda:
         'freddie.env'
     shell:
@@ -160,12 +188,12 @@ rule freddie_align:
 
 rule freddie_plot:
     input:
-        paf = genes_d+'/{gene}/{sample}/simulated_reads.paf',
-        transcripts_tsv = genes_d+'/{gene}/{sample}/transcripts.tsv',
-        simulated_tsv = genes_d+'/{gene}/{sample}/simulated_reads.tsv',
+        paf = '{}/{{gene}}/{{sample}}/simulated_reads.paf'.format(genes_d),
+        transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
+        simulated_tsv='{}/{{gene}}/{{sample}}/simulated_reads.tsv'.format(genes_d),
         script = config['exec']['freddie'],
     output:
-        dot = genes_d+'/{gene}/{sample}/simulated_reads.dot',
+        dot = '{}/{{gene}}/{{sample}}/simulated_reads.dot'.format(genes_d),
     conda:
         'freddie.env'
     shell:
@@ -173,9 +201,9 @@ rule freddie_plot:
 
 rule dot_to_pdf:
     input:
-        dot = genes_d+'/{gene}/{sample}/simulated_reads.dot',
+        dot = '{}/{{gene}}/{{sample}}/simulated_reads.dot'.format(genes_d),
     output:
-        pdf = genes_d+'/{gene}/{sample}/simulated_reads.pdf',
+        pdf = '{}/{{gene}}/{{sample}}/simulated_reads.pdf'.format(genes_d),
     conda:
         'freddie.env'
     shell:

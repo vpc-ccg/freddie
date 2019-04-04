@@ -31,7 +31,7 @@ def parse_args():
     parser.add_argument("-p",
                         "--pad-size",
                         type=int,
-                        default=100,
+                        default=1000,
                         help="Pad size before and after the gene")
     parser.add_argument("-c",
                         "--threads",
@@ -149,7 +149,12 @@ def output_gene_reads(sam, gene_info, padding, out):
     else:
         print('{} has no index. Scanning the whole thing'.format(sam))
         sam = sam.fetch(until_eof=True)
-    for read in sam:
+
+    print('>{} {}:{}-{}'.format('UNALINED_READ', 'NO_CHROM', '-1', '-1'), file=out)
+    print('NNNNNNNNNNNNNNNNNNNNNNN', file=out)
+    for idx,read in enumerate(sam):
+        if idx%500==0:
+            print('Read the {}-th read'.format(idx))
         if (read.flag > 255 or read.mapping_quality < 60):
             continue
         if (read.reference_name == chr and read.reference_start > start-padding and read.reference_start < end):
@@ -250,6 +255,7 @@ def main():
     import os
     args.output = args.output.rstrip('/')
     args.output += '/'
+    print('Making output directory: {}'.format(args.output))
     os.makedirs(args.output, exist_ok=True)
     if (args.gene[0:4]=='ENSG'):
         try:
@@ -267,7 +273,7 @@ def main():
         try:
             sam = pysam.AlignmentFile(args.reads)
             sam.close()
-            print('Reads {} file is in SAM format'.format(args.reads))
+            print('Reads {} file is in SAM/BAM format'.format(args.reads))
             sam = args.reads
         except ValueError:
             print('Reads {} file is NOT in SAM format. Assuming FASTA/Q format'.format(args.reads))
@@ -284,8 +290,8 @@ def main():
     output_gene(genome=args.dna, gene_info=gene_info, out=out)
     out.close()
 
-    out_tsv = open('{}trasncripts.tsv'.format(args.output), 'w+')
-    out_seq = open('{}trasncripts.fasta'.format(args.output), 'w+')
+    out_tsv = open('{}transcripts.tsv'.format(args.output), 'w+')
+    out_seq = open('{}transcripts.fasta'.format(args.output), 'w+')
     output_transcripts(genome=args.dna, gtf=args.gtf, gene_info=gene_info, out_tsv=out_tsv, out_seq=out_seq)
     out_tsv.close()
     out_seq.close()
