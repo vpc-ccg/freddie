@@ -5,6 +5,7 @@
 
 #include <sstream>  // std::stringstream
 #include <unordered_map>
+#include <map>
 #include <algorithm> // std::reverse, std::sort
 #include <functional> // std::function
 #include <cstdlib> // abort()
@@ -14,7 +15,8 @@
 using namespace dag_types;
 
 constexpr double DOT_CANVAS_WIDTH = 100.0; //in inches
-
+constexpr size_t MAX_PADDING = 7500;
+constexpr interval_t INVALID_INTERVAL = interval_t(-1,-1);
 using fmt::format;
 using std::cerr;
 using std::cout;
@@ -23,6 +25,7 @@ using std::string;
 using std::stringstream;
 using std::vector;
 using std::unordered_map;
+using std::map;
 
 const vector<string> DOT_COLORS = { // http://colorbrewer2.org/#type=qualitative&scheme=Paired&n=12
     "#a6cee3",
@@ -46,18 +49,18 @@ void dag_aligner::generate_dot() {
     ss << "digraph graphname{" << endl;
     ss << "    rankdir=LR;" << endl;
     vector<index_t> junctions;
-    unordered_map<index_t,size_t> junction_idx;
+    map<index_t,size_t> junction_idx;
     // Getting a vector of all DOT vertices
     for (index_t node = 1; node < nodes.size(); node++) {
         bool flag = false;
         string comment = "";
         if (t_annot_junctions.find(node) != t_annot_junctions.end()) {
             flag = true;
-            comment += "tA";
+            comment += "T";
         }
         if (r_annot_junctions.find(node) != r_annot_junctions.end()) {
             flag = true;
-            comment += "rA";
+            comment += "R";
         }
         if (nodes[node].read_ids.size() > 1 && nodes[node-1].read_ids.size() == 0) {
             flag = true;
@@ -75,15 +78,25 @@ void dag_aligner::generate_dot() {
             flag = true;
             comment += "P";
         }
+        if (aln_junctions.find(node) != aln_junctions.end()) {
+            if (!flag) {
+                cerr << "Warning" << endl;
+            }
+            flag = true;
+            comment += "J";
+        }
         if (node == nodes.size() -1) {
             flag = true;
             comment += "E";
         }
         if (flag) {
+            ss << format("    {:d} [label=\"{:d}:{:d}\"] //{:d}-{}", node, node-1, nodes[node].read_ids.size(), junctions.size(), comment) << endl;
             junction_idx[node] = junctions.size();
             junctions.push_back(node);
-            ss << format("    {:d} [label=\"{:d}:{:d}\"] //{}", node, node-1, nodes[node].read_ids.size(), comment) << endl;
         }
+    }
+    for (const auto& kv : junction_idx) {
+        cerr << format("N: {}; idx: {};", kv.first, kv.second) << endl;
     }
     // Adding edges of normal coverage between vertices
     ss << format("    edge[weight=1000, arrowhead=none];") << endl;
@@ -98,7 +111,9 @@ void dag_aligner::generate_dot() {
             for (index_t node = start + 1; node < end; node++) {
                 coverage += nodes[node].read_ids.size();
             }
-            string space_padding((end-start)/2, ' ');
+            size_t padding = (end-start)/2;
+            padding = padding > MAX_PADDING ? MAX_PADDING : padding;
+            string space_padding(padding, ' ');
             ss << format("    {}->{} [label=\"{}{:.2f}{}\"]", start, end, space_padding, coverage/len, space_padding) << endl;
         }
     }
@@ -135,7 +150,7 @@ void dag_aligner::generate_dot() {
     }
     // Adding sim_read_tsv edges
     ss << format("    edge[weight=1, arrowhead=none];") << endl;
-    string sim_read_dot_format = "    {}->{} [style={} color=\"{}\" label=\"r{:d}{}{:d}\"]";
+    string sim_read_dot_format = "    {}->{} [style={} color=\"{}\" label=\"R{:d}{}{:d}\"]";
     for (seq_id_t rid = 0; rid < r_annots.size(); rid++) {
         for (size_t i = 0; i < r_annots[rid].intervals.size(); i++) {
             index_t start = r_annots[rid].intervals[i].first;
@@ -143,32 +158,46 @@ void dag_aligner::generate_dot() {
             for (size_t j = junction_idx[start]; j < junction_idx[end]; j++) {
                 index_t source = junctions[j];
                 index_t target = junctions[j+1];
-                ss << format(sim_read_dot_format, source, target, "bold", DOT_COLORS[rid%DOT_COLORS.size()], rid, "e", i) << endl;
+                ss << format(sim_read_dot_format, source, target, "bold", DOT_COLORS[rid%DOT_COLORS.size()], rid, "E", i) << endl;
             }
             if (i+1 == r_annots[rid].intervals.size()) {
                 continue;
             }
             index_t next_start = r_annots[rid].intervals[i+1].first;
-            ss << format(sim_read_dot_format, end, next_start, "dotted", DOT_COLORS[rid%DOT_COLORS.size()], rid, "i", i) << endl;
+            ss << format(sim_read_dot_format, end, next_start, "dotted", DOT_COLORS[rid%DOT_COLORS.size()], rid, "I", i) << endl;
         }
     }
     // Adding sim_read_tsv aligned correspondence edges
     ss << format("    edge[weight=1, arrowhead=none];") << endl;
     string aln_read_dot_format = "    {}->{} [style={} color=\"{}\" label=\"r{:d}{}{:d}\"]";
-    for (seq_id_t rid = 0; rid < r_annots.size(); rid++) {
-        for (size_t i = 0; i < r_annots[rid].intervals.size(); i++) {
-            index_t start = r_annots[rid].intervals[i].first;
-            index_t end   = r_annots[rid].intervals[i].second;
-            for (size_t j = junction_idx[start]; j < junction_idx[end]; j++) {
-                index_t source = junctions[j];
-                index_t target = junctions[j+1];
-                ss << format(sim_read_dot_format, source, target, "bold", DOT_COLORS[rid%DOT_COLORS.size()], rid, "e", i) << endl;
+    for (const annot_s& r_annot : r_annots) {
+        if (read_name_to_id.find(r_annot.name)==read_name_to_id.end()){
+            continue;
+        }
+        const seq_id_t& rid = read_name_to_id[r_annot.name];
+        cerr << format("rid: {}; name: {}", rid, r_annot.name) << endl;
+        interval_t prev_exon = INVALID_INTERVAL;
+        size_t eid = 0;
+        for (const mapping_s& mapping : aln_reads[rid].mappings) {
+            for (const interval_t& exon : mapping.gene_intervals) {
+                cerr << format("--> eid: {}; s:{}; e:{}; ps:{}; pe:{}", eid, exon.first, exon.second, prev_exon.first, prev_exon.second) << endl;
+                if (prev_exon != INVALID_INTERVAL) {
+                    index_t source = prev_exon.second;
+                    index_t target = exon.first;
+                    ss << format(aln_read_dot_format, source, target, "dashed", DOT_COLORS[rid%DOT_COLORS.size()], rid, "i", eid) << endl;
+                }
+                index_t start = exon.first;
+                index_t end   = exon.second;
+                cerr << format("--> --> js: {}; je:{}", junction_idx[start], junction_idx[end]) << endl;
+                for (size_t j = junction_idx[start]; j < junction_idx[end]; j++) {
+                    index_t source = junctions[j];
+                    index_t target = junctions[j+1];
+                    cerr << format("--> --> --> j: {}; s:{}; t:{}", j, source, target) << endl;
+                    ss << format(aln_read_dot_format, source, target, "solid", DOT_COLORS[rid%DOT_COLORS.size()], rid, "e", eid) << endl;
+                }
+                prev_exon = exon;
+                eid++;
             }
-            if (i+1 == r_annots[rid].intervals.size()) {
-                continue;
-            }
-            index_t next_start = r_annots[rid].intervals[i+1].first;
-            ss << format(sim_read_dot_format, end, next_start, "dotted", DOT_COLORS[rid%DOT_COLORS.size()], rid, "i", i) << endl;
         }
     }
     ss << "}" << endl;

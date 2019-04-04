@@ -49,7 +49,7 @@ constexpr align_score_t MATCH_S = 1;
 constexpr align_score_t GAP_S = -6;
 constexpr align_score_t MISMATCH_S = -6;
 constexpr size_t MAX_MAPPINGS = 10;
-constexpr align_score_t MIN_SCORE = 30;
+constexpr align_score_t MIN_SCORE = 10;
 constexpr matrix_coordinate_t INVALID_COORDINATE = {-1,-1};
 constexpr index_t COCHAINING_PERMISSIBILITY = 10;
 
@@ -382,6 +382,7 @@ void dag_aligner::align_read(const string& read_name_in, const string& read_in) 
     for (size_t i = 0; i < MAX_MAPPINGS; i++) {
         extract_local_alignment();
         if (local_mappings[local_mappings.size() -1].score < MIN_SCORE) {
+            cerr << format("Read {} {}-th align score is {}", read_name_in, local_mappings.size() -1, local_mappings[local_mappings.size() -1].score) << endl;
             local_mappings.pop_back();
             break;
         }

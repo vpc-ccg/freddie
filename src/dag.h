@@ -67,6 +67,7 @@ private:
     std::vector<bool> exonic_indicator;
     std::vector<dag_types::node_s> nodes;
     std::vector<dag_types::aln_read_s> aln_reads;
+    dag_types::node_set_t aln_junctions;
     std::unordered_map<dag_types::edge_t, dag_types::read_id_list_t, dag_types::edge_hash> edge_to_reads;
     std::unordered_map<std::string, dag_types::seq_id_t> read_name_to_id;
     // Annotaions

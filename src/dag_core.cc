@@ -53,6 +53,10 @@ void parse_tsv_line(const string& line, const long& gene_size, annot_s& annot) {
     }
 }
 
+bool mappings_comparator(const mapping_s& a, const mapping_s& b) {
+    return (a.gene_intervals[0].first < b.gene_intervals[0].first);
+}
+
 void dag_aligner::add_edge(const index_t& source, const index_t& target) {
     if (source >= target) {
         cerr << format("Error: Source can't be >= target: {} -> {}", source, target) << endl;
@@ -65,8 +69,6 @@ void dag_aligner::add_edge(const index_t& source, const index_t& target) {
     if (target - 1 == source) {
         return;
     }
-    nodes[source].children.insert(target);
-    nodes[target].parents.insert(source);
 }
 
 //// Public functions
@@ -78,6 +80,7 @@ void dag_aligner::init_dag(const string& gene_name_in, const string& gene_in, co
     //// Clearing structures
     // Alignment stuff
     aln_reads.clear();
+    aln_junctions.clear();
     edge_to_reads.clear();
     read_name_to_id.clear();
     nodes.clear();
@@ -254,7 +257,10 @@ void dag_aligner::load_state(const string& paf_path) {
             vector<interval_t>& exons = mapping.gene_intervals;
             for (size_t i = 0; i < starts.size(); i++) {
                 exons.push_back(interval_t(starts[i], ends[i]));
+                aln_junctions.insert(starts[i]);
+                aln_junctions.insert(ends[i]);
             }
+            sort(exons.begin(), exons.end());
             for (size_t i = 1; i < exons.size(); i++) {
                 edge_t e(exons[i-1].second, exons[i-0].first);
                 add_edge(e.first, e.second);
@@ -272,7 +278,9 @@ void dag_aligner::load_state(const string& paf_path) {
             cerr << format("Error: Invalid oc tag value ({}) at {}:{}", oc_tag, paf_path, line_num) << endl;
             abort();
         }
-
     }
     ifs.close();
+    for (aln_read_s& aln_read : aln_reads) {
+        sort(aln_read.mappings.begin(), aln_read.mappings.end(), mappings_comparator);
+    }
 }
