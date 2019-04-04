@@ -59,7 +59,10 @@ def output_nanosim_reads_tsv(transcript_infos, nanosim_reads_fasta, out_path):
         if line[0] != '>':
             continue
         rname = line[1:].rstrip().split()[0]
-        comment = line[1:].rstrip().split()[1]
+        try:
+            comment = line[1:].rstrip().split()[1]
+        except:
+            comment = ''
         line = rname.split('_')
         tid = line[0]
         start = int(line[1])
