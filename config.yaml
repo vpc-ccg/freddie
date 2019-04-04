@@ -2,9 +2,9 @@ outpath:
     /groups/hachgrp/projects/dev-long-iso/analysis/freddie-dev
 
 samples:
-    # P000R000 : /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R000/P000R000.pass.fastq
+    P000R000 : /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R000/P000R000.pass.fastq
     P000R001 : /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R001/P000R001.pass.fastq
-    # P000R002 : /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R002/P000R002.pass.fastq
+    P000R002 : /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R002/P000R002.pass.fastq
 
 exec:
     freddie       : ./freddie
@@ -14,8 +14,8 @@ exec:
     simulator     : extern/nanosim/src/simulator.py
 
 genes:
-    # AR     : AR
-    # PLSCR3 : PLSCR3
+    AR     : AR
+    PLSCR3 : PLSCR3
     E2F1   : E2F1
 
 references:
