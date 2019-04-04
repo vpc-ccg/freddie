@@ -46,6 +46,7 @@ void align(dag_aligner& my_dag) {
         if (fasta_get_record(name, seq, reads_fasta) == false) {
             break;
         }
+        cerr << format("Aligning {} read with length {:d}", name, seq.size()-1) << endl;
         my_dag.align_read(name, seq);
         my_dag.print_last_read_alignments();
     }
