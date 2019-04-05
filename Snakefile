@@ -47,8 +47,8 @@ rule all:
     input:
          expand('{}/{{gene}}/{{sample}}/{{out_file}}'.format(genes_d),          gene=config['genes'], sample=config['samples'], out_file=gene_data),
          expand('{}/{{gene}}/{{sample}}/simulated{{out_file}}'.format(genes_d), gene=config['genes'], sample=config['samples'], out_file=nanosim_simulator_files),
-         expand('{}/{{gene}}/{{sample}}/simulated_reads.tsv'.format(genes_d),   gene=config['genes'], sample=config['samples']),
-         expand('{}/{{gene}}/{{sample}}/simulated_reads.pdf'.format(genes_d),   gene=config['genes'], sample=config['samples']),
+         expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.tsv'.format(genes_d),   gene=config['genes'], sample=config['samples']),
+         expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.pdf'.format(genes_d),   gene=config['genes'], sample=config['samples']),
 
 rule freddie_make:
     input:
@@ -168,19 +168,20 @@ rule get_nanosim_tsv:
         transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
         script          = config['exec']['nanosim_tsv'],
     output:
-        simulated_tsv='{}/{{gene}}/{{sample}}/simulated_reads.tsv'.format(genes_d),
+        simulated_tsv='{}/{{gene}}/{{sample}}/simulated_reads.oriented.tsv'.format(genes_d),
+        oriented_reads = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.fasta'.format(genes_d),
     conda:
         'freddie.env'
     shell:
-        '{input.script} -nsr {input.reads} -t {input.transcripts_tsv} -o {output.simulated_tsv}'
+        '{input.script} -nsr {input.reads} -t {input.transcripts_tsv} -or {output.oriented_reads} -ot {output.simulated_tsv}'
 
 rule freddie_align:
     input:
-        reads = '{}/{{gene}}/{{sample}}/simulated_reads.fasta'.format(genes_d),
+        reads = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.fasta'.format(genes_d),
         gene = '{}/{{gene}}/{{sample}}/gene.fasta'.format(genes_d),
         script = config['exec']['freddie'],
     output:
-        paf = '{}/{{gene}}/{{sample}}/simulated_reads.paf'.format(genes_d),
+        paf = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.paf'.format(genes_d),
     conda:
         'freddie.env'
     shell:
@@ -188,12 +189,12 @@ rule freddie_align:
 
 rule freddie_plot:
     input:
-        paf = '{}/{{gene}}/{{sample}}/simulated_reads.paf'.format(genes_d),
+        paf = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.paf'.format(genes_d),
         transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
-        simulated_tsv='{}/{{gene}}/{{sample}}/simulated_reads.tsv'.format(genes_d),
+        simulated_tsv='{}/{{gene}}/{{sample}}/simulated_reads.oriented.tsv'.format(genes_d),
         script = config['exec']['freddie'],
     output:
-        dot = '{}/{{gene}}/{{sample}}/simulated_reads.dot'.format(genes_d),
+        dot = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.dot'.format(genes_d),
     conda:
         'freddie.env'
     shell:
@@ -201,9 +202,9 @@ rule freddie_plot:
 
 rule dot_to_pdf:
     input:
-        dot = '{}/{{gene}}/{{sample}}/simulated_reads.dot'.format(genes_d),
+        dot = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.dot'.format(genes_d),
     output:
-        pdf = '{}/{{gene}}/{{sample}}/simulated_reads.pdf'.format(genes_d),
+        pdf = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.pdf'.format(genes_d),
     conda:
         'freddie.env'
     shell:

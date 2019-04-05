@@ -49,7 +49,7 @@ constexpr align_score_t MATCH_S = 1;
 constexpr align_score_t GAP_S = -6;
 constexpr align_score_t MISMATCH_S = -6;
 constexpr size_t MAX_MAPPINGS = 10;
-constexpr align_score_t MIN_SCORE = 10;
+constexpr align_score_t MIN_SCORE = 30;
 constexpr matrix_coordinate_t INVALID_COORDINATE = {-1,-1};
 constexpr index_t COCHAINING_PERMISSIBILITY = 10;
 
