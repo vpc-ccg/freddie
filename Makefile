@@ -1,5 +1,5 @@
 CXX?=g++
-CXXFLAGS=-std=c++11 -I src/ -I extern/ -Wall -Wextra
+CXXFLAGS=-std=c++14 -I src/ -I extern/ -Wall -Wextra
 LDFLAGS=
 
 
@@ -13,13 +13,13 @@ DEBUGGABLE=$(EXECUTABLE)_dbg
 GITINFO:=$(shell git show --format="commit %h at %ai by %an" --abbrev-commit | head -n1)
 
 $(EXECUTABLE): $(EXECUTABLE).cc $(OBJECTS) Makefile
-	$(CXX) $(OBJECTS) -O3 $< $(CXXFLAGS) -o $@ -DGITINFO="\"$(GITINFO)\""
+	$(CXX) $(OBJECTS) -O2 $< $(CXXFLAGS) -o $@ -DGITINFO="\"$(GITINFO)\""
 
 $(DEBUGGABLE): $(EXECUTABLE).cc $(DBG_OBJECTS) Makefile
 	$(CXX) $(CXXFLAGS) $(DBG_OBJECTS) -g -O0 $< -o $@ -DGITINFO="\"$(GITINFO)\""
 
 %.o: %.cc Makefile
-	$(CXX) $(CXXFLAGS) -O3 -c $< -o $@
+	$(CXX) $(CXXFLAGS) -O2 -c $< -o $@
 
 %.dbg: %.cc Makefile
 	$(CXX) $(CXXFLAGS) -g -O0 -c $< -o $@
