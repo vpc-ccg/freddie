@@ -11,6 +11,7 @@ exec:
     gene_data            : py/get_gene_data.py
     nanosim_tsv          : py/get_nanosim_tsv.py
     orient_nanosim_reads : py/get_oriented_nanosim_reads.py
+    split_dot            : py/get_split_dot.py
     read_analysis        : extern/nanosim/src/read_analysis.py
     simulator            : extern/nanosim/src/simulator.py
 

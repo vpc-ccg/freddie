@@ -45,10 +45,7 @@ nanosim_simulator_files=[
 
 rule all:
     input:
-         expand('{}/{{gene}}/{{sample}}/{{out_file}}'.format(genes_d),          gene=config['genes'], sample=config['samples'], out_file=gene_data),
-         expand('{}/{{gene}}/{{sample}}/simulated{{out_file}}'.format(genes_d), gene=config['genes'], sample=config['samples'], out_file=nanosim_simulator_files),
-         expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.tsv'.format(genes_d),   gene=config['genes'], sample=config['samples']),
-         expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.pdf'.format(genes_d),   gene=config['genes'], sample=config['samples']),
+         expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.split_pdf.done'.format(genes_d),   gene=config['genes'], sample=config['samples']),
 
 rule freddie_make:
     input:
@@ -82,7 +79,7 @@ rule minimap2_map:
         genome=config['references']['genome'],
         reads=lambda wildcards: config['samples'][wildcards.sample],
     output:
-        temp('{}/{{sample}}.sam'.format(mapped_d))
+        temp('{}/{{sample}}.sam'.format(mapped_d)) 
     conda:
         'freddie.env'
     threads:
@@ -199,6 +196,34 @@ rule freddie_plot:
         'freddie.env'
     shell:
         '{input.script} plot -p {input.paf} -a {input.transcripts_tsv} -s {input.simulated_tsv} > {output.dot}'
+
+rule split_dot:
+    input:
+        dot = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.dot'.format(genes_d),
+        simulated_tsv='{}/{{gene}}/{{sample}}/simulated_reads.oriented.tsv'.format(genes_d),
+        script = config['exec']['split_dot'],
+    output:
+        done = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.split_dot.done'.format(genes_d),
+    params:
+        prefix = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.split.'.format(genes_d),
+    conda:
+        'freddie.env'
+    shell:
+        '{input.script} -d {input.dot} -t {input.simulated_tsv} -o {params.prefix}; '
+        'touch {output.done} '
+
+rule split_pdf:
+    input:
+        done = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.split_dot.done'.format(genes_d),
+    output:
+        done = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.split_pdf.done'.format(genes_d),
+    params:
+        prefix = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.split.'.format(genes_d),
+    conda:
+        'freddie.env'
+    shell:
+        'for i in {params.prefix}*.dot; do prefix=${{i%.dot}}; cat $prefix.dot | dot -T pdf > $prefix.pdf; done; '
+        'touch {output.done} '
 
 rule dot_to_pdf:
     input:
