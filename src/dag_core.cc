@@ -29,8 +29,8 @@ void parse_tsv_line(const string& line, const long& gene_size, annot_s& annot) {
         cerr << "Error: Incorrect number of columns at:" << endl << line << endl;
         abort();
     }
-    annot.name = columns[0];
-    // chr = columns[1];
+    annot.name  = columns[0];
+    annot.chrom = columns[1];
     // strand = columns[2];
     for (const string& s : split(columns[3], ',')) {
         if (s.size() == 0) {
@@ -54,7 +54,7 @@ void parse_tsv_line(const string& line, const long& gene_size, annot_s& annot) {
 }
 
 bool mappings_comparator(const mapping_s& a, const mapping_s& b) {
-    return (a.gene_intervals[0].first < b.gene_intervals[0].first);
+    return (a.gene_intervals.front().first < b.gene_intervals.front().first);
 }
 
 void dag_aligner::add_edge(const index_t& source, const index_t& target) {
@@ -106,6 +106,7 @@ void dag_aligner::init_dag(const string& gene_name_in, const string& gene_in, co
                 t_annot_junctions.insert(interval.first);
                 t_annot_junctions.insert(interval.second);
             }
+            t_annot_name_to_id[annot.name] = t_annots.size();
             t_annots.emplace_back(annot);
         }
     }
@@ -119,6 +120,7 @@ void dag_aligner::init_dag(const string& gene_name_in, const string& gene_in, co
                 r_annot_junctions.insert(interval.first);
                 r_annot_junctions.insert(interval.second);
             }
+            r_annot_name_to_t_annot_name[annot.name] = annot.chrom;
             r_annots.emplace_back(annot);
         }
     }
