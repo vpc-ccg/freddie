@@ -12,6 +12,7 @@
 #include <cstdlib>       // abort()
 #include <utility>       // move(), std::pair
 #include <iterator>      // next(), std::inserter
+#include <limits>        // numeric_limits
 
 using namespace dag_types;
 
@@ -34,6 +35,7 @@ using std::next;
 using std::set;
 using std::make_pair;
 using std::pair;
+using std::numeric_limits;
 
 // Alignment data structures
 typedef pair<index_t, index_t> matrix_coordinate_t;
@@ -44,9 +46,16 @@ typedef vector<backtrack_row_t> backtrack_matrix_t;
 typedef vector<CIGAR_OP> cigar_t;
 typedef vector<matrix_coordinate_t> align_path_t;
 // Affix alignment data structures
-
-typedef unordered_map<matrix_coordinate_t, align_score_t> align_matrix_dynamic_t;
-typedef unordered_map<matrix_coordinate_t, matrix_coordinate_t> backtrack_matrix_dynamic_t;
+enum Affix {prefix, suffix};
+struct matrix_coordinate_hash {
+    std::size_t operator () (const matrix_coordinate_t &p) const {
+        auto h1 = std::hash<index_t>{}(p.first);
+        auto h2 = std::hash<index_t>{}(p.second);
+        return h1 ^ h2;
+    }
+};
+typedef unordered_map<matrix_coordinate_t, align_score_t, matrix_coordinate_hash> align_matrix_dynamic_t;
+typedef unordered_map<matrix_coordinate_t, matrix_coordinate_t, matrix_coordinate_hash> backtrack_matrix_dynamic_t;
 
 const align_score_t EXONIC_S = 0;
 const align_score_t MATCH_S = 1;
@@ -76,6 +85,10 @@ backtrack_matrix_t B;
 vector<local_alignment_s> local_mappings;
 // Co-linear chaining
 vector<size_t> opt_chain;
+// Inter-intra-chain-fragments extension
+align_matrix_dynamic_t D_affix;
+backtrack_matrix_dynamic_t B_affix;
+
 
 void clear_read_structures(){
     read = "";
@@ -327,131 +340,78 @@ void dag_aligner::cochain_mappings() {
     reverse(opt_chain.begin(), opt_chain.end());
 }
 
-// void dag_aligner::affix_aligner (
-//         align_matrix_dynamic_t& D,
-//         backtrack_matrix_dynamic_t& B,
-//         const matrix_coordinate_t& coor,
-//         const interval_t& gene_interval,
-//         const interval_t& read_interval,
-//         Affix affix) {
-//     index_t& i = coor.first;
-//     index_t& j = coor.second;
-//     index_t& r_start = gene_interval.first;
-//     index_t& r_end   = gene_interval.second;
-//     index_t& g_start = read_interval.first;
-//     index_t& g_end   = read_interval.second;
-//     // Lambda function to update the opt value
-//     auto set_to_max = [&D](align_score_t& opt_s, matrix_coordinate_t& opt_b, matrix_coordinate_t& source, align_score_t cur_s) {
-//         cur_s += D[source];
-//         if (cur_s > opt_s) {
-//             opt_s = cur_s;
-//             opt_b = {source.first, source.second};
-//         }
-//     };
-//     align_score_t opt_s = numeric_limits<align_score_t>::min();
-//     matrix_coordinate_t opt_b = INVALID_COORDINATE;
-//     align_score_t matching_score = 0;
-//     if (read[i] == gene[j]) {
-//         matching_score = MATCH_S + EXONIC_S*exonic_indicator[j];
-//     } else {
-//         matching_score = MISMATCH_S;
-//     }
-//
-//     matrix_coordinate_t source;
-//     if (affix = prefix) {
-//         source = {i-1, j-0};
-//         set_to_max(opt_s, opt_b, source, GAP_S); // Consume read
-//         // Direct parent column
-//         source = {i-0, j-1};
-//         set_to_max(opt_s, opt_b, source, GAP_S); // Consume gene
-//         source = {i-1, j-1};
-//         set_to_max(opt_s, opt_b, source, matching_score); // Consume both
-//         // Other DAG parents
-//         for (index_t parent : nodes[j].parents) {
-//             // Parent column from DAG
-//             source = {i-0, parent};
-//             set_to_max(opt_s, opt_b, source, GAP_S); // Consume gene
-//             source = {i-1, parent};
-//             set_to_max(opt_s, opt_b, source, matching_score); // Consume both
-//         }
-//     } else if (affix = suffix) {
-//         source = {i+1, j+0};
-//         set_to_max(opt_s, opt_b, source, GAP_S); // Consume read
-//         // Direct parent column
-//         source = {i+0, j+1};
-//         set_to_max(opt_s, opt_b, source, GAP_S); // Consume gene
-//         source = {i+1, j+1};
-//         set_to_max(opt_s, opt_b, source, matching_score); // Consume both
-//         // Other DAG children
-//         for (index_t child : nodes[j].children) {
-//             // Child column from DAG
-//             source = {i+0, child};
-//             set_to_max(opt_s, opt_b, source, GAP_S); // Consume gene
-//             source = {i+1, child};
-//             set_to_max(opt_s, opt_b, source, matching_score); // Consume both
-//         }
-//     }
-//     D[i][j] = opt_s;
-//     B[i][j] = opt_b;
-// }
+void dag_aligner::affix_aligner (const dag_types::index_t& i, const dag_types::index_t& j, const interval_t& gene_interval, bool is_prefix) {
+    matrix_coordinate_t coor(i,j);
+    const index_t& g_start = gene_interval.first;
+    const index_t& g_end   = gene_interval.second;
+    // Lambda function to update the opt value
+    auto set_to_max = [](align_score_t& opt_s, matrix_coordinate_t& opt_b, matrix_coordinate_t& source, align_score_t cur_s) {
+        cur_s += D_affix[source];
+        if (cur_s > opt_s) {
+            opt_s = cur_s;
+            opt_b = {source.first, source.second};
+        }
+    };
+    align_score_t opt_s = numeric_limits<align_score_t>::min();
+    matrix_coordinate_t opt_b = INVALID_COORDINATE;
+    align_score_t matching_score = 0;
+    if (read[i] == gene[j]) {
+        matching_score = MATCH_S + EXONIC_S*exonic_indicator[j];
+    } else {
+        matching_score = MISMATCH_S;
+    }
 
-
+    matrix_coordinate_t source;
+    if (is_prefix) {
+        source = {i-1, j-0};
+        set_to_max(opt_s, opt_b, source, GAP_S); // Consume read
+        // Direct parent column
+        source = {i-0, j-1};
+        set_to_max(opt_s, opt_b, source, GAP_S); // Consume gene
+        source = {i-1, j-1};
+        set_to_max(opt_s, opt_b, source, matching_score); // Consume both
+        // Other DAG parents
+        for (const index_t& parent : nodes[j].parents) {
+            if (parent < g_start) {
+                continue;
+            }
+            // Parent column from DAG
+            source = {i-0, parent};
+            set_to_max(opt_s, opt_b, source, GAP_S); // Consume gene
+            source = {i-1, parent};
+            set_to_max(opt_s, opt_b, source, matching_score); // Consume both
+        }
+    } else {
+        source = {i+1, j+0};
+        set_to_max(opt_s, opt_b, source, GAP_S); // Consume read
+        // Direct parent column
+        source = {i+0, j+1};
+        set_to_max(opt_s, opt_b, source, GAP_S); // Consume gene
+        source = {i+1, j+1};
+        set_to_max(opt_s, opt_b, source, matching_score); // Consume both
+        // Other DAG children
+        for (index_t child : nodes[j].children) {
+            if (child > g_end) {
+                continue;
+            }
+            // Child column from DAG
+            source = {i+0, child};
+            set_to_max(opt_s, opt_b, source, GAP_S); // Consume gene
+            source = {i+1, child};
+            set_to_max(opt_s, opt_b, source, matching_score); // Consume both
+        }
+    }
+    D_affix[coor] = opt_s;
+    B_affix[coor] = opt_b;
+}
 
 void dag_aligner::extend_opt_chain() {
-//     size_t prev_mapping_id = opt_chain.front();
-//     for (const size_t& mapping_id : opt_chain) {
-//         if (mapping_id == opt_chain.front()) {
-//             continue;
-//         }
-//         index_t r_start = local_mappings[prev_mapping_id].read_interval.second;
-//         index_t r_end   = local_mappings[mapping_id].read_interval.first;
-//         index_t g_start = local_mappings[prev_mapping_id].gene_intervals.back().second;
-//         index_t g_end   = local_mappings[mapping_id].gene_intervals.front().first;
-//         align_matrix_t D;
-//         backtrack_matrix_t B;
-//
-//         // Lambda function to update the opt value
-//         auto set_to_max = [&, D](align_score_t& opt_s, matrix_coordinate_t& opt_b, matrix_coordinate_t& source, align_score_t cur_s) {
-//             cur_s += D[source.first][source.second];
-//             if (cur_s > opt_s) {
-//                 opt_s = cur_s;
-//                 opt_b = {source.first, source.second};
-//             }
-//         };
-//
-//         enum Affix {prefix, suffix};
-//             align_score_t opt_s = 0;
-//             matrix_coordinate_t opt_b = INVALID_COORDINATE;
-//             align_score_t matching_score = 0;
-//             if (read[i] == gene[j]) {
-//                 matching_score = MATCH_S + EXONIC_S*exonic_indicator[j];
-//             } else {
-//                 matching_score = MISMATCH_S;
-//             }
-//
-//             matrix_coordinate_t source;
-//             source = {i-1, j-0};
-//             set_to_max(opt_s, opt_b, source, GAP_S); // Consume read
-//             // Direct parent column
-//             source = {i-0, j-1};
-//             set_to_max(opt_s, opt_b, source, GAP_S); // Consume gene
-//             source = {i-1, j-1};
-//             set_to_max(opt_s, opt_b, source, matching_score); // Consume both
-//             // Other DAG parents
-//             for (index_t parent : nodes[j].parents) {
-//                 // Parent column from DAG
-//                 source = {i-0, parent};
-//                 set_to_max(opt_s, opt_b, source, GAP_S); // Consume gene
-//                 source = {i-1, parent};
-//                 set_to_max(opt_s, opt_b, source, matching_score); // Consume both
-//             }
-//             D[i][j] = opt_s;
-//             B[i][j] = opt_b;
-//         };
-//
-//
-//
-//     }
+    size_t prev_mapping_id = opt_chain.front();
+    for (const size_t& mapping_id : opt_chain) {
+        if (mapping_id == opt_chain.front()) {
+            continue;
+        }
+    }
 }
 
 void dag_aligner::update_dag(const string& read_name) {

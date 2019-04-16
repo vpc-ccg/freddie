@@ -8,37 +8,16 @@
 #include <string>
 #include <iostream>
 #include <fstream>  // std::ofstream, std::ifstream
-#include <limits>   // numeric_limits
 
 namespace dag_types {
-    template<typename T>
-    class min_init {
-        T val;
-    public:
-        min_init() : val(static_cast<T>(std::numeric_limits<T>::min())) { }
-        min_init(T val) : val(val) { }
-        operator T&() { return val; }
-        operator T() const { return val; }
-
-    };
-    template<typename T>
-    class invalid_init {
-        T val;
-    public:
-        invalid_init() : val(-1) { }
-        invalid_init(T val) : val(val) { }
-        operator T&() { return val; }
-        operator T() const { return val; }
-    };
-
     enum CIGAR_OP {
         C_MAT = '=',
         C_MIS = 'X',
         C_INS = 'I',
         C_DEL = 'D'
     };
-    typedef invalid_init<uint32_t> seq_id_t;
-    typedef min_init<uint32_t> index_t;
+    typedef uint32_t seq_id_t;
+    typedef uint32_t index_t;
     // Node
     typedef std::set<index_t> node_set_t;
     typedef std::vector<seq_id_t> read_id_list_t;
@@ -51,13 +30,13 @@ namespace dag_types {
     typedef std::pair<index_t, index_t> edge_t;
     struct edge_hash {
         std::size_t operator () (const std::pair<index_t,index_t> &p) const {
-            auto h1 = std::hash<uint32_t>{}((uint32_t)p.first);
-            auto h2 = std::hash<uint32_t>{}((uint32_t)p.second);
+            auto h1 = std::hash<index_t>{}(p.first);
+            auto h2 = std::hash<index_t>{}(p.second);
             return h1 ^ h2;
         }
     };
     // Aligned reads
-    typedef min_init<int32_t> align_score_t;
+    typedef int32_t align_score_t;
     typedef std::pair<index_t, index_t> interval_t;
     struct mapping_s {
         interval_t read_interval;
@@ -106,6 +85,7 @@ private:
     void compress_align_paths();
     void cochain_mappings();
     void extend_opt_chain();
+    void affix_aligner(const dag_types::index_t& i, const dag_types::index_t& j, const dag_types::interval_t& gene_interval, bool is_prefix);
     void update_dag(const std::string& read_name_in);
 public:
     void init_dag(const std::string& gene_name, const std::string& gene);
