@@ -1,6 +1,6 @@
 #include "commandline_flags.h"
 #include "dag.h"
-#include "utils.h"
+#include "utils.h" // fasta_get_record()
 #include "fmt/format.h"
 
 #include <iostream>
@@ -11,13 +11,14 @@
 #define GITINFO "@ unknown git commit"
 #endif
 
+using namespace globals;
+using utils::fasta_get_record;
+
 using std::cerr;
 using std::endl;
 using std::string;
 using std::ifstream;
 using fmt::format;
-
-using namespace globals;
 
 void align(dag_aligner& my_dag) {
     string name, seq;
@@ -48,7 +49,6 @@ void align(dag_aligner& my_dag) {
         }
         cerr << format("Aligning {} read with length {:d}", name, seq.size()-1) << endl;
         my_dag.align_read(name, seq);
-        my_dag.print_last_read_alignments();
     }
 }
 

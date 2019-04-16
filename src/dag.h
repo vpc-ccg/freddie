@@ -56,6 +56,33 @@ namespace dag_types {
         std::vector<dag_types::interval_t> intervals;
     };
 
+    // Alignment data structures
+    typedef std::pair<index_t, index_t> matrix_coordinate_t;
+    typedef std::vector<align_score_t> align_row_t;
+    typedef std::vector<align_row_t> align_matrix_t;
+    typedef std::vector<matrix_coordinate_t> backtrack_row_t;
+    typedef std::vector<backtrack_row_t> backtrack_matrix_t;
+    typedef std::vector<CIGAR_OP> cigar_t;
+    typedef std::vector<matrix_coordinate_t> align_path_t;
+    struct local_alignment_s {
+        align_path_t path;
+        cigar_t cigar;
+        align_score_t score;
+        interval_t read_interval;
+        std::vector<interval_t> gene_intervals;
+        std::string cigar_str = "";
+        bool in_opt_chain = false;
+    };
+    // Affix alignment data structures
+    struct matrix_coordinate_hash {
+        std::size_t operator () (const matrix_coordinate_t &p) const {
+            auto h1 = std::hash<index_t>{}(p.first);
+            auto h2 = std::hash<index_t>{}(p.second);
+            return h1 ^ h2;
+        }
+    };
+    typedef std::unordered_map<matrix_coordinate_t, align_score_t, matrix_coordinate_hash> align_matrix_dynamic_t;
+    typedef std::unordered_map<matrix_coordinate_t, matrix_coordinate_t, matrix_coordinate_hash> backtrack_matrix_dynamic_t;
 }
 
 class dag_aligner {
@@ -78,20 +105,62 @@ private:
     std::vector<dag_types::annot_s> r_annots;
     std::unordered_map<std::string, std::string> r_annot_name_to_t_annot_name;
     //// Helper functions
-    void add_edge(const dag_types::index_t& source, const dag_types::index_t& target);
-    void local_aligner(const dag_types::index_t& i, const dag_types::index_t& j);
-    void extract_local_alignment();
-    void recalc_alignment_matrix();
-    void compress_align_paths();
-    void cochain_mappings();
-    void extend_opt_chain();
-    void affix_aligner(const dag_types::index_t& i, const dag_types::index_t& j, const dag_types::interval_t& gene_interval, bool is_prefix);
-    void update_dag(const std::string& read_name_in);
+    void add_edge(
+        const dag_types::index_t& source,
+        const dag_types::index_t& target
+    );
+    void local_aligner(
+        dag_types::align_matrix_t& D,
+        dag_types::backtrack_matrix_t& B,
+        const std::string& read,
+        const dag_types::index_t& i,
+        const dag_types::index_t& j
+    );
+    void extract_local_alignment(
+        dag_types::local_alignment_s& loc_aln,
+        const dag_types::align_matrix_t& D,
+        const dag_types::backtrack_matrix_t& B,
+        const std::string& read
+    );
+    void recalc_alignment_matrix(
+        dag_types::align_matrix_t& D,
+        dag_types::backtrack_matrix_t& B,
+        const dag_types::local_alignment_s& loc_aln,
+        const std::string& read
+    );
+    void compress_align_path(
+        dag_types::local_alignment_s& loc_aln
+    );
+    void cochain_mappings(
+        std::vector<size_t> opt_chain,
+        std::vector<dag_types::local_alignment_s>& loc_alns
+    );
+    void extend_opt_chain(
+        std::vector<dag_types::local_alignment_s>& loc_alns,
+        std::vector<size_t>& opt_chain,
+        const std::string& read
+    );
+    void affix_aligner(
+        dag_types::align_matrix_dynamic_t& D_affix,
+        dag_types::backtrack_matrix_dynamic_t&B,
+        const bool& is_prefix,
+        const dag_types::index_t& i,
+        const dag_types::index_t& j,
+        const dag_types::interval_t& gene_interval,
+        const std::string& read
+    );
+    void update_dag(
+        const std::string& read_name,
+        const std::vector<dag_types::local_alignment_s>& loc_alns,
+        const std::vector<size_t>& opt_chain
+    );
+    void print_last_read_alignments(
+        const std::vector<dag_types::local_alignment_s> &loc_alns
+    );
 public:
     void init_dag(const std::string& gene_name, const std::string& gene);
     void init_dag(const std::string& gene_name, const std::string& gene, const std::vector<bool>& exonic_indicator);
     void align_read(const std::string& read_name, const std::string& read);
-    void print_last_read_alignments();
     void generate_dot();
     void load_state(const std::string& paf_path);
     void print_dag();

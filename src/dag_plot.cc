@@ -1,6 +1,5 @@
 #include "dag.h"
 #include "commandline_flags.h"
-#include "utils.h"
 #include "fmt/format.h"
 
 #include <sstream>  // std::stringstream

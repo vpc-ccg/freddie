@@ -1,6 +1,6 @@
 #include "dag.h"
 #include "commandline_flags.h"
-#include "utils.h"
+#include "utils.h" // split()
 #include "fmt/format.h"
 
 #include <unordered_set>
@@ -10,6 +10,7 @@
 
 using namespace dag_types;
 
+using utils::split;
 
 using fmt::format;
 using std::cerr;
