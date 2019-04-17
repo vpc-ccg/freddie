@@ -122,6 +122,51 @@ void dag_aligner::extract_local_alignment(local_alignment_s& loc_aln, const alig
     reverse(loc_aln.cigar.begin(), loc_aln.cigar.end());
 }
 
+void dag_aligner::extract_affix_alignment(local_alignment_s& loc_aln, const align_matrix_dynamic_t& D, const backtrack_matrix_dynamic_t& B, const matrix_coordinate_t& start, const matrix_coordinate_t& end, const string& read) {
+    // First, find optimal score in D
+    matrix_coordinate_t opt_tail = INVALID_COORDINATE;
+    align_score_t opt_score = numeric_limits<align_score_t>::min();
+    for (index_t i = start.first; i <= end.first; i++) {
+        for (index_t j = start.second; j <= end.second; j++) {
+            matrix_coordinate_t coor(i,j);
+            align_score_t score = D.at(coor);
+            set_to_max<matrix_coordinate_t, align_score_t>(opt_tail, opt_score, coor, score);
+        }
+    }
+    loc_aln.path.push_back(opt_tail);
+    loc_aln.score = opt_score;
+    if (opt_score == 0) {
+        return;
+    }
+    // Then, backtrack from the opt score back to the first positive score in the path
+    matrix_coordinate_t cur_pos = opt_tail;
+    matrix_coordinate_t nxt_pos = B.at(cur_pos);
+    while (nxt_pos != INVALID_COORDINATE && D.at(nxt_pos) > 0) {
+        loc_aln.path.push_back(nxt_pos);
+        // Consume both read and gene
+        if (cur_pos.first != nxt_pos.first && cur_pos.second != nxt_pos.second) {
+            if (read[cur_pos.first] == gene[cur_pos.second]) {
+                loc_aln.cigar.push_back(C_MAT);
+            } else {
+                loc_aln.cigar.push_back(C_MIS);
+            }
+        }
+        // Consume read only
+        if (cur_pos.first != nxt_pos.first && cur_pos.second == nxt_pos.second) {
+                loc_aln.cigar.push_back(C_INS);
+        }
+        // Consume gene only
+        if (cur_pos.first == nxt_pos.first && cur_pos.second != nxt_pos.second) {
+                loc_aln.cigar.push_back(C_DEL);
+        }
+        cur_pos = nxt_pos;
+        nxt_pos = B.at(cur_pos);
+    }
+    // Make sure to have the path in the correct orientation (top to bottom, left to right)
+    reverse(loc_aln.path.begin(), loc_aln.path.end());
+    reverse(loc_aln.cigar.begin(), loc_aln.cigar.end());
+}
+
 void dag_aligner::recalc_alignment_matrix(align_matrix_t& D, backtrack_matrix_t& B, const local_alignment_s& loc_aln, const string& read) {
     queue<matrix_coordinate_t> clearing_queue;
     // First, resets alignment path so it can't be used by new alignments. Queues the path nodes.
@@ -461,7 +506,14 @@ void dag_aligner::extend_opt_chain(vector<local_alignment_s>& loc_alns, vector<s
             const matrix_coordinate_t& M_suffix_coor = kv.first;
             set_to_max<matrix_coordinate_t, align_score_t>(max_sum_max_b, max_sum_max_s, M_prefix_coor, M_prefix[M_prefix_coor]+M_suffix[M_suffix_coor]);
         }
-
+        local_alignment_s prefix_loc_aln;
+        local_alignment_s suffix_loc_aln;
+        extract_affix_alignment(prefix_loc_aln, D_prefix, B_prefix, matrix_coordinate_t(r_start, g_start), max_sum_max_b, read);
+        extract_affix_alignment(suffix_loc_aln, D_suffix, B_suffix, max_sum_max_b, matrix_coordinate_t(r_end, g_end), read);
+        compress_align_path(prefix_loc_aln);
+        compress_align_path(suffix_loc_aln);
+        loc_alns.emplace_back(prefix_loc_aln);
+        loc_alns.emplace_back(suffix_loc_aln);
         prev_mapping_id = mapping_id;
     }
 }

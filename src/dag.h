@@ -122,6 +122,14 @@ private:
         const dag_types::backtrack_matrix_t& B,
         const std::string& read
     );
+    void extract_affix_alignment(
+        dag_types::local_alignment_s& loc_aln,
+        const dag_types::align_matrix_dynamic_t& D,
+        const dag_types::backtrack_matrix_dynamic_t& B,
+        const dag_types::matrix_coordinate_t& start,
+        const dag_types::matrix_coordinate_t& end,
+        const std::string& read
+    );
     void recalc_alignment_matrix(
         dag_types::align_matrix_t& D,
         dag_types::backtrack_matrix_t& B,
