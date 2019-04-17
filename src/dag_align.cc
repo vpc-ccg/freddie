@@ -5,7 +5,7 @@
 #include <queue>
 #include <iostream>   // std::cerr, std::cout
 #include <sstream>    // std::stringstream
-#include <algorithm>  // std::reverse, std::sort, std::max
+#include <algorithm>  // std::reverse, std::sort, std::max, std::min
 #include <functional> // std::function
 #include <cstdlib>    // abort()
 #include <utility>    // move(), std::pair
@@ -365,6 +365,7 @@ void dag_aligner::extend_opt_chain(vector<local_alignment_s>& loc_alns, vector<s
         backtrack_matrix_dynamic_t B_suffix;
         matrix_coordinate_t coor, source, opt_b;
         align_score_t opt_s, max_s;
+        align_matrix_dynamic_t M_sum;
         // preprocess boundries of B_prefix and D_prefix
         coor = matrix_coordinate_t(r_start,g_start);
         source = INVALID_COORDINATE;
@@ -441,6 +442,19 @@ void dag_aligner::extend_opt_chain(vector<local_alignment_s>& loc_alns, vector<s
             for (index_t j = g_end - 1; j >= g_end - affix_g_len; j--) {
                 affix_aligner(D_suffix, B_suffix, M_suffix, false, i, j, interval_t(g_start, g_end), read);
             }
+        }
+        // Sum of M_prefix and M_suffix
+        for (const auto& kv : M_prefix) {
+            const matrix_coordinate_t& coor = kv.first;
+            const index_t& i = coor.first;
+            index_t j = std::max(coor.second, g_end - affix_g_len);
+            M_sum[coor] = M_prefix[coor] + M_suffix[matrix_coordinate_t(i,j)];
+        }
+        for (const auto& kv : M_suffix) {
+            const matrix_coordinate_t& coor = kv.first;
+            const index_t& i = coor.first;
+            index_t j = std::min(coor.second, g_start + affix_g_len);
+            M_sum[coor] = M_prefix[matrix_coordinate_t(i,j)] + M_suffix[coor];
         }
 
         prev_mapping_id = mapping_id;
