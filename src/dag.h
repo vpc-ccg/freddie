@@ -142,7 +142,8 @@ private:
     );
     void affix_aligner(
         dag_types::align_matrix_dynamic_t& D_affix,
-        dag_types::backtrack_matrix_dynamic_t&B,
+        dag_types::backtrack_matrix_dynamic_t& B_affix,
+        dag_types::align_matrix_dynamic_t& M_affix,
         const bool& is_prefix,
         const dag_types::index_t& i,
         const dag_types::index_t& j,
