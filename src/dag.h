@@ -72,6 +72,7 @@ namespace dag_types {
         std::vector<interval_t> gene_intervals;
         std::string cigar_str = "";
         bool in_opt_chain = false;
+        bool is_chain_ext = false;
     };
     // Affix alignment data structures
     struct matrix_coordinate_hash {

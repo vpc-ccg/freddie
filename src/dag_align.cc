@@ -508,6 +508,8 @@ void dag_aligner::extend_opt_chain(vector<local_alignment_s>& loc_alns, vector<s
         }
         local_alignment_s prefix_loc_aln;
         local_alignment_s suffix_loc_aln;
+        prefix_loc_aln.is_chain_ext = true;
+        suffix_loc_aln.is_chain_ext = true;
         extract_affix_alignment(prefix_loc_aln, D_prefix, B_prefix, matrix_coordinate_t(r_start, g_start), max_sum_max_b, read);
         extract_affix_alignment(suffix_loc_aln, D_suffix, B_suffix, max_sum_max_b, matrix_coordinate_t(r_end, g_end), read);
         compress_align_path(prefix_loc_aln);
@@ -633,6 +635,7 @@ void dag_aligner::print_last_read_alignments(const vector<local_alignment_s> &lo
         ss << format("{}\t", 255); //  Mapping quality (0-255; 255 for missing)
         ss << format("s1:i:{:d}\t", loc_alns[i].score); //  Local alignment score
         ss << format("oc:c:{:d}\t", loc_alns[i].in_opt_chain);
+        ss << format("ce:c:{:d}\t", loc_alns[i].is_chain_ext);
         ss << format("cg:Z:{}\n", loc_alns[i].cigar_str);
     }
     cout << ss.str();
