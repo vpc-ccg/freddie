@@ -393,7 +393,7 @@ void dag_aligner::affix_aligner(align_matrix_dynamic_t& D_affix, backtrack_matri
 }
 
 void dag_aligner::extend_opt_chain(vector<local_alignment_s>& loc_alns, vector<size_t>& opt_chain, const string& read) {
-    size_t prev_mapping_id = opt_chain.front();
+    size_t prev_mapping_id;
     for (const size_t& mapping_id : opt_chain) {
         if (mapping_id == opt_chain.front()) {
             continue;
@@ -576,8 +576,8 @@ void dag_aligner::align_read(const string& read_name, const string& read) {
     for (size_t i = 0; i < MAX_MAPPINGS; i++) {
         local_alignment_s loc_aln;
         extract_local_alignment(loc_aln, D, B, read);
-        if (loc_alns.back().score < MIN_SCORE) {
-            cerr << format("Read {} {}-th align score ({}) is below the MIN_SCORE ({})", read_name, loc_alns.size() -1, loc_alns.back().score, MIN_SCORE) << endl;
+        if (loc_aln.score < MIN_SCORE) {
+            cerr << format("Read {} {}-th align score ({}) is below the MIN_SCORE ({})", read_name, loc_alns.size() -1, loc_aln.score, MIN_SCORE) << endl;
             break;
         }
         loc_alns.emplace_back(loc_aln);
