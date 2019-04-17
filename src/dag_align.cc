@@ -363,9 +363,8 @@ void dag_aligner::extend_opt_chain(vector<local_alignment_s>& loc_alns, vector<s
         backtrack_matrix_dynamic_t B_prefix;
         align_matrix_dynamic_t D_suffix, M_suffix;
         backtrack_matrix_dynamic_t B_suffix;
-        matrix_coordinate_t coor, source, opt_b;
-        align_score_t opt_s, max_s;
-        align_matrix_dynamic_t M_sum;
+        matrix_coordinate_t coor, source, opt_b, max_sum_max_b;
+        align_score_t opt_s, max_s, max_sum_max_s;
         // preprocess boundries of B_prefix and D_prefix
         coor = matrix_coordinate_t(r_start,g_start);
         source = INVALID_COORDINATE;
@@ -444,17 +443,23 @@ void dag_aligner::extend_opt_chain(vector<local_alignment_s>& loc_alns, vector<s
             }
         }
         // Sum of M_prefix and M_suffix
+        max_sum_max_b = INVALID_COORDINATE;
+        max_sum_max_s = numeric_limits<align_score_t>::min();
         for (const auto& kv : M_prefix) {
-            const matrix_coordinate_t& coor = kv.first;
-            const index_t& i = coor.first;
-            index_t j = std::max(coor.second, g_end - affix_g_len);
-            M_sum[coor] = M_prefix[coor] + M_suffix[matrix_coordinate_t(i,j)];
+            const matrix_coordinate_t& M_prefix_coor = kv.first;
+            const matrix_coordinate_t  M_suffix_coor = matrix_coordinate_t(
+                coor.first,
+                std::max(coor.second, g_end - affix_g_len)
+            );
+            set_to_max<matrix_coordinate_t, align_score_t>(max_sum_max_b, max_sum_max_s, M_prefix_coor, M_prefix[M_prefix_coor]+M_suffix[M_suffix_coor]);
         }
         for (const auto& kv : M_suffix) {
-            const matrix_coordinate_t& coor = kv.first;
-            const index_t& i = coor.first;
-            index_t j = std::min(coor.second, g_start + affix_g_len);
-            M_sum[coor] = M_prefix[matrix_coordinate_t(i,j)] + M_suffix[coor];
+            const matrix_coordinate_t  M_prefix_coor = matrix_coordinate_t(
+                coor.first,
+                std::min(coor.second, g_start + affix_g_len)
+            );
+            const matrix_coordinate_t& M_suffix_coor = kv.first;
+            set_to_max<matrix_coordinate_t, align_score_t>(max_sum_max_b, max_sum_max_s, M_prefix_coor, M_prefix[M_prefix_coor]+M_suffix[M_suffix_coor]);
         }
 
         prev_mapping_id = mapping_id;
