@@ -349,8 +349,9 @@ void dag_aligner::extend_opt_chain(vector<local_alignment_s>& loc_alns, vector<s
         backtrack_matrix_dynamic_t B_prefix;
         align_matrix_dynamic_t D_suffix;
         backtrack_matrix_dynamic_t B_suffix;
+        matrix_coordinate_t coor, source, opt_b;
+        align_score_t opt_s;
         // preprocess boundries of B_prefix and D_prefix
-        matrix_coordinate_t coor, source;
         coor = matrix_coordinate_t(r_start,g_start);
         source = INVALID_COORDINATE;
         D_prefix[coor] = 0;
@@ -358,28 +359,62 @@ void dag_aligner::extend_opt_chain(vector<local_alignment_s>& loc_alns, vector<s
         for (index_t i = r_start + 1; i <= r_start + affix_r_len; i++) {
             coor   = matrix_coordinate_t(i, g_start);
             source = matrix_coordinate_t(i-1, g_start);
-            D_prefix[coor] = D_prefix[source] + GAP_S;
-            B_prefix[coor] = source;
+             opt_s = D_prefix[source] + GAP_S;
+             opt_b = source;
+             D_prefix[coor] = opt_s;
+             B_prefix[coor] = opt_b;
         }
         for (index_t j = g_start + 1; j <= g_start + affix_g_len; j++) {
             coor   = matrix_coordinate_t(r_start, j);
             source = matrix_coordinate_t(r_start, j-1);
-            D_prefix[coor] = D_prefix[source] + GAP_S;
-            B_prefix[coor] = source;
+            opt_s = D_prefix[source] + GAP_S;
+            opt_b = source;
             for (const index_t& parent : nodes[j].parents) {
                 if (parent < g_start) {
                     continue;
                 }
                 source = matrix_coordinate_t(r_start, parent);
-                if (D_prefix[coor] < D_prefix[source] + GAP_S) {
-                    D_prefix[coor] = D_prefix[source] + GAP_S;
-                    B_prefix[coor] = source;
-                }
+                set_to_max<matrix_coordinate_t, align_score_t>(opt_b, opt_s, source, D_prefix[source] + GAP_S);
             }
+            D_prefix[coor] = opt_s;
+            B_prefix[coor] = opt_b;
         }
         for (index_t i = r_start + 1; i <= r_start + affix_r_len; i++) {
             for (index_t j = g_start + 1; j <= g_start + affix_g_len; j++) {
                 affix_aligner(D_prefix, B_prefix, true, i, j, interval_t(g_start, g_end), read);
+            }
+        }
+        // preprocess boundries of B_suffix and D_suffix
+        coor = matrix_coordinate_t(r_end,g_end);
+        source = INVALID_COORDINATE;
+        D_suffix[coor] = 0;
+        B_suffix[coor] = source;
+        for (index_t i = r_end - 1; i >= r_end - affix_r_len; i--) {
+            coor   = matrix_coordinate_t(i, g_end);
+            source = matrix_coordinate_t(i+1, g_end);
+            opt_s = D_suffix[source] + GAP_S;
+            opt_b = source;
+            D_suffix[coor] = opt_s;
+            B_suffix[coor] = opt_b;
+        }
+        for (index_t j = g_end - 1; j >= g_end - affix_g_len; j--) {
+            coor   = matrix_coordinate_t(r_end, j);
+            source = matrix_coordinate_t(r_end, j+1);
+            opt_s = D_suffix[source] + GAP_S;
+            opt_b = source;
+            for (const index_t& child : nodes[j].children) {
+                if (child > g_end) {
+                    continue;
+                }
+                source = matrix_coordinate_t(r_end, child);
+                set_to_max<matrix_coordinate_t, align_score_t>(opt_b, opt_s, source, D_suffix[source] + GAP_S);
+            }
+            D_suffix[coor] = opt_s;
+            B_suffix[coor] = opt_b;
+        }
+        for (index_t i = r_end - 1; i >= r_end - affix_r_len; i--) {
+            for (index_t j = g_end - 1; j >= g_end - affix_g_len; j--) {
+                affix_aligner(D_suffix, B_suffix, false, i, j, interval_t(g_start, g_end), read);
             }
         }
 
