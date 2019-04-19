@@ -141,7 +141,7 @@ private:
         dag_types::local_alignment_s& loc_aln
     );
     void cochain_mappings(
-        std::vector<size_t> opt_chain,
+        std::vector<size_t> &opt_chain,
         std::vector<dag_types::local_alignment_s>& loc_alns
     );
     void extend_opt_chain(
