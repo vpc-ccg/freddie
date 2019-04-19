@@ -60,7 +60,7 @@ def output_nanosim_reads_tsv(transcript_infos, nanosim_reads_fasta, out_oriented
     out_tsv = open(out_tsv, 'w+')
     fasta = open(nanosim_reads_fasta)
     while True:
-        line = fasta.readline()
+        line = fasta.readline().rstrip()
         if len(line) == 0:
             break
         rname = line[1:].rstrip().split()[0]
@@ -79,7 +79,7 @@ def output_nanosim_reads_tsv(transcript_infos, nanosim_reads_fasta, out_oriented
         esc = int(line[7])
 
         oriented = 'unoriented'
-        seq = fasta.readline()
+        seq = fasta.readline().rstrip()
         if strand == 'R':
             oriented = 'oriented'
             ssc,esc = esc,ssc
