@@ -43,6 +43,9 @@ namespace dag_types {
         std::vector<interval_t> gene_intervals;
         align_score_t score = 0;
         std::string cigar_str = "";
+        bool operator<(const mapping_s& rhs) const {
+             return gene_intervals.back().second < rhs.gene_intervals.front().first;
+        }
     };
     struct aln_read_s {
         std::string name = "";
@@ -72,7 +75,10 @@ namespace dag_types {
         std::vector<interval_t> gene_intervals;
         std::string cigar_str = "";
         bool in_opt_chain = false;
-        bool is_chain_ext = false;
+        std::string is_chain_affix = "l_aln";
+        bool operator<(const local_alignment_s& rhs) const {
+             return gene_intervals.front().first < rhs.gene_intervals.front().first;
+        }
     };
     // Affix alignment data structures
     struct matrix_coordinate_hash {

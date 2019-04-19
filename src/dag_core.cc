@@ -54,10 +54,6 @@ void parse_tsv_line(const string& line, const long& gene_size, annot_s& annot) {
     }
 }
 
-bool mappings_comparator(const mapping_s& a, const mapping_s& b) {
-    return (a.gene_intervals.front().first < b.gene_intervals.front().first);
-}
-
 void dag_aligner::add_edge(const index_t& source, const index_t& target) {
     if (source >= target) {
         cerr << format("Error: Source can't be >= target: {} -> {}", source, target) << endl;
@@ -284,6 +280,6 @@ void dag_aligner::load_state(const string& paf_path) {
     }
     ifs.close();
     for (aln_read_s& aln_read : aln_reads) {
-        sort(aln_read.mappings.begin(), aln_read.mappings.end(), mappings_comparator);
+        sort(aln_read.mappings.begin(), aln_read.mappings.end());
     }
 }

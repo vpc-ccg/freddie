@@ -78,9 +78,6 @@ void dag_aligner::generate_dot() {
             comment += "P";
         }
         if (aln_junctions.find(node) != aln_junctions.end()) {
-            if (!flag) {
-                cerr << "Warning" << endl;
-            }
             flag = true;
             comment += "J";
         }
@@ -93,9 +90,6 @@ void dag_aligner::generate_dot() {
             junction_idx[node] = junctions.size();
             junctions.push_back(node);
         }
-    }
-    for (const auto& kv : junction_idx) {
-        cerr << format("N: {}; idx: {};", kv.first, kv.second) << endl;
     }
     // Adding edges of normal coverage between vertices
     ss << format("    edge[weight=1000, arrowhead=none];") << endl;

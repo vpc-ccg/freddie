@@ -37,15 +37,19 @@ using std::pair;
 using std::numeric_limits;
 using std::ceil;
 
-constexpr align_score_t EXONIC_S = 0;
-constexpr align_score_t MATCH_S = 1;
-constexpr align_score_t GAP_S = -6;
+constexpr matrix_coordinate_t INVALID_COORDINATE = {-1,-1};
+constexpr align_score_t EXONIC_S   =  0;
+constexpr align_score_t MATCH_S    =  1;
+constexpr align_score_t GAP_S      = -6;
 constexpr align_score_t MISMATCH_S = -6;
 constexpr size_t MAX_MAPPINGS = 10;
 constexpr align_score_t MIN_SCORE = 30;
-constexpr matrix_coordinate_t INVALID_COORDINATE = {-1,-1};
 constexpr index_t COCHAINING_PERMISSIBILITY = 10;
 constexpr double MAX_UNALN_GENE_RATIO = 1.5;
+constexpr align_score_t AFFIX_EXONIC_S   =  0;
+constexpr align_score_t AFFIX_MATCH_S    =  1;
+constexpr align_score_t AFFIX_GAP_S      = -2;
+constexpr align_score_t AFFIX_MISMATCH_S = -2;
 
 void dag_aligner::local_aligner(align_matrix_t& D, backtrack_matrix_t& B, const string& read, const index_t& i, const index_t& j) {
     align_score_t opt_s = 0;
@@ -141,7 +145,7 @@ void dag_aligner::extract_affix_alignment(local_alignment_s& loc_aln, const alig
     // Then, backtrack from the opt score back to the first positive score in the path
     matrix_coordinate_t cur_pos = opt_tail;
     matrix_coordinate_t nxt_pos = B.at(cur_pos);
-    while (nxt_pos != INVALID_COORDINATE && D.at(nxt_pos) > 0) {
+    while (nxt_pos != INVALID_COORDINATE) {
         loc_aln.path.push_back(nxt_pos);
         // Consume both read and gene
         if (cur_pos.first != nxt_pos.first && cur_pos.second != nxt_pos.second) {
@@ -333,19 +337,19 @@ void dag_aligner::affix_aligner(align_matrix_dynamic_t& D_affix, backtrack_matri
     matrix_coordinate_t opt_b = INVALID_COORDINATE;
     align_score_t matching_score = 0;
     if (read[i] == gene[j]) {
-        matching_score = 1 + EXONIC_S*exonic_indicator[j];
+        matching_score = AFFIX_MATCH_S + AFFIX_EXONIC_S*exonic_indicator[j];
     } else {
-        matching_score = -1;
+        matching_score = AFFIX_MISMATCH_S;
     }
 
     matrix_coordinate_t source;
     if (is_prefix) {
         source = {i-1, j-0};
-        set_to_max<matrix_coordinate_t, align_score_t>(opt_b, opt_s, source, D_affix.at(source) + -1); // Consume read
+        set_to_max<matrix_coordinate_t, align_score_t>(opt_b, opt_s, source, D_affix.at(source) + AFFIX_GAP_S); // Consume read
         max_s = std::max(max_s, M_affix[source]);
         // Direct parent column
         source = {i-0, j-1};
-        set_to_max<matrix_coordinate_t, align_score_t>(opt_b, opt_s, source, D_affix.at(source) + -1); // Consume gene
+        set_to_max<matrix_coordinate_t, align_score_t>(opt_b, opt_s, source, D_affix.at(source) + AFFIX_GAP_S); // Consume gene
         max_s = std::max(max_s, M_affix[source]);
         source = {i-1, j-1};
         set_to_max<matrix_coordinate_t, align_score_t>(opt_b, opt_s, source, D_affix.at(source) + matching_score); // Consume both
@@ -357,7 +361,7 @@ void dag_aligner::affix_aligner(align_matrix_dynamic_t& D_affix, backtrack_matri
             }
             // Parent column from DAG
             source = {i-0, parent};
-            set_to_max<matrix_coordinate_t, align_score_t>(opt_b, opt_s, source, D_affix.at(source) + -1); // Consume gene
+            set_to_max<matrix_coordinate_t, align_score_t>(opt_b, opt_s, source, D_affix.at(source) + AFFIX_GAP_S); // Consume gene
             max_s = std::max(max_s, M_affix[source]);
             source = {i-1, parent};
             set_to_max<matrix_coordinate_t, align_score_t>(opt_b, opt_s, source, D_affix.at(source) + matching_score); // Consume both
@@ -365,11 +369,11 @@ void dag_aligner::affix_aligner(align_matrix_dynamic_t& D_affix, backtrack_matri
         }
     } else {
         source = {i+1, j+0};
-        set_to_max<matrix_coordinate_t, align_score_t>(opt_b, opt_s, source, D_affix.at(source) + -1); // Consume read
+        set_to_max<matrix_coordinate_t, align_score_t>(opt_b, opt_s, source, D_affix.at(source) + AFFIX_GAP_S); // Consume read
         max_s = std::max(max_s, M_affix[source]);
         // Direct parent column
         source = {i+0, j+1};
-        set_to_max<matrix_coordinate_t, align_score_t>(opt_b, opt_s, source, D_affix.at(source) + -1); // Consume gene
+        set_to_max<matrix_coordinate_t, align_score_t>(opt_b, opt_s, source, D_affix.at(source) + AFFIX_GAP_S); // Consume gene
         max_s = std::max(max_s, M_affix[source]);
         source = {i+1, j+1};
         set_to_max<matrix_coordinate_t, align_score_t>(opt_b, opt_s, source, D_affix.at(source) + matching_score); // Consume both
@@ -381,7 +385,7 @@ void dag_aligner::affix_aligner(align_matrix_dynamic_t& D_affix, backtrack_matri
             }
             // Child column from DAG
             source = {i+0, child};
-            set_to_max<matrix_coordinate_t, align_score_t>(opt_b, opt_s, source, D_affix.at(source) + -1); // Consume gene
+            set_to_max<matrix_coordinate_t, align_score_t>(opt_b, opt_s, source, D_affix.at(source) + AFFIX_GAP_S); // Consume gene
             max_s = std::max(max_s, M_affix[source]);
             source = {i+1, child};
             set_to_max<matrix_coordinate_t, align_score_t>(opt_b, opt_s, source, D_affix.at(source) + matching_score); // Consume both
@@ -409,10 +413,10 @@ void dag_aligner::extend_opt_chain(vector<local_alignment_s>& loc_alns, vector<s
             prev_mapping_id = mapping_id;
             continue;
         }
-        const index_t& r_start = loc_alns[prev_mapping_id].read_interval.second;
-        const index_t& r_end = loc_alns[mapping_id].read_interval.first;
-        const index_t& g_start = loc_alns[prev_mapping_id].gene_intervals.front().second;
-        const index_t& g_end = loc_alns[mapping_id].gene_intervals.back().first;
+        const index_t& r_start = loc_alns[prev_mapping_id].read_interval.second + 1;
+        const index_t& r_end = loc_alns[mapping_id].read_interval.first - 1;
+        const index_t& g_start = loc_alns[prev_mapping_id].gene_intervals.front().second + 1;
+        const index_t& g_end = loc_alns[mapping_id].gene_intervals.back().first - 1;
         if (r_start >= r_end) {
             prev_mapping_id = mapping_id;
             continue;
@@ -434,7 +438,7 @@ void dag_aligner::extend_opt_chain(vector<local_alignment_s>& loc_alns, vector<s
         for (index_t i = r_start + 1; i <= r_start + affix_r_len; i++) {
             coor   = matrix_coordinate_t(i, g_start);
             source = matrix_coordinate_t(i-1, g_start);
-            opt_s = D_prefix[source] + -1;
+            opt_s = D_prefix[source] + AFFIX_GAP_S;
             opt_b = source;
             max_s = std::max(opt_s, M_prefix[source]);
             D_prefix[coor] = opt_s;
@@ -444,7 +448,7 @@ void dag_aligner::extend_opt_chain(vector<local_alignment_s>& loc_alns, vector<s
         for (index_t j = g_start + 1; j <= g_start + affix_g_len; j++) {
             coor   = matrix_coordinate_t(r_start, j);
             source = matrix_coordinate_t(r_start, j-1);
-            opt_s = D_prefix[source] + -1;
+            opt_s = D_prefix[source] + AFFIX_GAP_S;
             opt_b = source;
             max_s = std::max(opt_s, M_prefix[source]);
             for (const index_t& parent : nodes[j].parents) {
@@ -452,7 +456,7 @@ void dag_aligner::extend_opt_chain(vector<local_alignment_s>& loc_alns, vector<s
                     continue;
                 }
                 source = matrix_coordinate_t(r_start, parent);
-                set_to_max<matrix_coordinate_t, align_score_t>(opt_b, opt_s, source, D_prefix[source] + -1);
+                set_to_max<matrix_coordinate_t, align_score_t>(opt_b, opt_s, source, D_prefix[source] + AFFIX_GAP_S);
                 max_s = std::max(opt_s, max_s);
             }
             D_prefix[coor] = opt_s;
@@ -466,7 +470,7 @@ void dag_aligner::extend_opt_chain(vector<local_alignment_s>& loc_alns, vector<s
             }
         }
         // cout << "$";
-        // for (index_t j = g_start + 1; j <= g_start + affix_g_len; j++) {
+        // for (index_t j = g_start; j <= g_start + affix_g_len; j++) {
         //     cout << format(" {}({})", j, gene[j]);
         // }
         // cout << endl;
@@ -487,7 +491,7 @@ void dag_aligner::extend_opt_chain(vector<local_alignment_s>& loc_alns, vector<s
         for (index_t i = r_end - 1; i >= r_end - affix_r_len; i--) {
             coor   = matrix_coordinate_t(i, g_end);
             source = matrix_coordinate_t(i+1, g_end);
-            opt_s = D_suffix[source] + -1;
+            opt_s = D_suffix[source] + AFFIX_GAP_S;
             opt_b = source;
             max_s = std::max(opt_s, M_suffix[source]);
             D_suffix[coor] = opt_s;
@@ -497,7 +501,7 @@ void dag_aligner::extend_opt_chain(vector<local_alignment_s>& loc_alns, vector<s
         for (index_t j = g_end - 1; j >= g_end - affix_g_len; j--) {
             coor   = matrix_coordinate_t(r_end, j);
             source = matrix_coordinate_t(r_end, j+1);
-            opt_s = D_suffix[source] + -1;
+            opt_s = D_suffix[source] + AFFIX_GAP_S;
             opt_b = source;
             max_s = std::max(opt_s, M_suffix[source]);
             for (const index_t& child : nodes[j].children) {
@@ -505,7 +509,7 @@ void dag_aligner::extend_opt_chain(vector<local_alignment_s>& loc_alns, vector<s
                     continue;
                 }
                 source = matrix_coordinate_t(r_end, child);
-                set_to_max<matrix_coordinate_t, align_score_t>(opt_b, opt_s, source, D_suffix[source] + -1);
+                set_to_max<matrix_coordinate_t, align_score_t>(opt_b, opt_s, source, D_suffix[source] + AFFIX_GAP_S);
                 max_s = std::max(opt_s, max_s);
             }
             D_suffix[coor] = opt_s;
@@ -552,13 +556,20 @@ void dag_aligner::extend_opt_chain(vector<local_alignment_s>& loc_alns, vector<s
         }
         local_alignment_s prefix_loc_aln;
         local_alignment_s suffix_loc_aln;
-        prefix_loc_aln.is_chain_ext = true;
-        suffix_loc_aln.is_chain_ext = true;
+        prefix_loc_aln.is_chain_affix = "l_aln_pre";
+        suffix_loc_aln.is_chain_affix = "l_aln_suf";
         matrix_coordinate_t prefix_start(r_start, g_start);
         matrix_coordinate_t prefix_end(max_sum_max_b.first, std::min(max_sum_max_b.second, g_start + affix_g_len));
         extract_affix_alignment(prefix_loc_aln, D_prefix, B_prefix, prefix_start, prefix_end, read);
         if (prefix_loc_aln.path.size() > 1) {
             compress_align_path(prefix_loc_aln);
+            cerr << format("Prefix ({}): {}-{} and {}~{}",
+                prefix_loc_aln.score,
+                prefix_loc_aln.path.front().first,
+                prefix_loc_aln.path.front().second,
+                prefix_loc_aln.path.back().first,
+                prefix_loc_aln.path.back().second
+            ) << endl;
             loc_alns.emplace_back(prefix_loc_aln);
         }
         matrix_coordinate_t suffix_start(max_sum_max_b.first, std::max(max_sum_max_b.second, g_end - affix_g_len));
@@ -566,6 +577,13 @@ void dag_aligner::extend_opt_chain(vector<local_alignment_s>& loc_alns, vector<s
         extract_affix_alignment(suffix_loc_aln, D_suffix, B_suffix, suffix_start, suffix_end, read);
         if (suffix_loc_aln.path.size() > 1) {
             compress_align_path(suffix_loc_aln);
+            cerr << format("Suffix ({}): {}-{} and {}~{}",
+                suffix_loc_aln.score,
+                suffix_loc_aln.path.front().first,
+                suffix_loc_aln.path.front().second,
+                suffix_loc_aln.path.back().first,
+                suffix_loc_aln.path.back().second
+            ) << endl;
             loc_alns.emplace_back(suffix_loc_aln);
         }
         prev_mapping_id = mapping_id;
@@ -588,6 +606,7 @@ void dag_aligner::update_dag(const string& read_name, const vector<local_alignme
     }
     bool first_exon = true;
     interval_t prev_exon;
+    sort(aln_read.mappings.begin(), aln_read.mappings.end());
     for (const mapping_s& mapping : aln_read.mappings) {
         for (const interval_t& exon : mapping.gene_intervals) {
             for (index_t node = exon.first; node <= exon.second; node++) {
@@ -645,9 +664,10 @@ void dag_aligner::align_read(const string& read_name, const string& read) {
     cochain_mappings(opt_chain, loc_alns);
     extend_opt_chain(loc_alns, opt_chain, read);
     update_dag(read_name, loc_alns, opt_chain);
+    sort(loc_alns.begin(), loc_alns.end());
+    opt_chain.clear();
     print_last_read_alignments(loc_alns);
     loc_alns.clear();
-    opt_chain.clear();
 }
 
 void dag_aligner::print_last_read_alignments(const vector<local_alignment_s> &loc_alns) {
@@ -687,7 +707,7 @@ void dag_aligner::print_last_read_alignments(const vector<local_alignment_s> &lo
         ss << format("{}\t", 255); //  Mapping quality (0-255; 255 for missing)
         ss << format("s1:i:{:d}\t", loc_alns[i].score); //  Local alignment score
         ss << format("oc:c:{:d}\t", loc_alns[i].in_opt_chain);
-        ss << format("ce:c:{:d}\t", loc_alns[i].is_chain_ext);
+        ss << format("ce:Z:{:}\t", loc_alns[i].is_chain_affix);
         ss << format("cg:Z:{}\n", loc_alns[i].cigar_str);
     }
     cout << ss.str();
