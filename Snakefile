@@ -41,7 +41,8 @@ nanosim_read_analysis_files=[
 
 rule all:
     input:
-         expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.split_pdf.done'.format(genes_d),   gene=config['genes'], sample=config['samples']),
+         # expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.split_pdf.done'.format(genes_d),   gene=config['genes'], sample=config['samples']),
+         expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster'.format(genes_d),   gene=config['genes'], sample=config['samples']),
 
 rule freddie_make:
     input:
@@ -225,3 +226,14 @@ rule dot_to_pdf:
         'freddie.env'
     shell:
         'cat {input.dot} | dot -T pdf > {output.pdf}'
+
+rule cluster_paf:
+    input:
+        paf    = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.paf'.format(genes_d),
+        script = config['exec']['clustering'],
+    output:
+        tsv = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster'.format(genes_d),
+    conda:
+        'freddie.env'
+    shell:
+        '{input.script} -p {input.paf} -o {output.tsv}'
