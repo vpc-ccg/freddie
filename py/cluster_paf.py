@@ -4,6 +4,9 @@ from sys import stderr
 from sklearn.cluster import DBSCAN
 from sklearn.metrics.cluster import adjusted_rand_score
 import numpy as np
+import matplotlib as mpl
+mpl.use('Agg')
+import matplotlib.pyplot as plt
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -13,6 +16,11 @@ def parse_args():
                         type=str,
                         required=True,
                         help="Path to PAF file")
+    parser.add_argument("-t",
+                        "--tsv",
+                        type=str,
+                        required=True,
+                        help="Path to TSV file")
     parser.add_argument("-m",
                         "--min-samples",
                         type=str,
@@ -147,7 +155,7 @@ def get_banded_matrix(matrix, cut_points):
 
 def plot_hierarchical_clustering(matrix, labels):
     from scipy.cluster import hierarchy
-    import matplotlib.pyplot as plt
+
 
     print(matrix.shape, len(labels))
     Z = hierarchy.linkage(matrix, 'single')
@@ -166,14 +174,50 @@ def plot_hierarchical_clustering(matrix, labels):
     plt.tight_layout()
     plt.savefig('out.pdf')
 
+def get_tsv_ticks(tsv_path):
+    ticks = set()
+    for line in open(tsv_path):
+        line = line.rstrip().split('\t')
+        for interval in line[3].split(','):
+            interval = interval.split('-')
+            ticks.add(int(interval[0]))
+            ticks.add(int(interval[1]))
+    return ticks
+
+def plot_coverage(matrix, ticks, outpath='out2.pdf'):
+    cmprss_vector = np.mean(matrix, axis = 0)
+    plt.figure(figsize=(30,4))
+    plt.plot(range(len(cmprss_vector)), cmprss_vector)
+    for tick in ticks:
+        plt.plot([tick,tick], [0,1], 'k--', alpha=0.2)
+    plt.tight_layout()
+    plt.savefig(outpath)
+
+def print_matrix(labels, names, matrix, outpath):
+    out_file = open(outpath, 'w+')
+    for rid in range(len(names)):
+        line = [
+            rid,
+            names[rid],
+            labels[rid],
+            ''.join(('{}'.format(x) for x in matrix[rid][:]))
+        ]
+        line = ['{}'.format(x) for x in line]
+        print('\t'.join(line), file=out_file)
+    out_file.close()
+
 def main():
     args = parse_args()
     names,raw_matrix,cut_points = read_paf(paf=args.paf)
     print(cut_points)
 
+    ticks = get_tsv_ticks(args.tsv)
+    plot_coverage(matrix=raw_matrix, ticks=ticks, outpath=args.output+'.coverage.pdf')
+
     true_labels = {x.split('_')[0] for x in names}
     true_labels = {label:idx for idx,label in enumerate(true_labels)}
     true_labels = [true_labels[x.split('_')[0]] for x in names]
+    print_matrix(labels=true_labels, names=names, matrix=raw_matrix, outpath=args.output+'.matrix.tsv')
     print(len(true_labels), sorted(true_labels))
 
     block_matrix = get_block_matrix(matrix=raw_matrix, band_size=100)
@@ -184,17 +228,19 @@ def main():
     out_file = open(args.output, 'w+')
     log_file = open(args.output+'.log', 'w+')
 
-    for metric in ['jaccard', 'hamming', 'cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan']:
-        get_pairwise_dist(matrix=banded_matrix, labels=true_labels, metric=metric, out_file=log_file)
-        for eps in list(np.arange(0.00001, 2, 0.01)) + list(np.arange(1, 100, 5)):
-            for min_samples in range(2,3):
-                clustering = DBSCAN(eps=eps, min_samples=min_samples, metric=metric).fit(banded_matrix)
-                ari_score = get_ari_score(names=names, true_labels=true_labels, labels=list(clustering.labels_))
-                if ari_score > 0:
-                    print('{}\t{}\t{:7.4f}\t{:=7.4f}'.format(metric, min_samples, eps, ari_score), file=out_file)
-                    for rid,label in enumerate(clustering.labels_):
-                        print(banded_matrix.shape, file=out_file)
-                        print('{}\t{}'.format(names[rid], label), file=out_file)
+    for name,matrix in [('raw_matrix',raw_matrix), ('block_matrix',block_matrix), ('banded_matrix',banded_matrix)]:
+        print(name, file=log_file)
+        for metric in ['jaccard', 'hamming', 'cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan']:
+            get_pairwise_dist(matrix=matrix, labels=true_labels, metric=metric, out_file=log_file)
+            # for eps in list(np.arange(0.00001, 2, 0.01)) + list(np.arange(1, 100, 5)):
+            #     for min_samples in range(2,3):
+            #         clustering = DBSCAN(eps=eps, min_samples=min_samples, metric=metric).fit(matrix)
+            #         ari_score = get_ari_score(names=names, true_labels=true_labels, labels=list(clustering.labels_))
+            #         if ari_score > 0:
+            #             print('{}\t{}\t{:7.4f}\t{:=7.4f}'.format(metric, min_samples, eps, ari_score), file=out_file)
+            #             for rid,label in enumerate(clustering.labels_):
+            #                 print(matrix.shape, file=out_file)
+            #                 print('{}\t{}'.format(names[rid], label), file=out_file)
     out_file.close()
     log_file.close()
 

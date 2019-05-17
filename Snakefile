@@ -43,6 +43,7 @@ rule all:
     input:
          # expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.split_pdf.done'.format(genes_d),   gene=config['genes'], sample=config['samples']),
          expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster'.format(genes_d),   gene=config['genes'], sample=config['samples']),
+         expand('{}/{{gene}}/{{sample}}/reads.cluster'.format(genes_d),   gene=config['genes'], sample=config['samples']),
 
 rule freddie_make:
     input:
@@ -83,7 +84,7 @@ rule minimap2_map:
     threads:
         32
     shell:
-        'minimap2 -aY -x splice -eqx -t {threads} {input.genome} {input.reads} > {output}'
+        'minimap2 -aY -x splice --eqx -t {threads} {input.genome} {input.reads} > {output}'
 
 rule samtools_sort:
     input:
@@ -125,6 +126,18 @@ rule get_gene_data:
     shell:
         '{input.script} -g {wildcards.gene} -t {input.gtf} -d {input.genome} -r {input.reads} -o {params.out_dir}'
 
+rule freddie_align_real:
+    input:
+        reads='{}/{{gene}}/{{sample}}/reads.fasta'.format(genes_d),
+        gene = '{}/{{gene}}/{{sample}}/gene.fasta'.format(genes_d),
+        script = config['exec']['freddie'],
+    output:
+        paf = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
+    conda:
+        'freddie.env'
+    shell:
+        '{input.script} align -g {input.gene} -r {input.reads} > {output.paf}'
+
 rule train_nanosim:
     input:
         transcripts='{}/{{gene}}/{{sample}}/transcripts.fasta'.format(genes_d),
@@ -151,7 +164,7 @@ rule run_nanosim:
     params:
         train_prefix='{}/{{gene}}/{{sample}}/nanosim/training'.format(genes_d),
         intermediate_directory='{}/{{gene}}/{{sample}}/nanosim/'.format(genes_d),
-        read_count=20,
+        read_count=100,
         distribution='normal'
     output:
         simulated_tsv='{}/{{gene}}/{{sample}}/simulated_reads.oriented.tsv'.format(genes_d),
@@ -227,13 +240,30 @@ rule dot_to_pdf:
     shell:
         'cat {input.dot} | dot -T pdf > {output.pdf}'
 
+rule cluster_paf_real:
+    input:
+        paf    = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
+        script = config['exec']['clustering'],
+        transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
+    output:
+        cluster      = '{}/{{gene}}/{{sample}}/reads.cluster'.format(genes_d),
+        log          = '{}/{{gene}}/{{sample}}/reads.cluster.log'.format(genes_d),
+        coverage_pdf = '{}/{{gene}}/{{sample}}/reads.cluster.coverage.pdf'.format(genes_d),
+    conda:
+        'freddie.env'
+    shell:
+        '{input.script} -p {input.paf} -o {output.cluster} -t {input.transcripts_tsv}'
+
 rule cluster_paf:
     input:
         paf    = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.paf'.format(genes_d),
         script = config['exec']['clustering'],
+        transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
     output:
-        tsv = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster'.format(genes_d),
+        cluster      = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster'.format(genes_d),
+        log          = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster.log'.format(genes_d),
+        coverage_pdf = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster.coverage.pdf'.format(genes_d),
     conda:
         'freddie.env'
     shell:
-        '{input.script} -p {input.paf} -o {output.tsv}'
+        '{input.script} -p {input.paf} -o {output.cluster} -t {input.transcripts_tsv}'
