@@ -42,7 +42,7 @@ nanosim_read_analysis_files=[
 rule all:
     input:
          # expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.split_pdf.done'.format(genes_d),   gene=config['genes'], sample=config['samples']),
-         expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster'.format(genes_d),   gene=config['genes'], sample=config['samples']),
+         # expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster'.format(genes_d),   gene=config['genes'], sample=config['samples']),
          expand('{}/{{gene}}/{{sample}}/reads.cluster'.format(genes_d),   gene=config['genes'], sample=config['samples']),
 
 rule freddie_make:

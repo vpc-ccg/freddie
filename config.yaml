@@ -17,8 +17,18 @@ exec:
     simulator     : extern/nanosim/src/simulator.py
 
 genes:
-    MYC      : MYC
-    PLSCR3   : PLSCR3
+    MYC     : MYC
+    PLSCR3  : PLSCR3
+    E2F1    : E2F1
+    EEF1A1  : EEF1A1
+    BLOC1S1 : BLOC1S1
+    SRSF2   : SRSF2
+    TYMS    : TYMS
+    HES4    : HES4
+    ATP5F1D : ATP5F1D
+    HAX1    : HAX1
+    JTB     : JTB
+    SLC50A1 : SLC50A1
 
 references:
     genome : /groups/hachgrp/annotations/DNA/92/Homo_sapiens.GRCh38.dna.fa
