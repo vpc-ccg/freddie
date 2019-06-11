@@ -22,7 +22,6 @@ def parse_args():
     args = parser.parse_args()
     return args
 
-
 def get_rname_to_tname(tsv_path):
     rname_to_tname = dict()
     for line in open(tsv_path):
@@ -43,7 +42,6 @@ def print_dot_per_read(rname_to_tname, dot_path, output_prefix):
                 print(line, file=out_file)
                 continue
         out_file.close()
-
 
 def main():
     args = parse_args()

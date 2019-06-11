@@ -184,12 +184,13 @@ def get_tsv_ticks(tsv_path):
             ticks.add(int(interval[1]))
     return ticks
 
-def plot_coverage(matrix, ticks, outpath='out2.pdf'):
-    cmprss_vector = np.mean(matrix, axis = 0)
+def plot_coverage(coverage, ticks, predicted_junctions=list(), outpath='out2.pdf'):
     plt.figure(figsize=(30,4))
-    plt.plot(range(len(cmprss_vector)), cmprss_vector)
+    plt.plot(range(len(coverage)), coverage)
     for tick in ticks:
         plt.plot([tick,tick], [0,1], 'k--', alpha=0.2)
+    for tick in predicted_junctions:
+        plt.plot([tick,tick], [0,1], 'g', alpha=0.2)
     plt.tight_layout()
     plt.savefig(outpath)
 
@@ -206,19 +207,41 @@ def print_matrix(labels, names, matrix, outpath):
         print('\t'.join(line), file=out_file)
     out_file.close()
 
+def predict_junctions(coverage, bandwidth):
+    from sklearn.cluster import MeanShift
+    matrix = np.zeros(shape=(len(coverage), 2))
+    for idx,cov in enumerate(coverage):
+        matrix[idx][0] = idx
+        matrix[idx][1] = coverage[idx]
+    clustering = MeanShift(bandwidth=bandwidth).fit(matrix)
+    print(clustering.labels_)
+    junctions = set()
+    for idx in range(1,len(clustering.labels_)):
+        # print(idx-1, clustering.labels_[idx-1])
+        if clustering.labels_[idx] != clustering.labels_[idx-1]:
+            junctions.add(idx)
+    return junctions
+
 def main():
     args = parse_args()
     names,raw_matrix,cut_points = read_paf(paf=args.paf)
-    print(cut_points)
+    # print(cut_points)
 
     ticks = get_tsv_ticks(args.tsv)
-    plot_coverage(matrix=raw_matrix, ticks=ticks, outpath=args.output+'.coverage.pdf')
+    raw_coverage = np.mean(raw_matrix, axis = 0)
+    log_file = open(args.output+'.raw_coverage.txt', 'w+')
+    for c in raw_coverage:
+        print(c, file=log_file)
+    log_file.close()
+    predicted_junctions = predict_junctions(coverage=raw_coverage, bandwidth=50)
+    # print(predicted_junctions)
+    plot_coverage(coverage=raw_coverage, ticks=ticks, predicted_junctions=predicted_junctions, outpath=args.output+'.coverage.pdf')
 
     true_labels = {x.split('_')[0] for x in names}
     true_labels = {label:idx for idx,label in enumerate(true_labels)}
     true_labels = [true_labels[x.split('_')[0]] for x in names]
     print_matrix(labels=true_labels, names=names, matrix=raw_matrix, outpath=args.output+'.matrix.tsv')
-    print(len(true_labels), sorted(true_labels))
+    # print(len(true_labels), sorted(true_labels))
 
     block_matrix = get_block_matrix(matrix=raw_matrix, band_size=100)
     banded_matrix = get_banded_matrix(matrix=raw_matrix, cut_points=cut_points)
@@ -229,6 +252,7 @@ def main():
     log_file = open(args.output+'.log', 'w+')
 
     for name,matrix in [('raw_matrix',raw_matrix), ('block_matrix',block_matrix), ('banded_matrix',banded_matrix)]:
+        break
         print(name, file=log_file)
         for metric in ['jaccard', 'hamming', 'cityblock', 'cosine', 'euclidean', 'l1', 'l2', 'manhattan']:
             get_pairwise_dist(matrix=matrix, labels=true_labels, metric=metric, out_file=log_file)
