@@ -43,7 +43,7 @@ rule all:
     input:
          # expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.split_pdf.done'.format(genes_d),   gene=config['genes'], sample=config['samples']),
          # expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster'.format(genes_d),   gene=config['genes'], sample=config['samples']),
-         expand('{}/{{gene}}/{{sample}}/reads.cluster'.format(genes_d),   gene=config['genes'], sample=config['samples']),
+         expand('{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.meanshift_coverage.pdf'.format(genes_d),   gene=config['genes'], sample=config['samples']),
 
 rule freddie_make:
     input:
@@ -247,6 +247,7 @@ rule cluster_paf_real:
         transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
     output:
         cluster      = '{}/{{gene}}/{{sample}}/reads.cluster'.format(genes_d),
+        raw_coverage = '{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.txt'.format(genes_d),
         log          = '{}/{{gene}}/{{sample}}/reads.cluster.log'.format(genes_d),
         coverage_pdf = '{}/{{gene}}/{{sample}}/reads.cluster.coverage.pdf'.format(genes_d),
     conda:
@@ -254,16 +255,31 @@ rule cluster_paf_real:
     shell:
         '{input.script} -p {input.paf} -o {output.cluster} -t {input.transcripts_tsv}'
 
-rule cluster_paf:
+rule meanshift_real:
     input:
-        paf    = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.paf'.format(genes_d),
-        script = config['exec']['clustering'],
-        transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
+        raw_coverage = '{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.txt'.format(genes_d),
+        script       = config['exec']['meanshift'],
     output:
-        cluster      = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster'.format(genes_d),
-        log          = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster.log'.format(genes_d),
-        coverage_pdf = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster.coverage.pdf'.format(genes_d),
+        meanshift_coverage_pdf = '{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.meanshift_coverage.pdf'.format(genes_d),
+    params:
+        bin_size=0.025,
+        window_size=1,
     conda:
         'freddie.env'
     shell:
-        '{input.script} -p {input.paf} -o {output.cluster} -t {input.transcripts_tsv}'
+        '{input.script} -c {input.raw_coverage} -bs {params.bin_size} -w {params.window_size}'
+
+# rule cluster_paf:
+#     input:
+#         paf    = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.paf'.format(genes_d),
+#         script = config['exec']['clustering'],
+#         transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
+#     output:
+#         cluster      = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster'.format(genes_d),
+#         raw_coverage = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster.raw_coverage.txt'.format(genes_d),
+#         log          = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster.log'.format(genes_d),
+#         coverage_pdf = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster.coverage.pdf'.format(genes_d),
+#     conda:
+#         'freddie.env'
+#     shell:
+#         '{input.script} -p {input.paf} -o {output.cluster} -t {input.transcripts_tsv}'
