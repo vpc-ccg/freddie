@@ -189,8 +189,8 @@ def plot_coverage(coverage, ticks, predicted_junctions=list(), outpath='out2.pdf
     plt.plot(range(len(coverage)), coverage)
     for tick in ticks:
         plt.plot([tick,tick], [0,1], 'k--', alpha=0.2)
-    for tick in predicted_junctions:
-        plt.plot([tick,tick], [0,1], 'g', alpha=0.2)
+    # for tick in predicted_junctions:
+    #     plt.plot([tick,tick], [0,1], 'g', alpha=0.2)
     plt.tight_layout()
     plt.savefig(outpath)
 
@@ -229,10 +229,10 @@ def main():
 
     ticks = get_tsv_ticks(args.tsv)
     raw_coverage = np.mean(raw_matrix, axis = 0)
-    log_file = open(args.output+'.raw_coverage.txt', 'w+')
+    raw_coverage_file = open(args.output+'.raw_coverage.txt', 'w+')
     for c in raw_coverage:
-        print(c, file=log_file)
-    log_file.close()
+        print(c, file=raw_coverage_file)
+    raw_coverage_file.close()
     predicted_junctions = predict_junctions(coverage=raw_coverage, bandwidth=50)
     # print(predicted_junctions)
     plot_coverage(coverage=raw_coverage, ticks=ticks, predicted_junctions=predicted_junctions, outpath=args.output+'.coverage.pdf')
