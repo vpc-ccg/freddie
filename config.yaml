@@ -6,6 +6,9 @@ samples:
         - /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R000/P000R000.pass.fastq
         - /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R001/P000R001.pass.fastq
         - /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R002/P000R002.pass.fastq
+    P001S000:
+        - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R410/P001R410.pass.fastq
+        - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R411/P001R411.pass.fastq
 
 exec:
     freddie       : ./freddie
@@ -13,6 +16,7 @@ exec:
     run_nanosim   : py/run_nanosim.py
     split_dot     : py/get_split_dot.py
     clustering    : py/cluster_paf.py
+    meanshift     : py/mean_shift.py
     read_analysis : extern/nanosim/src/read_analysis.py
     simulator     : extern/nanosim/src/simulator.py
 
@@ -23,8 +27,8 @@ genes:
     EEF1A1  : EEF1A1
     BLOC1S1 : BLOC1S1
     SRSF2   : SRSF2
-    TYMS    : TYMS
-    HES4    : HES4
+    # TYMS    : TYMS
+    # HES4    : HES4
     ATP5F1D : ATP5F1D
     HAX1    : HAX1
     JTB     : JTB
