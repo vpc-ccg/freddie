@@ -12,6 +12,14 @@
         "c" : 6,
         "name" : "nanosim_make",
     },
+    "cluster_paf_real" :
+    {
+        "name" : "cluster_paf_real",
+    },
+    "meanshift_real" :
+    {
+        "name" : "meanshift_real",
+    },
     "nanosim_make" :
     {
         "name" : "nanosim_make",
