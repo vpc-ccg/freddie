@@ -44,6 +44,7 @@ rule all:
          # expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.split_pdf.done'.format(genes_d),   gene=config['genes'], sample=config['samples']),
          # expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster'.format(genes_d),   gene=config['genes'], sample=config['samples']),
          expand('{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.meanshift_coverage.pdf'.format(genes_d),   gene=config['genes'], sample=config['samples']),
+         # expand('{}/{{gene}}/{{sample}}/transcripts.disentanglement.txt'.format(genes_d),   gene=config['genes'], sample=config['samples']),
 
 rule freddie_make:
     input:
@@ -257,6 +258,8 @@ rule cluster_paf_real:
 
 rule meanshift_real:
     input:
+        transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
+        paf          = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
         raw_coverage = '{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.txt'.format(genes_d),
         script       = config['exec']['meanshift'],
     output:
@@ -267,7 +270,19 @@ rule meanshift_real:
     conda:
         'freddie.env'
     shell:
-        '{input.script} -c {input.raw_coverage} -bs {params.bin_size} -w {params.window_size}'
+        '{input.script} -c {input.raw_coverage} -bs {params.bin_size} -w {params.window_size} -p {input.paf} -t {input.transcripts_tsv}'
+
+rule disentangle:
+    input:
+        transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
+        script          = config['exec']['disentangle'],
+    output:
+        disentanglement = '{}/{{gene}}/{{sample}}/transcripts.disentanglement.txt'.format(genes_d),
+    conda:
+        'freddie.env'
+    shell:
+        '{input.script} -t {input.transcripts_tsv} -o {output.disentanglement}'
+
 
 # rule cluster_paf:
 #     input:
