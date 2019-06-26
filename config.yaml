@@ -9,6 +9,8 @@ samples:
     P001S000:
         - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R410/P001R410.pass.fastq
         - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R411/P001R411.pass.fastq
+        - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R510/P001R510.pass.fastq
+        - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R511/P001R511.pass.fastq
 
 exec:
     freddie       : ./freddie
@@ -17,6 +19,7 @@ exec:
     split_dot     : py/get_split_dot.py
     clustering    : py/cluster_paf.py
     meanshift     : py/mean_shift.py
+    disentangle     : py/disentangle.py
     read_analysis : extern/nanosim/src/read_analysis.py
     simulator     : extern/nanosim/src/simulator.py
 
@@ -27,8 +30,6 @@ genes:
     EEF1A1  : EEF1A1
     BLOC1S1 : BLOC1S1
     SRSF2   : SRSF2
-    # TYMS    : TYMS
-    # HES4    : HES4
     ATP5F1D : ATP5F1D
     HAX1    : HAX1
     JTB     : JTB
