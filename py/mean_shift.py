@@ -210,12 +210,6 @@ def plot_coverage(coverage, transcripts, starts, ends, pos_to_rid, out_path):
                         deviation_l = abs(mu_l-y_l)/sigma_l
                         if deviation_l > 0.5:
                             ax1.scatter(x=x,y=y_l, color=cmap_l(norm_l(deviation_l)), marker='<')
-                    # if deviation >= 0.5*sigma and deviation < 1.5*sigma:
-                    #    plt.scatter(x=x,y=y, color='#ffeda0', marker='.')
-                    # elif deviation >= 1.5*sigma and deviation < 2.5*sigma:
-                    #     plt.scatter(x=x,y=y, color='#feb24c', marker='.')
-                    # elif deviation >= 2.5*sigma:
-                    #     plt.scatter(x=x,y=y, color='#f03b20', marker='.')
                 x_exonic_pos = list()
                 y_exonic_jac_r = list()
                 y_exonic_jac_l = list()
@@ -224,9 +218,6 @@ def plot_coverage(coverage, transcripts, starts, ends, pos_to_rid, out_path):
         y_exonic_jac_r.append(y_jaccard_r[i])
         y_exonic_jac_l.append(y_jaccard_l[i])
 
-    # lag = neighborhood_size
-    # threshold = 3
-    # influence = 3
     y_rmv_r = list()
     y_add_r = list()
     for i,rids in enumerate(pos_to_rid):
@@ -281,6 +272,7 @@ def plot_coverage(coverage, transcripts, starts, ends, pos_to_rid, out_path):
 
     plt.tight_layout()
     plt.savefig(out_path)
+    return sorted(peaks_final+peaks_dense_final)
 
 def plot_hb_ticks(coverage, Hb_ticks, out_path):
     subplot_count = len(Hb_ticks)
@@ -319,11 +311,11 @@ def read_paf(paf):
             read_name_to_id[name] = len(read_name_to_id)
         rid = read_name_to_id[name]
         if any('oc:c:1' in tag for tag in line[12:]):
-            t_start = int(line[7])
-            t_end = int(line[8])
+            t_start = max(0, int(line[7]) - 1)
+            t_end = int(line[8]) + 1
             starts.append(t_start)
             ends.append(t_end)
-            for i in range(t_start-1, t_end+1):
+            for i in range(t_start, t_end):
                 pos_to_rid[i].add(rid)
     return pos_to_rid,starts,ends
 
@@ -351,19 +343,13 @@ def main():
     transcripts = get_tsv_ticks(args.tsv)
     pos_to_rid,starts,ends = read_paf(args.paf)
     coverage = [float(c) for c in open(args.raw_coverage).readlines()]
-    outpath = '{}.meanshift_coverage.pdf'.format(args.raw_coverage[0:args.raw_coverage.rfind('.')])
-    plot_coverage(coverage=coverage, transcripts=transcripts, starts=starts, ends=ends, pos_to_rid=pos_to_rid, out_path=outpath)
-
-    exit()
-    coverage_var = get_variation(coverage=coverage, step=args.histogram_bin_size)
-
-    Hb_list = [2,4,8]
-    segmentations_count=3
-    lim=200
-    Hb_ticks = get_hb_ticks(coverage=coverage, coverage_var=coverage_var, window_size=args.window_size, Hb_list=Hb_list, segmentations_count=segmentations_count, lim=lim)
-
-    outpath = '{}.meanshift_hb_ticks.pdf'.format(args.raw_coverage[0:args.raw_coverage.rfind('.')])
-    plot_hb_ticks(coverage=coverage, Hb_ticks=Hb_ticks, out_path=outpath)
+    outpath = '{}.peaks.pdf'.format(args.raw_coverage[0:args.raw_coverage.rfind('.')])
+    peaks = plot_coverage(coverage=coverage, transcripts=transcripts, starts=starts, ends=ends, pos_to_rid=pos_to_rid, out_path=outpath)
+    outpath = '{}.peaks.txt'.format(args.raw_coverage[0:args.raw_coverage.rfind('.')])
+    out_file = open(outpath, 'w+')
+    for i in peaks:
+        print(i, file=out_file)
+    out_file.close()
 
 if __name__ == "__main__":
     main()

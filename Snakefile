@@ -43,7 +43,7 @@ rule all:
     input:
          # expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.split_pdf.done'.format(genes_d),   gene=config['genes'], sample=config['samples']),
          # expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster'.format(genes_d),   gene=config['genes'], sample=config['samples']),
-         expand('{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.meanshift_coverage.pdf'.format(genes_d),   gene=config['genes'], sample=config['samples']),
+         expand('{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.peaks.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf', 'txt']),
          # expand('{}/{{gene}}/{{sample}}/transcripts.disentanglement.txt'.format(genes_d),   gene=config['genes'], sample=config['samples']),
 
 rule freddie_make:
@@ -263,7 +263,8 @@ rule meanshift_real:
         raw_coverage = '{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.txt'.format(genes_d),
         script       = config['exec']['meanshift'],
     output:
-        meanshift_coverage_pdf = '{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.meanshift_coverage.pdf'.format(genes_d),
+        peaks_pdf = '{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.peaks.pdf'.format(genes_d),
+        peaks_txt = '{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.peaks.txt'.format(genes_d),
     params:
         bin_size=0.025,
         window_size=1,
