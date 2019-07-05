@@ -7,7 +7,7 @@ from scipy.optimize import curve_fit
 from scipy import asarray as ar,exp
 import numpy as np
 from math import ceil,floor
-from statistics import mean,stdev
+from statistics import mean,stdev,median
 from scipy.signal import find_peaks
 
 def parse_args():
@@ -40,34 +40,6 @@ def parse_args():
                         help="Non-overlapping window size")
     args = parser.parse_args()
     return args
-
-# def thresholding_algo(y, lag, threshold, influence):
-#     # from https://gist.github.com/ximeg/587011a65d05f067a29ce9c22894d1d2
-#     signals = np.zeros(len(y))
-#     filteredY = np.array(y)
-#     avgFilter = [0]*len(y)
-#     stdFilter = [0]*len(y)
-#     avgFilter[lag - 1] = np.mean(y[0:lag])
-#     stdFilter[lag - 1] = np.std(y[0:lag])
-#     for i in range(lag, len(y) - 1):
-#         if abs(y[i] - avgFilter[i-1]) > threshold * stdFilter [i-1]:
-#             if y[i] > avgFilter[i-1]:
-#                 signals[i] = 1
-#             else:
-#                 signals[i] = -1
-#
-#             filteredY[i] = influence * y[i] + (1 - influence) * filteredY[i-1]
-#             avgFilter[i] = np.mean(filteredY[(i-lag):i])
-#             stdFilter[i] = np.std(filteredY[(i-lag):i])
-#         else:
-#             signals[i] = 0
-#             filteredY[i] = y[i]
-#             avgFilter[i] = np.mean(filteredY[(i-lag):i])
-#             stdFilter[i] = np.std(filteredY[(i-lag):i])
-#
-#     return dict(signals = np.asarray(signals),
-#                 avgFilter = np.asarray(avgFilter),
-#                 stdFilter = np.asarray(stdFilter))
 
 def gaussian(x, a, x0, sigma):
     return a*exp(-(x-x0)**2/(2*sigma**2))
@@ -157,23 +129,28 @@ def jaccard(a,b):
         return i/j
 
 def plot_coverage(coverage, transcripts, starts, ends, pos_to_rid, out_path):
-    f, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(30,5*(3+1)), sharex=True)
+    N = 0
+    for rids in pos_to_rid:
+        N = max(N, len(rids))
+    f, (ax2, ax3, ax1) = plt.subplots(3, 1, figsize=(30,5*(3+1)), sharex=True)
     ax1.plot(range(len(coverage)), coverage)
+    ax3.plot(range(len(coverage)), coverage)
     M = len(transcripts)
     h_step = 0.8/M
     for idx,(exons,introns) in enumerate(transcripts):
         h = 0.9 - idx*h_step
         for exon in exons:
             ax1.plot(exon, [h,h], color='black', marker='o', alpha=0.8)
+            ax2.plot(exon, [h*N,h*N], color='black', marker='o', alpha=0.8)
+            ax3.plot(exon, [h,h], color='black', marker='o', alpha=0.8)
         for intron in introns:
             ax1.plot(intron, [h,h], color='gray', alpha=0.2)
+            ax2.plot(intron, [h*N,h*N], color='gray', alpha=0.2)
+            ax3.plot(intron, [h,h], color='gray', alpha=0.2)
     neighborhood_size = 15
     x_jaccard = list()
     y_jaccard_r = list()
     y_jaccard_l = list()
-    N = 0
-    for rids in pos_to_rid:
-        N = max(N, len(rids))
     plt.title('N = {}'.format(N))
     for i in range(len(pos_to_rid)):
         if len(pos_to_rid[i])/N < 0.01 or len(pos_to_rid[i]) < 3:
@@ -261,10 +238,46 @@ def plot_coverage(coverage, transcripts, starts, ends, pos_to_rid, out_path):
     ax2.plot(range(len(pos_to_rid)), y_rmv_r, color='#e41a1c', alpha=0.5)
     ax2.plot(range(len(pos_to_rid)), y_add_r, color='#377eb8', alpha=0.5)
 
-    peaks_rmv, _ = find_peaks(y_rmv_r, height=max(N*0.01,3), distance=neighborhood_size*2)
+    peaks_rmv, _ = find_peaks(y_rmv_r, height=max(N*0.01,3), distance=neighborhood_size, prominence=N*0.025)
+    peaks_add, _ = find_peaks(y_add_r, height=max(N*0.01,3), distance=neighborhood_size, prominence=N*0.025)
     ax2.plot(peaks_rmv, [y_rmv_r[i] for i in peaks_rmv], "x", color='#e41a1c')
-    peaks_add, _ = find_peaks(y_add_r, height=max(N*0.01,3), distance=neighborhood_size*2)
     ax2.plot(peaks_add, [y_add_r[i] for i in peaks_add], "x", color='#377eb8')
+
+    peaks_final = [0]
+    peaks_dense = []
+    peaks_all = sorted(set([p for p in peaks_rmv] + [p for p in peaks_add] + [0,len(pos_to_rid)-1]))
+    idx = 1
+    for idx in range(1, len(peaks_all)-1):
+        prv_peak = peaks_all[idx-1]
+        cur_peak = peaks_all[idx]
+        nxt_peak = peaks_all[idx+1]
+        before_dist = abs(cur_peak - prv_peak)
+        after_dist  = abs(cur_peak - nxt_peak)
+        if before_dist > neighborhood_size*2 and after_dist > neighborhood_size*2:
+            peaks_final.append(cur_peak)
+        else:
+            peaks_dense.append(cur_peak)
+    peaks_final.append(len(pos_to_rid)-1)
+
+    peaks_dense_final = list()
+    idx_s = 0
+    for idx,peak in enumerate(peaks_dense):
+        print(peak)
+        idx_e = idx
+        if idx+1 == len(peaks_dense) or peaks_dense[idx+1] - peak > neighborhood_size*2:
+            print('d: ',peaks_dense[idx_s:idx_e+1])
+            peaks_dense_final.append(int(median(peaks_dense[idx_s:idx_e+1])))
+            idx_s = idx+1
+    print('A:', peaks_all)
+    print('F:', peaks_final)
+    print('D:', peaks_dense)
+    print('DF:', peaks_dense_final)
+    for peak in peaks_final:
+        ax3.plot([peak,peak], [0,1], color='black', linestyle='solid', lw=0.75)
+    for peak in peaks_dense_final:
+        ax3.plot([peak,peak], [0,1], color='black', linestyle='dashed', lw=0.75)
+    for peak in peaks_dense:
+        ax3.plot([peak,peak], [0,1], color='gray', linestyle='dotted', lw=0.75, alpha=0.50)
 
     plt.tight_layout()
     plt.savefig(out_path)
@@ -310,7 +323,7 @@ def read_paf(paf):
             t_end = int(line[8])
             starts.append(t_start)
             ends.append(t_end)
-            for i in range(t_start-1, t_end):
+            for i in range(t_start-1, t_end+1):
                 pos_to_rid[i].add(rid)
     return pos_to_rid,starts,ends
 
