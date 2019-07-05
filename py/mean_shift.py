@@ -7,7 +7,8 @@ from scipy.optimize import curve_fit
 from scipy import asarray as ar,exp
 import numpy as np
 from math import ceil,floor
-from statistics import mean
+from statistics import mean,stdev
+from scipy.signal import find_peaks
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -39,6 +40,34 @@ def parse_args():
                         help="Non-overlapping window size")
     args = parser.parse_args()
     return args
+
+# def thresholding_algo(y, lag, threshold, influence):
+#     # from https://gist.github.com/ximeg/587011a65d05f067a29ce9c22894d1d2
+#     signals = np.zeros(len(y))
+#     filteredY = np.array(y)
+#     avgFilter = [0]*len(y)
+#     stdFilter = [0]*len(y)
+#     avgFilter[lag - 1] = np.mean(y[0:lag])
+#     stdFilter[lag - 1] = np.std(y[0:lag])
+#     for i in range(lag, len(y) - 1):
+#         if abs(y[i] - avgFilter[i-1]) > threshold * stdFilter [i-1]:
+#             if y[i] > avgFilter[i-1]:
+#                 signals[i] = 1
+#             else:
+#                 signals[i] = -1
+#
+#             filteredY[i] = influence * y[i] + (1 - influence) * filteredY[i-1]
+#             avgFilter[i] = np.mean(filteredY[(i-lag):i])
+#             stdFilter[i] = np.std(filteredY[(i-lag):i])
+#         else:
+#             signals[i] = 0
+#             filteredY[i] = y[i]
+#             avgFilter[i] = np.mean(filteredY[(i-lag):i])
+#             stdFilter[i] = np.std(filteredY[(i-lag):i])
+#
+#     return dict(signals = np.asarray(signals),
+#                 avgFilter = np.asarray(avgFilter),
+#                 stdFilter = np.asarray(stdFilter))
 
 def gaussian(x, a, x0, sigma):
     return a*exp(-(x-x0)**2/(2*sigma**2))
@@ -128,45 +157,114 @@ def jaccard(a,b):
         return i/j
 
 def plot_coverage(coverage, transcripts, starts, ends, pos_to_rid, out_path):
-    plt.figure(figsize=(30,5))
-    plt.plot(range(len(coverage)), coverage)
-    # for idx,tick in enumerate(starts):
-    #     if idx % 100 == 0:
-    #         print(idx)
-    #     plt.scatter(x=tick,y=0.75, color='green', marker='^', alpha=0.2)
-    # for idx,tick in enumerate(ends):
-    #     if idx % 100 == 0:
-    #         print(idx)
-    #     plt.scatter(x=tick,y=0.25, color='red', marker='v', alpha=0.2)
+    f, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(30,5*(3+1)), sharex=True)
+    ax1.plot(range(len(coverage)), coverage)
     M = len(transcripts)
     h_step = 0.8/M
     for idx,(exons,introns) in enumerate(transcripts):
         h = 0.9 - idx*h_step
         for exon in exons:
-            plt.plot(exon, [h,h], color='black', marker='o', alpha=0.8)
+            ax1.plot(exon, [h,h], color='black', marker='o', alpha=0.8)
         for intron in introns:
-            plt.plot(intron, [h,h], color='gray', alpha=0.2)
-    r_jaccard = 15
+            ax1.plot(intron, [h,h], color='gray', alpha=0.2)
+    neighborhood_size = 15
     x_jaccard = list()
-    y_jaccard = list()
+    y_jaccard_r = list()
+    y_jaccard_l = list()
     N = 0
     for rids in pos_to_rid:
         N = max(N, len(rids))
     plt.title('N = {}'.format(N))
-    for i in range(r_jaccard,len(pos_to_rid)-r_jaccard):
-        if len(pos_to_rid[i])/N < 0.05 or len(pos_to_rid[i]) < 3:
+    for i in range(len(pos_to_rid)):
+        if len(pos_to_rid[i])/N < 0.01 or len(pos_to_rid[i]) < 3:
             x_jaccard.append(i)
-            y_jaccard.append(0.0)
+            y_jaccard_r.append(0.0)
+            y_jaccard_l.append(0.0)
             continue
+        neighbors_r = set()
         prev = set()
-        for j in range(i-r_jaccard,i+r_jaccard+1):
-            if i == j:
-                continue
+        range_start = max(i-neighborhood_size, 0)
+        range_end = i
+        for j in range(range_start, range_end):
             prev = prev | pos_to_rid[j]
-        j = jaccard(prev, pos_to_rid[i])
+        y_jaccard_r.append(jaccard(prev, pos_to_rid[i]))
+
+        neighbors_l = set()
+        prev = set()
+        range_start = i+1
+        range_end = min(i+neighborhood_size+1, len(pos_to_rid))
+        for j in range(range_start, range_end):
+            prev = prev | pos_to_rid[j]
+        y_jaccard_l.append(jaccard(prev, pos_to_rid[i]))
         x_jaccard.append(i)
-        y_jaccard.append(j)
-    plt.plot(x_jaccard, y_jaccard)
+
+    ax1.plot(x_jaccard, y_jaccard_r, color='r', alpha=0.25)
+    ax1.plot(x_jaccard, y_jaccard_l, color='g', alpha=0.25)
+
+    x_exonic_pos = list()
+    y_exonic_jac_r = list()
+    y_exonic_jac_l = list()
+
+    cmap_r = plt.get_cmap('Reds')
+    cmap_l = plt.get_cmap('Greens')
+    for i in range(len(pos_to_rid)+1):
+        if i == len(pos_to_rid) or len(pos_to_rid[i])/N < 0.01 or len(pos_to_rid[i]) < 3:
+            if len(x_exonic_pos) >= 30:
+                mu_r = mean(y_exonic_jac_r)
+                sigma_r = stdev(y_exonic_jac_r)
+                mu_l = mean(y_exonic_jac_l)
+                sigma_l = stdev(y_exonic_jac_l)
+                print(x_exonic_pos[0], x_exonic_pos[-1])
+                stats_text = 'μ_r: {:.2f} σ_r: {:.2f} | μ_l: {:.2f} σ_l: {:.2f}'.format(mu_r, sigma_r, mu_l, sigma_l)
+                print(stats_text)
+                ax1.plot([x_exonic_pos[0],x_exonic_pos[-1]], [1.05,1.05], color='black', marker='x', alpha=1)
+                text_x=x_exonic_pos[0]+(x_exonic_pos[-1]-x_exonic_pos[0])/10
+                ax1.text(x=text_x, y=1.07, s=stats_text)
+
+                norm_r = mpl.colors.Normalize(vmin=sigma_r, vmax=3*sigma_r)
+                norm_l = mpl.colors.Normalize(vmin=sigma_l, vmax=3*sigma_l)
+
+                for x,y_r,y_l in zip(x_exonic_pos,y_exonic_jac_r,y_exonic_jac_l):
+                    if sigma_r > 0:
+                        deviation_r = abs(mu_r-y_r)/sigma_r
+                        if deviation_r > 0.5:
+                            ax1.scatter(x=x,y=y_r, color=cmap_r(norm_r(deviation_r)), marker='>')
+                    if sigma_l > 0:
+                        deviation_l = abs(mu_l-y_l)/sigma_l
+                        if deviation_l > 0.5:
+                            ax1.scatter(x=x,y=y_l, color=cmap_l(norm_l(deviation_l)), marker='<')
+                    # if deviation >= 0.5*sigma and deviation < 1.5*sigma:
+                    #    plt.scatter(x=x,y=y, color='#ffeda0', marker='.')
+                    # elif deviation >= 1.5*sigma and deviation < 2.5*sigma:
+                    #     plt.scatter(x=x,y=y, color='#feb24c', marker='.')
+                    # elif deviation >= 2.5*sigma:
+                    #     plt.scatter(x=x,y=y, color='#f03b20', marker='.')
+                x_exonic_pos = list()
+                y_exonic_jac_r = list()
+                y_exonic_jac_l = list()
+            continue
+        x_exonic_pos.append(i)
+        y_exonic_jac_r.append(y_jaccard_r[i])
+        y_exonic_jac_l.append(y_jaccard_l[i])
+
+    # lag = neighborhood_size
+    # threshold = 3
+    # influence = 3
+    y_rmv_r = list()
+    y_add_r = list()
+    for i,rids in enumerate(pos_to_rid):
+        j_r = max(0, i-neighborhood_size)
+        rids_rmved_r = len(pos_to_rid[j_r] - rids)
+        rids_added_r = len(rids - pos_to_rid[j_r])
+        y_rmv_r.append(rids_rmved_r)
+        y_add_r.append(rids_added_r)
+    ax2.plot(range(len(pos_to_rid)), y_rmv_r, color='#e41a1c', alpha=0.5)
+    ax2.plot(range(len(pos_to_rid)), y_add_r, color='#377eb8', alpha=0.5)
+
+    peaks_rmv, _ = find_peaks(y_rmv_r, height=max(N*0.01,3), distance=neighborhood_size*2)
+    ax2.plot(peaks_rmv, [y_rmv_r[i] for i in peaks_rmv], "x", color='#e41a1c')
+    peaks_add, _ = find_peaks(y_add_r, height=max(N*0.01,3), distance=neighborhood_size*2)
+    ax2.plot(peaks_add, [y_add_r[i] for i in peaks_add], "x", color='#377eb8')
 
     plt.tight_layout()
     plt.savefig(out_path)
