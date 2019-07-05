@@ -13,15 +13,14 @@ samples:
         - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R511/P001R511.pass.fastq
 
 exec:
-    freddie       : ./freddie
-    gene_data     : py/get_gene_data.py
-    run_nanosim   : py/run_nanosim.py
-    split_dot     : py/get_split_dot.py
-    clustering    : py/cluster_paf.py
-    meanshift     : py/mean_shift.py
-    disentangle     : py/disentangle.py
-    read_analysis : extern/nanosim/src/read_analysis.py
-    simulator     : extern/nanosim/src/simulator.py
+    freddie             : ./freddie
+    gene_data           : py/get_gene_data.py
+    run_nanosim         : py/run_nanosim.py
+    split_dot           : py/get_split_dot.py
+    find_canonical_exon : py/find_canonical_exons.py
+    disentangle         : py/disentangle.py
+    read_analysis       : extern/nanosim/src/read_analysis.py
+    simulator           : extern/nanosim/src/simulator.py
 
 genes:
     MYC     : MYC

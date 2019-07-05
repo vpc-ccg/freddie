@@ -43,8 +43,8 @@ rule all:
     input:
          # expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.split_pdf.done'.format(genes_d),   gene=config['genes'], sample=config['samples']),
          # expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster'.format(genes_d),   gene=config['genes'], sample=config['samples']),
-         expand('{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.peaks.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf', 'txt']),
-         expand('{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.peaks.disentanglement.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['txt']),
+         expand('{}/{{gene}}/{{sample}}/reads.canonical_exons.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf', 'txt']),
+         expand('{}/{{gene}}/{{sample}}/reads.disentanglement.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf']),
          # expand('{}/{{gene}}/{{sample}}/transcripts.disentanglement.txt'.format(genes_d),   gene=config['genes'], sample=config['samples']),
 
 rule freddie_make:
@@ -242,51 +242,50 @@ rule dot_to_pdf:
     shell:
         'cat {input.dot} | dot -T pdf > {output.pdf}'
 
-rule cluster_paf_real:
-    input:
-        paf    = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
-        script = config['exec']['clustering'],
-        transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
-    output:
-        cluster      = '{}/{{gene}}/{{sample}}/reads.cluster'.format(genes_d),
-        raw_coverage = '{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.txt'.format(genes_d),
-        log          = '{}/{{gene}}/{{sample}}/reads.cluster.log'.format(genes_d),
-        coverage_pdf = '{}/{{gene}}/{{sample}}/reads.cluster.coverage.pdf'.format(genes_d),
-    conda:
-        'freddie.env'
-    shell:
-        '{input.script} -p {input.paf} -o {output.cluster} -t {input.transcripts_tsv}'
+# rule cluster_paf_real:
+#     input:
+#         paf    = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
+#         script = config['exec']['clustering'],
+#         transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
+#     output:
+#         cluster      = '{}/{{gene}}/{{sample}}/reads.cluster'.format(genes_d),
+#         raw_coverage = '{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.txt'.format(genes_d),
+#         log          = '{}/{{gene}}/{{sample}}/reads.cluster.log'.format(genes_d),
+#         coverage_pdf = '{}/{{gene}}/{{sample}}/reads.cluster.coverage.pdf'.format(genes_d),
+#     conda:
+#         'freddie.env'
+#     shell:
+#         '{input.script} -p {input.paf} -o {output.cluster} -t {input.transcripts_tsv}'
 
-rule meanshift_real:
+rule find_canonical_exon:
     input:
         transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
-        paf          = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
-        raw_coverage = '{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.txt'.format(genes_d),
-        script       = config['exec']['meanshift'],
+        paf             = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
+        script          = config['exec']['find_canonical_exon'],
     output:
-        peaks_pdf = '{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.peaks.pdf'.format(genes_d),
-        peaks_txt = '{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.peaks.txt'.format(genes_d),
+        canonical_exons_pdf = '{}/{{gene}}/{{sample}}/reads.canonical_exons.pdf'.format(genes_d),
+        canonical_exons_txt = '{}/{{gene}}/{{sample}}/reads.canonical_exons.txt'.format(genes_d),
     params:
-        bin_size=0.025,
-        window_size=1,
+        out_prefix='{}/{{gene}}/{{sample}}/reads.canonical_exons'.format(genes_d),
     conda:
         'freddie.env'
     shell:
-        '{input.script} -c {input.raw_coverage} -bs {params.bin_size} -w {params.window_size} -p {input.paf} -t {input.transcripts_tsv}'
+        '{input.script} -p {input.paf} -t {input.transcripts_tsv} -op {params.out_prefix}'
 
 rule disentangle:
     input:
         transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
-        paf          = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
-        raw_coverage = '{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.txt'.format(genes_d),
-        peaks_txt = '{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.peaks.txt'.format(genes_d),
+        paf             = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
+        canonical_exons_txt = '{}/{{gene}}/{{sample}}/reads.canonical_exons.txt'.format(genes_d),
         script          = config['exec']['disentangle'],
     output:
-        disentanglement = '{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.peaks.disentanglement.txt'.format(genes_d),
+        disentanglement = '{}/{{gene}}/{{sample}}/reads.disentanglement.pdf'.format(genes_d),
+    params:
+        out_prefix='{}/{{gene}}/{{sample}}/reads.disentanglement'.format(genes_d),
     conda:
         'freddie.env'
     shell:
-        '{input.script} -c {input.raw_coverage} -p {input.paf} -t {input.transcripts_tsv} -pk {input.peaks_txt} -o {output.disentanglement}'
+        '{input.script} -p {input.paf} -t {input.transcripts_tsv} -pk {input.canonical_exons_txt} -op {params.out_prefix}'
 
 
 # rule cluster_paf:

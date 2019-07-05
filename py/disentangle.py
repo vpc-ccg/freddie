@@ -3,6 +3,7 @@ import argparse
 import random
 import numpy as np
 import matplotlib as mpl
+from scipy.cluster import hierarchy
 mpl.use('Agg')
 import matplotlib.pyplot as plt
 
@@ -19,21 +20,16 @@ def parse_args():
                         type=str,
                         required=True,
                         help="Path to PAF file of read alignments")
-    parser.add_argument("-c",
-                        "--raw-coverage",
-                        type=str,
-                        required=True,
-                        help="Path to raw coverage TXT file")
     parser.add_argument("-pk",
                         "--peaks",
                         type=str,
                         required=True,
                         help="Path to peaks TXT file")
-    parser.add_argument("-o",
-                        "--output",
+    parser.add_argument("-op",
+                        "--out_prefix",
                         type=str,
                         required=True,
-                        help="Output file")
+                        help="Output prefix that does not include .EXT part")
     args = parser.parse_args()
     return args
 
@@ -122,22 +118,20 @@ def plot_reads(N, coverage, matrix, peaks, reads_order, out_path):
     plt.tight_layout()
     plt.savefig(out_path)
 
-
 def main():
     args = parse_args()
 
     transcripts = get_tsv_ticks(args.tsv)
     pos_to_rid,rid_to_intervals = read_paf(args.paf)
     N = len(rid_to_intervals)
-    coverage = [float(c) for c in open(args.raw_coverage).readlines()]
+    coverage = [len(rids)/N for rids in pos_to_rid]
     peaks = [int(p) for p in open(args.peaks).readlines()]
     banded_matrix = get_banded_matrix(N=N, pos_to_rid=pos_to_rid, cut_points=peaks)
     print(banded_matrix.shape)
-    out_file = open(args.output, 'w+')
-    out_file.close()
-    plot_reads(N=N, coverage=coverage, matrix=banded_matrix, peaks=peaks, reads_order=[i for i in range(N)], out_path=args.output+'.pdf')
-
-
+    Z = hierarchy.linkage(banded_matrix, 'single')
+    leaves = hierarchy.leaves_list(Z)
+    out_path = '{}.pdf'.format(args.out_prefix)
+    plot_reads(N=N, coverage=coverage, matrix=banded_matrix, peaks=peaks, reads_order=leaves, out_path=out_path)
 
 if __name__ == "__main__":
     main()

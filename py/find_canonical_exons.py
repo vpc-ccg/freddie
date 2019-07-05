@@ -13,11 +13,6 @@ from scipy.signal import find_peaks
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Cluster aligned reads into isoforms")
-    parser.add_argument("-c",
-                        "--raw-coverage",
-                        type=str,
-                        required=True,
-                        help="Path to raw coverage TXT file")
     parser.add_argument("-p",
                         "--paf",
                         type=str,
@@ -28,97 +23,13 @@ def parse_args():
                         type=str,
                         required=True,
                         help="Path to TSV file")
-    parser.add_argument("-bs",
-                        "--histogram-bin-size",
-                        type=float,
-                        default=0.025,
-                        help="Bin size for the histogram used for coverage curve fitting")
-    parser.add_argument("-w",
-                        "--window-size",
-                        type=int,
-                        default=1,
-                        help="Non-overlapping window size")
+    parser.add_argument("-op",
+                        "--out_prefix",
+                        type=str,
+                        required=True,
+                        help="Output prefix that does not include .EXT part")
     args = parser.parse_args()
     return args
-
-def gaussian(x, a, x0, sigma):
-    return a*exp(-(x-x0)**2/(2*sigma**2))
-
-def ms_gradient(i, j, r_i, r_j, H_b, H_r,):
-    e_b = gaussian(x=i, a=2, x0=j, sigma=H_b)
-    e_r = gaussian(x=r_i, a=2, x0=r_j, sigma=H_r)
-    return (j-i)*e_b*e_r
-
-def get_neg_pos_breaks(l):
-    result = list()
-    for i in range(1, len(l)):
-        if l[i] > 0 and not l[i-1] > 0:
-            result.append(i)
-    return result
-
-def get_segments(coverage_l=0, ticks=set()):
-    segs = list()
-    segs.append((
-        0,
-        coverage_l,
-    ))
-    for i in range(coverage_l):
-        if i in ticks:
-            segs[-1] = (
-                segs[-1][0],
-                i,
-            )
-            segs.append((
-                i,
-                coverage_l,
-            ))
-    return segs
-
-def get_variation(coverage, step):
-    x = ar(list(np.arange(step/2, 1-step/2, step)))
-    y = ar(
-        np.histogram(
-            [c for c in coverage if float(c) > 0.05],
-            bins=np.arange(0,1,step)
-        )[0]
-    )
-    popt,pcov = curve_fit(gaussian,x,y,maxfev=50000)
-    return popt[2]**2
-
-def get_hb_ticks(coverage, coverage_var, window_size, Hb_list, segmentations_count=3, lim=200):
-    print("get_hb_ticks!")
-    ticks = {x for x in range(window_size, len(coverage), window_size)}
-    Hb_ticks = list()
-    for H_b in Hb_list:
-        segments = get_segments(len(coverage), ticks)
-        for round_count in range(segmentations_count):
-            gradients = list()
-            for i,seg in enumerate(segments):
-                i_pos = floor((seg[0]+seg[1])/2)
-                i_rd = mean(coverage[seg[0]:seg[1]])
-    #             print(i, seg, i_pos, i_rd)
-                start = max(0,i-lim)
-                end = min(i+lim, len(segments)-1)
-                S = 0
-                for j in range(start, end+1):
-                    j_pos = floor((segments[j][0]+segments[j][1])/2)
-                    j_rd = mean(coverage[segments[j][0]:segments[j][1]])
-                    S += ms_gradient(i=i_pos, j=j_pos, r_i=i_rd, r_j=j_rd, H_b=H_b, H_r=coverage_var)
-                gradients.append(S)
-            new_segments = list()
-            [(0,len(coverage))]
-
-            ticks = {
-                segments[seg_idx][0] for seg_idx in get_neg_pos_breaks(gradients)
-            }
-            segments = get_segments(len(coverage), ticks)
-            print('Hb = {} Round = {} |ticks| = {}'.format(H_b, round_count, len(ticks)))
-            print(ticks)
-            Hb_ticks.append((
-                ticks,
-                'Hb = {}; Round = {}'.format(H_b, round_count)
-            ))
-    return Hb_ticks
 
 def jaccard(a,b):
     i = len(a & b)
@@ -342,10 +253,10 @@ def main():
     transcripts = get_tsv_ticks(args.tsv)
     pos_to_rid,rid_to_intervals = read_paf(args.paf)
     N = len(rid_to_intervals)
-    coverage = [float(c) for c in open(args.raw_coverage).readlines()]
-    outpath = '{}.peaks.pdf'.format(args.raw_coverage[0:args.raw_coverage.rfind('.')])
+    coverage = [len(rids)/N for rids in pos_to_rid]
+    outpath = '{}.pdf'.format(args.out_prefix)
     peaks = plot_coverage(coverage=coverage, transcripts=transcripts, pos_to_rid=pos_to_rid, out_path=outpath, N=N)
-    outpath = '{}.peaks.txt'.format(args.raw_coverage[0:args.raw_coverage.rfind('.')])
+    outpath = '{}.txt'.format(args.out_prefix)
     out_file = open(outpath, 'w+')
     for i in peaks:
         print(i, file=out_file)
