@@ -128,10 +128,7 @@ def jaccard(a,b):
     else:
         return i/j
 
-def plot_coverage(coverage, transcripts, starts, ends, pos_to_rid, out_path):
-    N = 0
-    for rids in pos_to_rid:
-        N = max(N, len(rids))
+def plot_coverage(coverage, transcripts, pos_to_rid, out_path, N):
     f, (ax2, ax3, ax1) = plt.subplots(3, 1, figsize=(30,5*(3+1)), sharex=True)
     ax1.plot(range(len(coverage)), coverage)
     ax3.plot(range(len(coverage)), coverage)
@@ -291,10 +288,9 @@ def plot_hb_ticks(coverage, Hb_ticks, out_path):
 
 def read_paf(paf):
     is_first = True
-    starts = list()
-    ends = list()
     pos_to_rid = list()
     read_name_to_id = dict()
+    rid_to_intervals = dict()
     for line in open(paf):
         line = line.rstrip().split('\t')
         if is_first:
@@ -308,16 +304,19 @@ def read_paf(paf):
             exit(-1)
         name = line[0]
         if not name in read_name_to_id:
-            read_name_to_id[name] = len(read_name_to_id)
+            rid = len(read_name_to_id)
+            read_name_to_id[name] = rid
+            rid_to_intervals[rid] = list()
         rid = read_name_to_id[name]
         if any('oc:c:1' in tag for tag in line[12:]):
             t_start = max(0, int(line[7]) - 1)
             t_end = int(line[8]) + 1
-            starts.append(t_start)
-            ends.append(t_end)
+            rid_to_intervals[rid].append([t_start, t_end])
             for i in range(t_start, t_end):
                 pos_to_rid[i].add(rid)
-    return pos_to_rid,starts,ends
+    for intervals in rid_to_intervals.values():
+        intervals.sort()
+    return pos_to_rid,rid_to_intervals
 
 def get_tsv_ticks(tsv):
     transcripts = list()
@@ -341,10 +340,11 @@ def main():
     args = parse_args()
 
     transcripts = get_tsv_ticks(args.tsv)
-    pos_to_rid,starts,ends = read_paf(args.paf)
+    pos_to_rid,rid_to_intervals = read_paf(args.paf)
+    N = len(rid_to_intervals)
     coverage = [float(c) for c in open(args.raw_coverage).readlines()]
     outpath = '{}.peaks.pdf'.format(args.raw_coverage[0:args.raw_coverage.rfind('.')])
-    peaks = plot_coverage(coverage=coverage, transcripts=transcripts, starts=starts, ends=ends, pos_to_rid=pos_to_rid, out_path=outpath)
+    peaks = plot_coverage(coverage=coverage, transcripts=transcripts, pos_to_rid=pos_to_rid, out_path=outpath, N=N)
     outpath = '{}.peaks.txt'.format(args.raw_coverage[0:args.raw_coverage.rfind('.')])
     out_file = open(outpath, 'w+')
     for i in peaks:

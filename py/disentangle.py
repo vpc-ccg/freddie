@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import random
-from statistics import mean
+import numpy as np
 import matplotlib as mpl
 mpl.use('Agg')
 import matplotlib.pyplot as plt
@@ -10,75 +10,133 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Cluster aligned reads into isoforms")
     parser.add_argument("-t",
-                        "--transcript-tsv",
+                        "--tsv",
                         type=str,
                         required=True,
-                        help="Path to TSV file of annotation transcripts")
-    parser.add_argument("-e",
-                        "--total-expression",
-                        type=int,
-                        default=500,
-                        help="How many full length transcript reads to simulate in total")
+                        help="Path to TSV file")
+    parser.add_argument("-p",
+                        "--paf",
+                        type=str,
+                        required=True,
+                        help="Path to PAF file of read alignments")
+    parser.add_argument("-c",
+                        "--raw-coverage",
+                        type=str,
+                        required=True,
+                        help="Path to raw coverage TXT file")
+    parser.add_argument("-pk",
+                        "--peaks",
+                        type=str,
+                        required=True,
+                        help="Path to peaks TXT file")
     parser.add_argument("-o",
                         "--output",
                         type=str,
                         required=True,
-                        help="Output TXT file")
+                        help="Output file")
     args = parser.parse_args()
     return args
 
-def plot_coverage(coverage, ticks=list(), outpath='out.pdf'):
+def read_paf(paf):
+    is_first = True
+    pos_to_rid = list()
+    read_name_to_id = dict()
+    rid_to_intervals = dict()
+    for line in open(paf):
+        line = line.rstrip().split('\t')
+        if is_first:
+            t_len = int(line[6])
+            t_name = line[5]
+            is_first = False
+            pos_to_rid = [set() for _ in range(t_len)]
+        if t_len != int(line[6]) or t_name != line[5]:
+            print("Multiple targets detected in PAF file!", file=stderr)
+            print(line, file=stderr)
+            exit(-1)
+        name = line[0]
+        if not name in read_name_to_id:
+            rid = len(read_name_to_id)
+            read_name_to_id[name] = rid
+            rid_to_intervals[rid] = list()
+        rid = read_name_to_id[name]
+        if any('oc:c:1' in tag for tag in line[12:]):
+            t_start = max(0, int(line[7]) - 1)
+            t_end = int(line[8]) + 1
+            rid_to_intervals[rid].append([t_start, t_end])
+            for i in range(t_start, t_end):
+                pos_to_rid[i].add(rid)
+    for intervals in rid_to_intervals.values():
+        intervals.sort()
+    return pos_to_rid,rid_to_intervals
+
+def get_tsv_ticks(tsv):
+    transcripts = list()
+    starts = list()
+    ends = list()
+    for line in open(tsv):
+        exons = list()
+        introns = list()
+        line = line.rstrip().split('\t')
+        for interval in line[3].split(','):
+            interval = interval.split('-')
+            start = int(interval[0])
+            end = int(interval[1])
+            if len(exons) > 0:
+                introns.append((exons[-1][1], start))
+            exons.append((start,end))
+        transcripts.append((exons,introns))
+    return transcripts
+
+
+def get_banded_matrix(N, pos_to_rid, cut_points):
+    height = N
+    width = len(cut_points)-1
+    banded_matrix = np.zeros(shape=(height, width), dtype=float)
+    for rid in range(height):
+        for bid in range(width):
+            start = cut_points[bid]
+            end = cut_points[bid+1]
+            l = [rid in pos_to_rid[pos] for pos in range(start,end)]
+            banded_matrix[rid][bid] = np.mean(l)
+    return banded_matrix
+
+def plot_reads(N, coverage, matrix, peaks, reads_order, out_path):
     plt.figure(figsize=(30,4))
-    # plt.plot(range(len(coverage)), coverage)
-    plt.scatter(range(len(coverage)), coverage)
-    height = max(coverage)
-    for tick in ticks:
-        plt.plot([tick,tick], [0,height], 'k--', alpha=0.2)
+    plt.title('N = {}'.format(N))
+    cmap = plt.get_cmap('Greys')
+    norm = mpl.colors.Normalize(vmin=0, vmax=1)
+    top = 0.95
+    bottom = 0.05
+    step = (top-bottom)/N
+    for idx,rid in enumerate(reads_order):
+        if idx % 50 == 0:
+            print(idx)
+        h = top-step*idx
+        for bid,val in enumerate(matrix[rid]):
+            start = peaks[bid]
+            end   = peaks[bid+1]
+            plt.plot([start,end], [h,h], color=cmap(norm(val)), lw=0.25, zorder=0)
+    plt.plot(range(len(coverage)), coverage, color='green', zorder=50)
+    for peak in peaks:
+        plt.plot([peak,peak], [0,1], color='blue', linestyle='dashed', zorder=100)
     plt.tight_layout()
-    plt.savefig(outpath)
+    plt.savefig(out_path)
+
 
 def main():
-    random.seed(42)
     args = parse_args()
+
+    transcripts = get_tsv_ticks(args.tsv)
+    pos_to_rid,rid_to_intervals = read_paf(args.paf)
+    N = len(rid_to_intervals)
+    coverage = [float(c) for c in open(args.raw_coverage).readlines()]
+    peaks = [int(p) for p in open(args.peaks).readlines()]
+    banded_matrix = get_banded_matrix(N=N, pos_to_rid=pos_to_rid, cut_points=peaks)
+    print(banded_matrix.shape)
     out_file = open(args.output, 'w+')
-
-    sites = set()
-    transcripts = list()
-
-    for line in open(args.transcript_tsv):
-        line = line.rstrip().split('\t')
-        exons = [(int(e.split('-')[0]),int(e.split('-')[1])) for e in line[3].split(',')]
-        for exon in exons:
-            sites.add(exon[0])
-            sites.add(exon[1])
-        transcripts.append(exons)
-    sites.add(0)
-    sites = sorted(sites)
-    g_len = sites[-1] + 10
-    sites.append(g_len)
-
-    tids = [i for i in range(len(transcripts))]
-    coverage = [0 for _ in range(g_len)]
-
-    picked_transcripts = random.choices(tids, k=args.total_expression)
-    for tid in picked_transcripts:
-        for exon in transcripts[tid]:
-            for i in range(exon[0], exon[1]+1):
-                coverage[i] += 1
-    plot_coverage(coverage=coverage, ticks=sites, outpath=args.output+'.pdf')
-    canonical_exons = list()
-    for i in range(1, len(sites)):
-        start = sites[i-1]+1
-        end = sites[i]
-        if start == end or end > len(coverage):
-            continue
-        canonical_exons.append(mean(coverage[start:end]))
-        print(start, end, canonical_exons[-1])
-    plot_coverage(coverage=canonical_exons, outpath=args.output+'.2.pdf')
-
-
-
     out_file.close()
+    plot_reads(N=N, coverage=coverage, matrix=banded_matrix, peaks=peaks, reads_order=[i for i in range(N)], out_path=args.output+'.pdf')
+
 
 
 if __name__ == "__main__":

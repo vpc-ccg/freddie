@@ -44,6 +44,7 @@ rule all:
          # expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.split_pdf.done'.format(genes_d),   gene=config['genes'], sample=config['samples']),
          # expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster'.format(genes_d),   gene=config['genes'], sample=config['samples']),
          expand('{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.peaks.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf', 'txt']),
+         expand('{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.peaks.disentanglement.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['txt']),
          # expand('{}/{{gene}}/{{sample}}/transcripts.disentanglement.txt'.format(genes_d),   gene=config['genes'], sample=config['samples']),
 
 rule freddie_make:
@@ -276,13 +277,16 @@ rule meanshift_real:
 rule disentangle:
     input:
         transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
+        paf          = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
+        raw_coverage = '{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.txt'.format(genes_d),
+        peaks_txt = '{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.peaks.txt'.format(genes_d),
         script          = config['exec']['disentangle'],
     output:
-        disentanglement = '{}/{{gene}}/{{sample}}/transcripts.disentanglement.txt'.format(genes_d),
+        disentanglement = '{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.peaks.disentanglement.txt'.format(genes_d),
     conda:
         'freddie.env'
     shell:
-        '{input.script} -t {input.transcripts_tsv} -o {output.disentanglement}'
+        '{input.script} -c {input.raw_coverage} -p {input.paf} -t {input.transcripts_tsv} -pk {input.peaks_txt} -o {output.disentanglement}'
 
 
 # rule cluster_paf:
