@@ -20,6 +20,7 @@ gene_data=[
     'transcripts.fasta',
     'gene.fasta',
     'reads.fasta',
+    'reads.filtered_out.fasta',
 ]
 nanosim_read_analysis_files=[
     '_unaligned_length.pkl',
@@ -45,6 +46,8 @@ rule all:
          # expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster'.format(genes_d),   gene=config['genes'], sample=config['samples']),
          expand('{}/{{gene}}/{{sample}}/reads.canonical_exons.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf', 'txt']),
          expand('{}/{{gene}}/{{sample}}/reads.disentanglement.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf']),
+         # expand('{}/{{gene}}/{{sample}}/reads.plotly.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf', 'cigars.txt']),
+
          # expand('{}/{{gene}}/{{sample}}/transcripts.disentanglement.txt'.format(genes_d),   gene=config['genes'], sample=config['samples']),
 
 rule freddie_make:
@@ -274,19 +277,19 @@ rule find_canonical_exon:
 
 rule disentangle:
     input:
-        transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
-        paf             = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
+        transcripts_tsv     = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
+        paf                 = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
         canonical_exons_txt = '{}/{{gene}}/{{sample}}/reads.canonical_exons.txt'.format(genes_d),
-        script          = config['exec']['disentangle'],
+        script              = config['exec']['disentangle'],
     output:
         disentanglement = '{}/{{gene}}/{{sample}}/reads.disentanglement.pdf'.format(genes_d),
+        leaves = '{}/{{gene}}/{{sample}}/reads.disentanglement.leaves.txt'.format(genes_d),
     params:
         out_prefix='{}/{{gene}}/{{sample}}/reads.disentanglement'.format(genes_d),
     conda:
         'freddie.env'
     shell:
         '{input.script} -p {input.paf} -t {input.transcripts_tsv} -pk {input.canonical_exons_txt} -op {params.out_prefix}'
-
 
 # rule cluster_paf:
 #     input:
