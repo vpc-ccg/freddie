@@ -3,10 +3,7 @@ import argparse
 import matplotlib as mpl
 mpl.use('Agg')
 import matplotlib.pyplot as plt
-from scipy.optimize import curve_fit
-from scipy import asarray as ar,exp
 import numpy as np
-from math import ceil,floor
 from statistics import mean,stdev,median
 from scipy.signal import find_peaks
 
@@ -181,21 +178,6 @@ def plot_coverage(coverage, transcripts, pos_to_rid, out_path, N):
     plt.tight_layout()
     plt.savefig(out_path)
     return sorted(peaks_final+peaks_dense_final)
-
-def plot_hb_ticks(coverage, Hb_ticks, out_path):
-    subplot_count = len(Hb_ticks)
-    f, ax = plt.subplots(subplot_count, 1, sharex=True, figsize=(30,5*subplot_count))
-    for idx,(ticks,text) in enumerate(Hb_ticks):
-        ax[idx].plot(range(len(coverage)), coverage)
-        ax[idx].title.set_text(text)
-        for tick in ticks:
-            ax[idx].plot([tick,tick], [0,1], 'b', alpha=0.3)
-    for tick in starts:
-        ax[idx].scatter(x=tick,y=0.75, color='green', marker='^', alpha=0.2)
-    for tick in ends:
-        ax[idx].scatter(x=tick,y=0.25, color='red', marker='v', alpha=0.2)
-    plt.tight_layout()
-    plt.savefig(out_path)
 
 def read_paf(paf):
     is_first = True
