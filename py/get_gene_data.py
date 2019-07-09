@@ -134,7 +134,7 @@ def align_reads(minimap2, threads, genome, reads, sam):
     import os
     os.system(cmd)
 
-def output_gene_reads(sam, gene_info, padding, out):
+def output_gene_reads(sam, gene_info, padding, out, filter_out):
     chr = gene_info['chr']
     strand = gene_info['strand']
     start = gene_info['start']
@@ -156,6 +156,8 @@ def output_gene_reads(sam, gene_info, padding, out):
         if idx%500==0:
             print('Read the {}-th read'.format(idx))
         if (read.flag > 255 or read.mapping_quality < 60):
+            print('>{} {}:{}-{}'.format(read.qname, read.reference_name, read.reference_start, read.reference_end), file=filter_out)
+            print(read.query, file=filter_out)
             continue
         if (read.reference_name == chr and read.reference_start > start-padding and read.reference_start < end):
             print('>{} {}:{}-{}'.format(read.qname, read.reference_name, read.reference_start, read.reference_end), file=out)
@@ -283,8 +285,10 @@ def main():
                 sam = args.sam_output
             align_reads(minimap2=args.minimap2, threads=args.threads, genome=args.dna, reads=args.reads, sam=sam)
         out = open('{}reads.fasta'.format(args.output), 'w+')
-        output_gene_reads(sam=sam, gene_info=gene_info, padding=args.pad_size, out=out)
+        filter_out = open('{}reads.filtered_out.fasta'.format(args.output), 'w+')
+        output_gene_reads(sam=sam, gene_info=gene_info, padding=args.pad_size, out=out, filter_out=filter_out)
         out.close()
+        filter_out.close()
 
     out = open('{}gene.fasta'.format(args.output), 'w+')
     output_gene(genome=args.dna, gene_info=gene_info, out=out)
