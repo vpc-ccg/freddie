@@ -44,8 +44,9 @@ rule all:
     input:
          # expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.split_pdf.done'.format(genes_d),   gene=config['genes'], sample=config['samples']),
          # expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster'.format(genes_d),   gene=config['genes'], sample=config['samples']),
-         expand('{}/{{gene}}/{{sample}}/reads.canonical_exons.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf', 'txt']),
-         expand('{}/{{gene}}/{{sample}}/reads.disentanglement.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf']),
+         # expand('{}/{{gene}}/{{sample}}/reads.canonical_exons.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf', 'txt']),
+         # expand('{}/{{gene}}/{{sample}}/reads.disentanglement.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf']),
+         expand('{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf']),
          # expand('{}/{{gene}}/{{sample}}/reads.plotly.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf', 'cigars.txt']),
 
          # expand('{}/{{gene}}/{{sample}}/transcripts.disentanglement.txt'.format(genes_d),   gene=config['genes'], sample=config['samples']),
@@ -290,6 +291,21 @@ rule disentangle:
         'freddie.env'
     shell:
         '{input.script} -p {input.paf} -t {input.transcripts_tsv} -pk {input.canonical_exons_txt} -op {params.out_prefix}'
+
+rule find_canonical_exon_iteratively:
+    input:
+        paf                 = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
+        script              = config['exec']['find_canonical_exon_iteratively'],
+    output:
+        disentanglement = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.pdf'.format(genes_d),
+    params:
+        out_prefix='{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons'.format(genes_d),
+    conda:
+        'freddie.env'
+    shell:
+        '{input.script} -p {input.paf} -op {params.out_prefix}'
+
+
 
 # rule cluster_paf:
 #     input:
