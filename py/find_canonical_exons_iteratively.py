@@ -7,6 +7,11 @@ import numpy as np
 from statistics import median
 from scipy.signal import find_peaks
 from scipy.cluster import hierarchy
+from copy import deepcopy
+from multiprocessing import Pool
+from PyPDF2 import PdfFileReader, PdfFileWriter
+from os import remove
+import pickle
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -19,7 +24,7 @@ def parse_args():
     parser.add_argument("-i",
                         "--iterations",
                         type=int,
-                        default=2,
+                        default=10,
                         help="Number of iterations for segmentation")
     parser.add_argument("-op",
                         "--out_prefix",
@@ -29,14 +34,12 @@ def parse_args():
     args = parser.parse_args()
     return args
 
-def read_paf(paf):
+def read_paf(paf, range_len=15):
     is_first = True
     pos_to_rid = list()
     read_name_to_id = dict()
     rid_to_intervals = dict()
     for line in open(paf):
-        if len(rid_to_intervals) > 99:
-            break
         line = line.rstrip().split('\t')
         if is_first:
             t_len = int(line[6])
@@ -61,10 +64,27 @@ def read_paf(paf):
             t_interval = (t_start, t_end)
             q_interval = (q_start, q_end)
             rid_to_intervals[rid].append((t_interval, q_interval))
-            for i in range(t_start, t_end):
-                pos_to_rid[i].add(rid)
     for intervals in rid_to_intervals.values():
         intervals.sort()
+    for rid,intervals in rid_to_intervals.items():
+        new_intervals = list()
+        for idx,(t_interval,q_interval) in enumerate(intervals):
+            if idx == 0:
+                new_intervals.append((t_interval,q_interval))
+                continue
+            (t_interval_prv,q_interval_prv) = new_intervals[-1]
+            if t_interval[0] - t_interval_prv[1] < range_len and q_interval_prv[0] - q_interval_prv[1] < range_len:
+                new_intervals[-1] = (
+                    (t_interval_prv[0],t_interval[1]),
+                    (q_interval_prv[0],q_interval[1]),
+                )
+            else:
+                new_intervals.append((t_interval,q_interval))
+        rid_to_intervals[rid] = new_intervals
+    for rid,intervals in rid_to_intervals.items():
+        for (t_start, t_end),(_, _) in intervals:
+            for i in range(t_start, t_end):
+                pos_to_rid[i].add(rid)
     return pos_to_rid,rid_to_intervals
 
 def get_banded_matrix(N, pos_to_rid, intervals):
@@ -109,70 +129,87 @@ def find_exons(pos_to_rid, interval, rids, range_len=15):
         x.append(i)
         y_rmved.append(len(j_rids - i_rids))
         y_added.append(len(i_rids - j_rids))
-    peaks_rmv, _ = find_peaks(y_rmved, height =max(N*0.05,5), distance=range_len, prominence=N*0.05)
-    peaks_rmv    = [i+interval[0] for i in peaks_rmv]
-    peaks_add, _ = find_peaks(y_added, height =max(N*0.05,5), distance=range_len, prominence=N*0.05)
-    peaks_add    = [i+interval[0] for i in peaks_add]
+    peaks_rmv, _ = find_peaks(y_rmved, height =max(N*0.10,10), distance=range_len, prominence=max(N*0.10,10))
+    peaks_rmv    = [max(0,i+interval[0]-range_len//2) for i in peaks_rmv]
+    peaks_add, _ = find_peaks(y_added, height =max(N*0.10,10), distance=range_len, prominence=max(N*0.10,10))
+    peaks_add    = [max(0,i+interval[0]-range_len//2) for i in peaks_add]
 
     peaks = merge_peaks(peaks_a=peaks_rmv, peaks_b=peaks_add, range_len=range_len)
     exons = [interval]
     for idx,peak in enumerate(peaks):
         exons.append([peak,exons[-1][1]])
         exons[-2][1] = peak
-    return exons
+    return x, y_rmved, y_added, exons
 
-def plot_data(data, coverage, rid_to_intervals, N, M, out_path):
+def plot_data_worker(args):
+    pickle_path, stage_id = args
+    pickle_data = pickle.load(open(pickle_path, 'rb'))
+    data, coverage, rid_to_intervals, N, M, stage_pdfs = pickle_data
+
+    print('Worker {} is done!'.format(stage_id))
+
+# def pdf_cat(input_files, out_path):
+#     output_stream = open(out_path, 'wb+')
+#     input_streams = []
+#     try:
+#         for input_file in input_files:
+#             input_streams.append(open(input_file, 'rb'))
+#         writer = PdfFileWriter()
+#         for reader in map(PdfFileReader, input_streams):
+#             for n in range(reader.getNumPages()):
+#                 writer.addPage(reader.getPage(n))
+#         writer.write(output_stream)
+#     finally:
+#         for f in input_streams:
+#             f.close()
+
+def plot_data(data, coverage, rid_to_intervals, last_matrix, N, M, out_prefix):
     L = len(data)
-    cmap = plt.get_cmap('Greys')
-    norm = mpl.colors.Normalize(vmin=0, vmax=1)
+    fig, axes = plt.subplots(L+1, 1, sharex='col', sharey='row', figsize=(30,8*(L+1)), squeeze=False)
+    fig.suptitle('N = {} M = {} L = {}'.format(N,M,L))
+    for stage_id,exons in enumerate(data):
+        ax0 = axes[stage_id][0]
+        ax0.set_title(' '.join(['{}{}'.format(eid, exon['interval']) for eid,exon in enumerate(exons)]))
+        for exon in exons:
+            if exon['fixed']:
+                ax0.vlines(exon['interval'], ymin=0, ymax=N, color='gray', linestyle='solid', lw=1, alpha=0.5)
+            else:
+                ax0.vlines(exon['interval'], ymin=0, ymax=N, color='green', linestyle='dashed', lw=1, alpha=0.5)
+                ax0.plot(exon['sig_x'], exon['sig_ry'], color='#e41a1c', alpha=0.5)
+                ax0.plot(exon['sig_x'], exon['sig_ay'], color='#377eb8', alpha=0.5)
+                ax0.text(x=median(exon['interval']), y=N*0.3, s='{}'.format(exon['h_cnt']), fontsize=12)
+
+    reads_order = hierarchy.leaves_list(hierarchy.linkage(last_matrix, 'single'))
     cmap_ins = plt.get_cmap('gnuplot2_r')
     norm_ins = mpl.colors.Normalize(vmin=10, vmax=800)
-    top = 0.95
-    bottom = 0.05
+    top    = N*0.95
+    bottom = N*0.05
     step = (top-bottom)/N
-
-    fig, axes = plt.subplots(L, 2, sharex='col', sharey='row', figsize=(50,8*L), squeeze=False)
-    fig.suptitle('N = {} M = {} L = {}'.format(N,M,L))
-    for axis_id,(exons,matrix) in enumerate(data):
-        ax0 = axes[axis_id][0]
-        ax1 = axes[axis_id][1]
-        ax0.set_title('Stage {} with {} exons. Average coverage per exon'.format(axis_id, len(exons)))
-        ax1.set_title('Stage {} with {} exons. True coverage'.format(axis_id, len(exons)))
-        print('matrix.shape {} L = {} len(exons) {}'.format(matrix.shape, axis_id, len(exons)))
-        reads_order = hierarchy.leaves_list(hierarchy.linkage(matrix, 'single'))
-        for read_count,rid in enumerate(reads_order):
-            if read_count % 50 == 0:
-                print(read_count)
-            h = top-step*read_count
-            # Plot canonical exon boundies
-            for start,end in exons[:-1]:
-                ax0.plot([end,end], [0,1], color='blue', linestyle='dashed', zorder=100)
-                ax1.plot([end,end], [0,1], color='blue', linestyle='dashed', zorder=100)
-            # Plot average coverage of the read per exon
-            for bid,(start,end) in enumerate(exons):
-                print(start,end)
-                ax0.plot([start,end], [h,h], color=cmap(norm(matrix[rid][bid])), lw=0.25, zorder=0)
-            # Plot full alignments of the read
-            for idx in range(len(rid_to_intervals[rid])):
-                (cur_t_start,cur_t_end), (cur_q_start,cur_q_end) = rid_to_intervals[rid][idx]
-                ax1.plot([cur_t_start,cur_t_end], [h,h], color='black', lw=0.25, zorder=0, alpha=0.5)
-                if idx - 1 >= 0:
-                    (_,_), (_,lst_q_end)   = rid_to_intervals[rid][idx-1]
-                else:
-                    lst_q_end   = 0
-                dist_to_lst = cur_q_start - lst_q_end
-                ax1.scatter(x=cur_t_start, y=h, s=0.25, color=cmap_ins(norm_ins(dist_to_lst)), zorder=5)
-                if idx + 1 < len(rid_to_intervals[rid]):
-                    (_,_), (nxt_q_start,_) = rid_to_intervals[rid][idx+1]
-                else:
-                    nxt_q_start = exons[-1][1]
-                dist_to_nxt = nxt_q_start - cur_q_end
-                ax1.scatter(x=cur_t_end,   y=h, s=0.25, color=cmap_ins(norm_ins(dist_to_nxt)), zorder=5)
-        # Plot total coverage
-        ax0.plot(range(len(coverage)), coverage, color='green', zorder=2.50)
-        ax1.plot(range(len(coverage)), coverage, color='green', zorder=50)
-    plt.savefig(out_path)
-
+    ax0 = axes[L][0]
+    for read_count,rid in enumerate(reads_order):
+        if read_count % 50 == 0:
+            print('{}'.format(read_count))
+        h = top-step*read_count
+        # Plot full alignments of the read
+        for idx in range(len(rid_to_intervals[rid])):
+            (cur_t_start,cur_t_end), (cur_q_start,cur_q_end) = rid_to_intervals[rid][idx]
+            ax0.plot([cur_t_start,cur_t_end], [h,h], color='black', lw=0.25, zorder=0, alpha=0.5)
+            if idx - 1 >= 0:
+                (_,_), (_,lst_q_end)   = rid_to_intervals[rid][idx-1]
+            else:
+                lst_q_end   = 0
+            dist_to_lst = cur_q_start - lst_q_end
+            ax0.scatter(x=cur_t_start, y=h, s=0.25, color=cmap_ins(norm_ins(dist_to_lst)), zorder=5)
+            if idx + 1 < len(rid_to_intervals[rid]):
+                (_,_), (nxt_q_start,_) = rid_to_intervals[rid][idx+1]
+            else:
+                nxt_q_start = data[0][0]['interval'][1]
+            dist_to_nxt = nxt_q_start - cur_q_end
+            ax0.scatter(x=cur_t_end,   y=h, s=0.25, color=cmap_ins(norm_ins(dist_to_nxt)), zorder=5)
+    for exon in data[-1]:
+        ax0.vlines(exon['interval'], ymin=0, ymax=N, color='black', linestyle='solid', lw=2, )
+    ax0.plot(range(len(coverage)), [N*c for c in coverage], color='green', zorder=50)
+    plt.savefig('{}.pdf'.format(out_prefix))
 
 def main():
     args = parse_args()
@@ -181,27 +218,64 @@ def main():
     N = len(rid_to_intervals)
     M = len(pos_to_rid)
     coverage = [len(rids)/N for rids in pos_to_rid]
-    exons = [[0,M]]
-    matrix = get_banded_matrix(N=N, pos_to_rid=pos_to_rid, intervals=exons)
 
+    exons = [
+        dict(
+            interval=[0,M],
+            fixed=False,
+            h_cnt=0,
+            sig_x=list(),
+            sig_ry=list(),
+            sig_ay=list(),
+        )
+    ]
+    data = [exons]
     range_len = 15
-    data = list()
-    print('There are {} reads and {} positions'.format(N, M))
-    for stage in range(args.iterations):
-        old_exons = exons
-        print('Running stage {} with {} exons and matrix shape {}'.format(stage, len(old_exons), matrix.shape))
-        exons = list()
-        for eid,interval in enumerate(old_exons):
+    for d in data:
+        print(d)
+    for stage_id in range(args.iterations):
+        old_exons = data[stage_id]
+        new_exons = list()
+        matrix = get_banded_matrix(N=N, pos_to_rid=pos_to_rid, intervals=[exon['interval'] for exon in old_exons])
+        print('Running stage {} with {} exons and matrix shape {}'.format(stage_id, len(old_exons), matrix.shape))
+        for eid,exon in enumerate(old_exons):
             hetero_rids = get_hetero_rids(matrix[:,eid])
-            print('Exon {} has {} hetero reads'.format(eid, len(hetero_rids)))
-            if len(hetero_rids) > min(N*0.05,5) and interval[1]-interval[0] > range_len:
-                exons.extend(find_exons(pos_to_rid=pos_to_rid, interval=interval, rids=hetero_rids))
+            exon['h_cnt'] = len(hetero_rids)
+            exon['fixed'] = len(hetero_rids) <= min(N*0.10,25)
+            if not exon['fixed']:
+                print(exon['interval'])
+                x, y_rmved, y_added, new_exon_intervals = find_exons(pos_to_rid=pos_to_rid, interval=exon['interval'].copy(), rids=hetero_rids)
+                print(exon['interval'])
+                exon['sig_x']  = x
+                exon['sig_ry'] = y_rmved
+                exon['sig_ay'] = y_added
+                for new_exon_interval in new_exon_intervals:
+                    new_exons.append(
+                        dict(
+                            interval=new_exon_interval,
+                            fixed=False,
+                            h_cnt=0,
+                            sig_x=list(),
+                            sig_ry=list(),
+                            sig_ay=list(),
+                        )
+                    )
             else:
-                exons.append(interval)
-        print('After re-segmentation there are {} exons'.format(len(exons)))
-        matrix = get_banded_matrix(N=N, pos_to_rid=pos_to_rid, intervals=exons)
-        data.append((exons, np.copy(matrix)))
-    plot_data(data=data, coverage=coverage, rid_to_intervals=rid_to_intervals, N=N, M=M, out_path='{}.pdf'.format(args.out_prefix))
+                print('Exon {} {} is fixed'.format(eid, exon['interval']))
+                new_exons.append(exon)
+        print('After re-segmentation there are {} exons'.format(len(new_exons)))
+        if len(new_exons) == len(old_exons):
+            print('The number of exons has not changed. Breaking...')
+            break
+        data.append(new_exons)
+        for d in data:
+            print([e['interval'] for e in d])
+    lid = set()
+    for s,exons in enumerate(data):
+        print(id(exons), 'H')
+        for i,e in enumerate(exons):
+            print(s,i,id(e),e['interval'])
+    plot_data(data=data, coverage=coverage, rid_to_intervals=rid_to_intervals, last_matrix=matrix, N=N, M=M, out_prefix=args.out_prefix)
 
 if __name__ == "__main__":
     main()
