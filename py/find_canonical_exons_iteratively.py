@@ -7,11 +7,7 @@ import numpy as np
 from statistics import median
 from scipy.signal import find_peaks
 from scipy.cluster import hierarchy
-from copy import deepcopy
-from multiprocessing import Pool
-from PyPDF2 import PdfFileReader, PdfFileWriter
 from os import remove
-import pickle
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -129,9 +125,9 @@ def find_exons(pos_to_rid, interval, rids, range_len=15):
         x.append(i)
         y_rmved.append(len(j_rids - i_rids))
         y_added.append(len(i_rids - j_rids))
-    peaks_rmv, _ = find_peaks(y_rmved, height =max(N*0.10,10), distance=range_len, prominence=max(N*0.10,10))
+    peaks_rmv, _ = find_peaks(y_rmved, height =max(N*0.025,10), distance=range_len)
     peaks_rmv    = [max(0,i+interval[0]-range_len//2) for i in peaks_rmv]
-    peaks_add, _ = find_peaks(y_added, height =max(N*0.10,10), distance=range_len, prominence=max(N*0.10,10))
+    peaks_add, _ = find_peaks(y_added, height =max(N*0.025,10), distance=range_len)
     peaks_add    = [max(0,i+interval[0]-range_len//2) for i in peaks_add]
 
     peaks = merge_peaks(peaks_a=peaks_rmv, peaks_b=peaks_add, range_len=range_len)
@@ -141,45 +137,47 @@ def find_exons(pos_to_rid, interval, rids, range_len=15):
         exons[-2][1] = peak
     return x, y_rmved, y_added, exons
 
-def plot_data_worker(args):
-    pickle_path, stage_id = args
-    pickle_data = pickle.load(open(pickle_path, 'rb'))
-    data, coverage, rid_to_intervals, N, M, stage_pdfs = pickle_data
+def simpify_singal(matrix, low=0.1, high=0.9):
+    result = ['' for _ in range(matrix.shape[0])]
+    for rid in range(matrix.shape[0]):
+        for pos in range(matrix.shape[1]):
+            x = matrix[rid,pos]
+            if   x >= high:
+                result[rid] += '1'
+            elif x <= low:
+                result[rid] += '0'
+            else:
+                result[rid] += '2'
+    return result
 
-    print('Worker {} is done!'.format(stage_id))
-
-# def pdf_cat(input_files, out_path):
-#     output_stream = open(out_path, 'wb+')
-#     input_streams = []
-#     try:
-#         for input_file in input_files:
-#             input_streams.append(open(input_file, 'rb'))
-#         writer = PdfFileWriter()
-#         for reader in map(PdfFileReader, input_streams):
-#             for n in range(reader.getNumPages()):
-#                 writer.addPage(reader.getPage(n))
-#         writer.write(output_stream)
-#     finally:
-#         for f in input_streams:
-#             f.close()
-
-def plot_data(data, coverage, rid_to_intervals, last_matrix, N, M, out_prefix):
+def plot_data(data, coverage, rid_to_intervals, pos_to_rid, N, M, range_len, out_prefix):
     L = len(data)
     fig, axes = plt.subplots(L+1, 1, sharex='col', sharey='row', figsize=(30,8*(L+1)), squeeze=False)
     fig.suptitle('N = {} M = {} L = {}'.format(N,M,L))
     for stage_id,exons in enumerate(data):
         ax0 = axes[stage_id][0]
-        ax0.set_title(' '.join(['{}{}'.format(eid, exon['interval']) for eid,exon in enumerate(exons)]))
-        for exon in exons:
+        for eid,exon in enumerate(exons):
+            h = [0.3*N, 0.6*N, 0.9*N][eid%3]
             if exon['fixed']:
                 ax0.vlines(exon['interval'], ymin=0, ymax=N, color='gray', linestyle='solid', lw=1, alpha=0.5)
             else:
                 ax0.vlines(exon['interval'], ymin=0, ymax=N, color='green', linestyle='dashed', lw=1, alpha=0.5)
                 ax0.plot(exon['sig_x'], exon['sig_ry'], color='#e41a1c', alpha=0.5)
                 ax0.plot(exon['sig_x'], exon['sig_ay'], color='#377eb8', alpha=0.5)
-                ax0.text(x=median(exon['interval']), y=N*0.3, s='{}'.format(exon['h_cnt']), fontsize=12)
+            ax0.text(x=exon['interval'][0]+10, y=h, s='{}({})'.format(exon['interval'],exon['h_cnt']), fontsize=12, rotation=90)
+    final_exon_intervals = list()
+    eid = 0
+    while eid < len(data[-1]):
+        s,e = data[-1][eid]['interval']
+        while e-s and eid + 1< len(data[-1]) < range_len:
+            eid += 1
+            _,e = data[-1][eid]['interval']
+        final_exon_intervals.append([s,e])
+        eid += 1
+    final_matrix = get_banded_matrix(N=N, pos_to_rid=pos_to_rid, intervals=final_exon_intervals)
+    simplified_signal = simpify_singal(final_matrix)
+    reads_order = hierarchy.leaves_list(hierarchy.linkage(final_matrix, 'single'))
 
-    reads_order = hierarchy.leaves_list(hierarchy.linkage(last_matrix, 'single'))
     cmap_ins = plt.get_cmap('gnuplot2_r')
     norm_ins = mpl.colors.Normalize(vmin=10, vmax=800)
     top    = N*0.95
@@ -206,8 +204,12 @@ def plot_data(data, coverage, rid_to_intervals, last_matrix, N, M, out_prefix):
                 nxt_q_start = data[0][0]['interval'][1]
             dist_to_nxt = nxt_q_start - cur_q_end
             ax0.scatter(x=cur_t_end,   y=h, s=0.25, color=cmap_ins(norm_ins(dist_to_nxt)), zorder=5)
-    for exon in data[-1]:
-        ax0.vlines(exon['interval'], ymin=0, ymax=N, color='black', linestyle='solid', lw=2, )
+        # print(simplified_signal[rid])
+        # if read_count > 0 and simplified_signal[reads_order[read_count-1]] != simplified_signal[rid]:
+        #     print(simplified_signal[rid])
+        #     ax0.hlines([h], xmin=0, xmax=data[0][0]['interval'][1], color='orange', linestyle='dashed')
+    for interval in final_exon_intervals:
+        ax0.vlines(interval, ymin=0, ymax=N, color='black', linestyle='solid', lw=2, )
     ax0.plot(range(len(coverage)), [N*c for c in coverage], color='green', zorder=50)
     plt.savefig('{}.pdf'.format(out_prefix))
 
@@ -239,9 +241,12 @@ def main():
         matrix = get_banded_matrix(N=N, pos_to_rid=pos_to_rid, intervals=[exon['interval'] for exon in old_exons])
         print('Running stage {} with {} exons and matrix shape {}'.format(stage_id, len(old_exons), matrix.shape))
         for eid,exon in enumerate(old_exons):
-            hetero_rids = get_hetero_rids(matrix[:,eid])
+            if exon['interval'][1]-exon['interval'][0] > 250:
+                hetero_rids = [rid for rid in range(len(rid_to_intervals))]
+            else:
+                hetero_rids = get_hetero_rids(matrix[:,eid])
             exon['h_cnt'] = len(hetero_rids)
-            exon['fixed'] = len(hetero_rids) <= min(N*0.10,25)
+            exon['fixed'] = len(hetero_rids) <= min(N*0.10,25) or exon['interval'][1]-exon['interval'][0] < range_len
             if not exon['fixed']:
                 print(exon['interval'])
                 x, y_rmved, y_added, new_exon_intervals = find_exons(pos_to_rid=pos_to_rid, interval=exon['interval'].copy(), rids=hetero_rids)
@@ -268,14 +273,7 @@ def main():
             print('The number of exons has not changed. Breaking...')
             break
         data.append(new_exons)
-        for d in data:
-            print([e['interval'] for e in d])
-    lid = set()
-    for s,exons in enumerate(data):
-        print(id(exons), 'H')
-        for i,e in enumerate(exons):
-            print(s,i,id(e),e['interval'])
-    plot_data(data=data, coverage=coverage, rid_to_intervals=rid_to_intervals, last_matrix=matrix, N=N, M=M, out_prefix=args.out_prefix)
+    plot_data(data=data, coverage=coverage, rid_to_intervals=rid_to_intervals, pos_to_rid=pos_to_rid, N=N, M=M, range_len=range_len, out_prefix=args.out_prefix)
 
 if __name__ == "__main__":
     main()
