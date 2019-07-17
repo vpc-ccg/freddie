@@ -46,7 +46,7 @@ rule all:
          # expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster'.format(genes_d),   gene=config['genes'], sample=config['samples']),
          # expand('{}/{{gene}}/{{sample}}/reads.canonical_exons.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf', 'txt']),
          # expand('{}/{{gene}}/{{sample}}/reads.disentanglement.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf']),
-         expand('{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf']),
+         expand('{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf', 'data']),
          # expand('{}/{{gene}}/{{sample}}/reads.plotly.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf', 'cigars.txt']),
 
          # expand('{}/{{gene}}/{{sample}}/transcripts.disentanglement.txt'.format(genes_d),   gene=config['genes'], sample=config['samples']),
@@ -298,6 +298,7 @@ rule find_canonical_exon_iteratively:
         script              = config['exec']['find_canonical_exon_iteratively'],
     output:
         disentanglement = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.pdf'.format(genes_d),
+        matrix          = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.data'.format(genes_d),
     params:
         out_prefix='{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons'.format(genes_d),
     conda:

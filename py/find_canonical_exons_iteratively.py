@@ -150,6 +150,9 @@ def simpify_singal(matrix, low=0.1, high=0.9):
                 result[rid] += '2'
     return result
 
+def binarize_matrix(matrix, cutoff=0.5):
+    return [[1 if matrix[i,j]>cutoff else 0 for j in range(matrix.shape[1])] for i in range(matrix.shape[0])]
+
 def plot_data(data, coverage, rid_to_intervals, pos_to_rid, N, M, range_len, out_prefix):
     L = len(data)
     fig, axes = plt.subplots(L+1, 1, sharex='col', sharey='row', figsize=(30,8*(L+1)), squeeze=False)
@@ -213,6 +216,25 @@ def plot_data(data, coverage, rid_to_intervals, pos_to_rid, N, M, range_len, out
     ax0.plot(range(len(coverage)), [N*c for c in coverage], color='green', zorder=50)
     plt.savefig('{}.pdf'.format(out_prefix))
 
+def output_last_matrix(data, N, pos_to_rid, outpath, range_len):
+    final_exon_intervals = list()
+    eid = 0
+    while eid < len(data[-1]):
+        s,e = data[-1][eid]['interval']
+        while e-s and eid + 1< len(data[-1]) < range_len:
+            eid += 1
+            _,e = data[-1][eid]['interval']
+        final_exon_intervals.append([s,e])
+        eid += 1
+    final_matrix = get_banded_matrix(N=N, pos_to_rid=pos_to_rid, intervals=final_exon_intervals)
+    binary_matrix = binarize_matrix(final_matrix)
+
+    out_file = open(outpath, 'w+')
+    for i in range(len(binary_matrix)):
+        for j in range(len(binary_matrix[i])):
+            print(binary_matrix[i][j], end='', file=out_file)
+        print(file=out_file)
+    out_file.close()
 def main():
     args = parse_args()
 
@@ -273,7 +295,11 @@ def main():
             print('The number of exons has not changed. Breaking...')
             break
         data.append(new_exons)
+
+    output_last_matrix(data=data, N=N, pos_to_rid=pos_to_rid, range_len=range_len, outpath='{}.data'.format(args.out_prefix))
     plot_data(data=data, coverage=coverage, rid_to_intervals=rid_to_intervals, pos_to_rid=pos_to_rid, N=N, M=M, range_len=range_len, out_prefix=args.out_prefix)
+
+
 
 if __name__ == "__main__":
     main()
