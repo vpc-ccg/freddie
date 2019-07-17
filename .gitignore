@@ -1,3 +1,5 @@
+# Gurobi logs
+gurobi.log
 # Slurm logs
 slurm
 # NanoSim for dev
