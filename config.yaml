@@ -19,6 +19,7 @@ exec:
     split_dot                       : py/get_split_dot.py
     find_canonical_exon             : py/find_canonical_exons.py
     find_canonical_exon_iteratively : py/find_canonical_exons_iteratively.py
+    find_isoforms                   : py/find_isoforms.py
     disentangle                     : py/disentangle.py
     read_analysis                   : extern/nanosim/src/read_analysis.py
     simulator                       : extern/nanosim/src/simulator.py

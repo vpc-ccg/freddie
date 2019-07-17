@@ -46,7 +46,8 @@ rule all:
          # expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster'.format(genes_d),   gene=config['genes'], sample=config['samples']),
          # expand('{}/{{gene}}/{{sample}}/reads.canonical_exons.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf', 'txt']),
          # expand('{}/{{gene}}/{{sample}}/reads.disentanglement.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf']),
-         expand('{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf', 'data']),
+         # expand('{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf', 'data']),
+         expand('{}/{{gene}}/{{sample}}/reads.isoforms.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['txt']),
          # expand('{}/{{gene}}/{{sample}}/reads.plotly.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf', 'cigars.txt']),
 
          # expand('{}/{{gene}}/{{sample}}/transcripts.disentanglement.txt'.format(genes_d),   gene=config['genes'], sample=config['samples']),
@@ -306,19 +307,22 @@ rule find_canonical_exon_iteratively:
     shell:
         '{input.script} -p {input.paf} -op {params.out_prefix}'
 
-
-
-# rule cluster_paf:
-#     input:
-#         paf    = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.paf'.format(genes_d),
-#         script = config['exec']['clustering'],
-#         transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
-#     output:
-#         cluster      = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster'.format(genes_d),
-#         raw_coverage = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster.raw_coverage.txt'.format(genes_d),
-#         log          = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster.log'.format(genes_d),
-#         coverage_pdf = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster.coverage.pdf'.format(genes_d),
-#     conda:
-#         'freddie.env'
-#     shell:
-#         '{input.script} -p {input.paf} -o {output.cluster} -t {input.transcripts_tsv}'
+rule find_isoforms:
+    input:
+        matrix = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.data'.format(genes_d),
+        script = config['exec']['find_isoforms'],
+    output:
+        log        = '{}/{{gene}}/{{sample}}/reads.isoforms.txt'.format(genes_d),
+    params:
+        out_prefix ='{}/{{gene}}/{{sample}}/reads.isoforms'.format(genes_d),
+    # conda:
+    #     'freddie.env'
+    shell:
+        'PATH_OLD=$PATH; '
+        'LD_LIBRARY_PATH_OLD=$LD_LIBRARY_PATH; '
+        'export GUROBI_HOME="/home/borabi/docs/gurobi/gurobi811/linux64"; '
+        'export PATH="${{GUROBI_HOME}}/bin:${{PATH}}"; '
+        'export LD_LIBRARY_PATH="${{GUROBI_HOME}}/lib:${{LD_LIBRARY_PATH}}"; '
+        'python2.7 {input.script} -d {input.matrix} -op {params.out_prefix}; '
+        'export PATH=$PATH_OLD; '
+        'export LD_LIBRARY_PATH=$LD_LIBRARY_PATH_OLD; '
