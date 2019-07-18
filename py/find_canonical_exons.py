@@ -21,7 +21,7 @@ def parse_args():
                         required=True,
                         help="Path to TSV file")
     parser.add_argument("-op",
-                        "--out_prefix",
+                        "--out-prefix",
                         type=str,
                         required=True,
                         help="Output prefix that does not include .EXT part")

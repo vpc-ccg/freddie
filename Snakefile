@@ -46,8 +46,8 @@ rule all:
          # expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster'.format(genes_d),   gene=config['genes'], sample=config['samples']),
          # expand('{}/{{gene}}/{{sample}}/reads.canonical_exons.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf', 'txt']),
          # expand('{}/{{gene}}/{{sample}}/reads.disentanglement.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf']),
-         # expand('{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf', 'data']),
-         expand('{}/{{gene}}/{{sample}}/reads.isoforms.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['txt']),
+         expand('{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf', 'data', 'tsv']),
+         expand('{}/{{gene}}/{{sample}}/reads.isoforms.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['tsv']),
          # expand('{}/{{gene}}/{{sample}}/reads.plotly.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf', 'cigars.txt']),
 
          # expand('{}/{{gene}}/{{sample}}/transcripts.disentanglement.txt'.format(genes_d),   gene=config['genes'], sample=config['samples']),
@@ -300,6 +300,7 @@ rule find_canonical_exon_iteratively:
     output:
         disentanglement = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.pdf'.format(genes_d),
         matrix          = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.data'.format(genes_d),
+        exons           = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.tsv'.format(genes_d),
     params:
         out_prefix='{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons'.format(genes_d),
     conda:
@@ -312,9 +313,11 @@ rule find_isoforms:
         matrix = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.data'.format(genes_d),
         script = config['exec']['find_isoforms'],
     output:
-        log        = '{}/{{gene}}/{{sample}}/reads.isoforms.txt'.format(genes_d),
+        log        = '{}/{{gene}}/{{sample}}/reads.isoforms.tsv'.format(genes_d),
     params:
         out_prefix ='{}/{{gene}}/{{sample}}/reads.isoforms'.format(genes_d),
+    threads:
+        32
     # conda:
     #     'freddie.env'
     shell:
@@ -323,6 +326,8 @@ rule find_isoforms:
         'export GUROBI_HOME="/home/borabi/docs/gurobi/gurobi811/linux64"; '
         'export PATH="${{GUROBI_HOME}}/bin:${{PATH}}"; '
         'export LD_LIBRARY_PATH="${{GUROBI_HOME}}/lib:${{LD_LIBRARY_PATH}}"; '
-        'python2.7 {input.script} -d {input.matrix} -op {params.out_prefix}; '
+        'my_hostname=$(hostname); '
+        'export GRB_LICENSE_FILE="/home/borabi/gurobi-licences/"$my_hostname".lic"; '
+        'python2.7 {input.script} -d {input.matrix} -op {params.out_prefix} -t {threads}; '
         'export PATH=$PATH_OLD; '
         'export LD_LIBRARY_PATH=$LD_LIBRARY_PATH_OLD; '

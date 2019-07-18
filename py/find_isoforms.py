@@ -14,6 +14,11 @@ def parse_args():
                         type=int,
                         default=3,
                         help="Number of isoform clusters")
+    parser.add_argument("-t",
+                        "--threads",
+                        type=int,
+                        default=8,
+                        help="Number of threads to use")
     parser.add_argument("-op",
                         "--out_prefix",
                         type=str,
@@ -31,12 +36,13 @@ def find_segment_read(M,i):
             max_i = j
     return((min_i,max_i))
 
-def run_ILP(data_matrix, K, out_file):
+def run_ILP(data_matrix, K, threads, out_file):
     INPUT_1 = read_matrix(data_matrix=data_matrix)
     N = len(INPUT_1)
     M = len(INPUT_1[0])
 
     ILP_ISOFORMS = Model('isoforms_v1')
+    ILP_ISOFORMS.setParam(GRB.Param.Threads, threads)
 
     # Decision variables
     # R2I[i,k] = 1 if read i assigned to isoform j
@@ -142,15 +148,13 @@ def run_ILP(data_matrix, K, out_file):
         VAL_R2I[i] = {}
         for k in range(0,K):
             VAL_R2I[i][k] = int(R2I[i][k].getAttr(GRB.Attr.X))
-    out_file.write('Isoforms')
     VAL_E2I = {}
     for k in range(0,K):
-        VAL_E2I[k] = [int(E2I[j][k].getAttr(GRB.Attr.X)) for j in range(0,M)]
-        out_file.write('===\n')
-        out_file.write(str(k)+': '+str(VAL_E2I[k]) + '\n')
+        # VAL_E2I[k] = [int(E2I[j][k].getAttr(GRB.Attr.X)) for j in range(0,M)]
+        # out_file.write(str(k)+':'+ str(VAL_E2I[k]) + '\n')
         for i in range(0,N):
             if VAL_R2I[i][k] == 1:
-                out_file.write('\t'+str(i)+'\t'+str(INPUT_1[i]))
+                out_file.write(str(i)+'\t'+str(k))
                 out_file.write('\n')
 
 def read_matrix(data_matrix):
@@ -163,8 +167,8 @@ def read_matrix(data_matrix):
 def main():
     args = parse_args()
 
-    out_file = open('{}.txt'.format(args.out_prefix), 'w+')
-    run_ILP(data_matrix=args.data_matrix, K=args.isoform_count, out_file=out_file)
+    out_file = open('{}.tsv'.format(args.out_prefix), 'w+')
+    run_ILP(data_matrix=args.data_matrix, K=args.isoform_count, threads=args.threads, out_file=out_file)
     out_file.close()
 
 

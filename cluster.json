@@ -6,6 +6,7 @@
         "n" : 1,
         "c" : 1,
         "name" : "freddie_snake",
+        "p" : "long,big-mem,normal,express",
     },
     "freddie_make" :
     {
@@ -76,5 +77,13 @@
     "dot_to_pdf" :
     {
         "name" : "dot_to_pdf",
+    },
+    "find_isoforms" :
+    {
+        "c" : 32,
+        "name" : "find_isoforms",
+        "mem" : "128GB",
+        "time" : "23:59:00",
+        "p" : "big-mem",
     },
 }
