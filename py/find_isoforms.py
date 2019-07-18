@@ -28,6 +28,8 @@ def parse_args():
     return args
 
 def find_segment_read(M,i):
+    if not 1 in M:
+        return(0,len(M))
     min_i = -1
     for j in range(len(M[i])):
         if min_i==-1 and M[i][j]==1:
