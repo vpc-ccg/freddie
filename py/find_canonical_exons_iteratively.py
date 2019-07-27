@@ -81,7 +81,7 @@ def read_paf(paf, range_len=15):
         for (t_start, t_end),(_, _) in intervals:
             for i in range(t_start, t_end):
                 pos_to_rid[i].add(rid)
-    return pos_to_rid,rid_to_intervals
+    return pos_to_rid,rid_to_intervals,read_name_to_id
 
 def get_banded_matrix(N, pos_to_rid, intervals):
     height = N
@@ -271,7 +271,11 @@ def output_read_unaligned_values(exons, binary_matrix, rid_to_intervals, outpath
 def main():
     args = parse_args()
 
-    pos_to_rid,rid_to_intervals = read_paf(args.paf)
+    pos_to_rid,rid_to_intervals,read_name_to_id = read_paf(args.paf)
+    out_file=open('{}.read_names.txt'.format(args.out_prefix), 'w+')
+    for _,name in sorted([(rid,name) for name,rid in read_name_to_id.items()]):
+        print(name,file=out_file)
+    out_file.close()
     N = len(rid_to_intervals)
     M = len(pos_to_rid)
     coverage = [len(rids)/N for rids in pos_to_rid]
