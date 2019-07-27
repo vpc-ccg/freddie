@@ -42,15 +42,9 @@ nanosim_read_analysis_files=[
 
 rule all:
     input:
-         # expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.split_pdf.done'.format(genes_d),   gene=config['genes'], sample=config['samples']),
-         # expand('{}/{{gene}}/{{sample}}/simulated_reads.oriented.cluster'.format(genes_d),   gene=config['genes'], sample=config['samples']),
-         # expand('{}/{{gene}}/{{sample}}/reads.canonical_exons.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf', 'txt']),
-         # expand('{}/{{gene}}/{{sample}}/reads.disentanglement.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf']),
-         expand('{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf', 'data', 'tsv']),
-         expand('{}/{{gene}}/{{sample}}/reads.isoforms.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['tsv']),
-         # expand('{}/{{gene}}/{{sample}}/reads.plotly.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf', 'cigars.txt']),
-
-         # expand('{}/{{gene}}/{{sample}}/transcripts.disentanglement.txt'.format(genes_d),   gene=config['genes'], sample=config['samples']),
+         # expand('{}/{{gene}}/{{sample}}/{{data_file}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], data_file=gene_data),
+         expand('{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['data', 'tsv', 'zeros_unaligned.tsv']),
+         # expand('{}/{{gene}}/{{sample}}/reads.isoforms_plots.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf']),
 
 rule freddie_make:
     input:
@@ -295,10 +289,11 @@ rule disentangle:
 
 rule find_canonical_exon_iteratively:
     input:
-        paf                 = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
-        script              = config['exec']['find_canonical_exon_iteratively'],
+        paf    = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
+        script = config['exec']['find_canonical_exon_iteratively'],
     output:
-        disentanglement = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.pdf'.format(genes_d),
+        # disentanglement = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.pdf'.format(genes_d),
+        zeros_unaligned = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.zeros_unaligned.tsv'.format(genes_d),
         matrix          = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.data'.format(genes_d),
         exons           = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.tsv'.format(genes_d),
     params:
@@ -331,3 +326,19 @@ rule find_isoforms:
         'python2.7 {input.script} -d {input.matrix} -op {params.out_prefix} -t {threads}; '
         'export PATH=$PATH_OLD; '
         'export LD_LIBRARY_PATH=$LD_LIBRARY_PATH_OLD; '
+
+rule plot_isoforms:
+    input:
+        paf      = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
+        isoforms = '{}/{{gene}}/{{sample}}/reads.isoforms.tsv'.format(genes_d),
+        exons    = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.tsv'.format(genes_d),
+        matrix   = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.data'.format(genes_d),
+        script   = config['exec']['plot_isoforms'],
+    output:
+        isoform_plot = '{}/{{gene}}/{{sample}}/reads.isoforms_plots.pdf'.format(genes_d),
+    params:
+        out_prefix='{}/{{gene}}/{{sample}}/reads.isoforms_plots'.format(genes_d),
+    conda:
+        'freddie.env'
+    shell:
+        '{input.script} -p {input.paf} -i {input.isoforms} -e {input.exons} -d {input.matrix} -op {params.out_prefix}'

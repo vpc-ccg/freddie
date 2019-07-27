@@ -206,19 +206,7 @@ def plot_data(data, coverage, rid_to_intervals, final_exon_intervals, final_matr
     ax0.plot(range(len(coverage)), [N*c for c in coverage], color='green', zorder=50)
     plt.savefig('{}.pdf'.format(out_prefix))
 
-def output_last_matrix(data, N, pos_to_rid, outpath, range_len):
-    final_exon_intervals = list()
-    eid = 0
-    while eid < len(data[-1]):
-        s,e = data[-1][eid]['interval']
-        while e-s and eid + 1< len(data[-1]) < range_len:
-            eid += 1
-            _,e = data[-1][eid]['interval']
-        final_exon_intervals.append([s,e])
-        eid += 1
-    final_matrix = get_banded_matrix(N=N, pos_to_rid=pos_to_rid, intervals=final_exon_intervals)
-    binary_matrix = binarize_matrix(final_matrix)
-
+def output_last_matrix(binary_matrix, outpath,):
     out_file = open(outpath, 'w+')
     for i in range(len(binary_matrix)):
         for j in range(len(binary_matrix[i])):
@@ -242,6 +230,42 @@ def output_final_exons(final_exon_intervals, outpath):
     out_file = open(outpath, 'w+')
     for s,e in final_exon_intervals:
         print('{}\t{}'.format(s,e), file=out_file)
+    out_file.close()
+
+def get_stretches_of_zeros(l):
+    result = list()
+    s = len(l)
+    for i,v in enumerate(l):
+        if l[i] == 1:
+            if s < i-1:
+                result.append([s,i])
+            s = i
+    return result
+
+def get_unaligned(exons, zeros, r_intervals):
+    result = list()
+    for left_eid,right_eid in zeros:
+        left_exon, right_exon = exons[left_eid], exons[right_eid]
+        for idx,((t_start,_), (_,q_end)) in enumerate(r_intervals):
+            if t_start > left_exon[1]:
+                break
+            left_end = q_end
+        for (_,t_end), (q_start,_) in r_intervals[idx:]:
+            right_start = q_start
+            if t_end > right_exon[0]:
+                break
+        read_dist = right_start - left_end
+        result.append(read_dist)
+    return result
+
+def output_read_unaligned_values(exons, binary_matrix, rid_to_intervals, outpath):
+    out_file = open(outpath, 'w+')
+    for rid,r_intervals in rid_to_intervals.items():
+        zeros = get_stretches_of_zeros(l=binary_matrix[rid])
+        unaligned = get_unaligned(exons=exons, zeros=zeros, r_intervals=r_intervals)
+        for (i,j),l in zip(zeros, unaligned):
+            print('{}-{}-{}'.format(i,j,abs(l)), end='\t', file=out_file)
+        print(file=out_file)
     out_file.close()
 
 def main():
@@ -307,8 +331,10 @@ def main():
     final_exon_intervals = merge_exons(exons=data[-1], range_len=range_len)
     output_final_exons(final_exon_intervals=final_exon_intervals, outpath='{}.tsv'.format(args.out_prefix))
     final_matrix = get_banded_matrix(N=N, pos_to_rid=pos_to_rid, intervals=final_exon_intervals)
-    output_last_matrix(data=data, N=N, pos_to_rid=pos_to_rid, range_len=range_len, outpath='{}.data'.format(args.out_prefix))
-    plot_data(data=data, coverage=coverage, rid_to_intervals=rid_to_intervals, final_matrix=final_matrix, final_exon_intervals=final_exon_intervals, N=N, M=M, range_len=range_len, out_prefix=args.out_prefix)
+    binary_matrix = binarize_matrix(final_matrix)
+    output_last_matrix(binary_matrix=binary_matrix, outpath='{}.data'.format(args.out_prefix))
+    output_read_unaligned_values(exons=final_exon_intervals, binary_matrix=binary_matrix, rid_to_intervals=rid_to_intervals, outpath='{}.zeros_unaligned.tsv'.format(args.out_prefix))
+    # plot_data(data=data, coverage=coverage, rid_to_intervals=rid_to_intervals, final_matrix=final_matrix, final_exon_intervals=final_exon_intervals, N=N, M=M, range_len=range_len, out_prefix=args.out_prefix)
 
 
 
