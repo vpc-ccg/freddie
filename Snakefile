@@ -43,8 +43,9 @@ nanosim_read_analysis_files=[
 rule all:
     input:
          # expand('{}/{{gene}}/{{sample}}/{{data_file}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], data_file=gene_data),
+         expand('{}/{{gene}}/{{sample}}/reads.isoforms.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['tsv']),
          expand('{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['data', 'tsv', 'zeros_unaligned.tsv']),
-         # expand('{}/{{gene}}/{{sample}}/reads.isoforms_plots.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf']),
+         expand('{}/{{gene}}/{{sample}}/reads.isoforms_plots.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf']),
 
 rule freddie_make:
     input:
@@ -305,12 +306,19 @@ rule find_canonical_exon_iteratively:
 
 rule find_isoforms:
     input:
-        matrix = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.data'.format(genes_d),
-        script = config['exec']['find_isoforms'],
+        matrix          = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.data'.format(genes_d),
+        script          = config['exec']['find_isoforms'],
+        exons           = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.tsv'.format(genes_d),
+        unaligned_gaps  = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.tsv'.format(genes_d),
+        zeros_unaligned = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.zeros_unaligned.tsv'.format(genes_d),
     output:
-        log        = '{}/{{gene}}/{{sample}}/reads.isoforms.tsv'.format(genes_d),
+        log             = '{}/{{gene}}/{{sample}}/reads.isoforms.tsv'.format(genes_d),
     params:
-        out_prefix ='{}/{{gene}}/{{sample}}/reads.isoforms'.format(genes_d),
+        out_prefix      ='{}/{{gene}}/{{sample}}/reads.isoforms'.format(genes_d),
+        k               = 20,
+        e               = 0.2,
+        order_isoforms  =True,
+        timeout         =15,
     threads:
         32
     # conda:
@@ -323,7 +331,7 @@ rule find_isoforms:
         'export LD_LIBRARY_PATH="${{GUROBI_HOME}}/lib:${{LD_LIBRARY_PATH}}"; '
         'my_hostname=$(hostname); '
         'export GRB_LICENSE_FILE="/home/borabi/gurobi-licences/"$my_hostname".lic"; '
-        'python2.7 {input.script} -d {input.matrix} -op {params.out_prefix} -t {threads}; '
+        'python2.7 {input.script} -k {params.k} -d {input.matrix} -op {params.out_prefix} -t {threads} -et {input.exons} -ug {input.zeros_unaligned} -e {params.e} -irp {params.order_isoforms} -to {params.timeout}; '
         'export PATH=$PATH_OLD; '
         'export LD_LIBRARY_PATH=$LD_LIBRARY_PATH_OLD; '
 
