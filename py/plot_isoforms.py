@@ -18,11 +18,6 @@ def parse_args():
                         type=str,
                         required=True,
                         help="Path to TSV file of canonical exon intervals")
-    parser.add_argument("-d",
-                        "--data-matrix",
-                        type=str,
-                        required=True,
-                        help="Path to TXT file of reads binary vectors")
     parser.add_argument("-i",
                         "--isoforms",
                         type=str,
@@ -89,14 +84,15 @@ def read_paf(paf, range_len=15):
                 pos_to_rid[i].add(rid)
     return pos_to_rid,rid_to_intervals
 
-def plot_isoforms(exons, pos_to_rid, rid_to_intervals, isoform_to_rids, matrix, isoforms, out_prefix):
-    L = len(isoform_to_rids)
+def plot_isoforms(exons, pos_to_rid, rid_to_intervals, matrix, iid_to_isoform, iid_to_rids, out_prefix):
+    L = len(iid_to_isoform)
     fig, axes = plt.subplots(L, 1, sharex='col', sharey='row', figsize=(30,8*(L)), squeeze=False)
     cmap_ins = plt.get_cmap('gnuplot2_r')
     norm_ins = mpl.colors.Normalize(vmin=10, vmax=800)
     fig.suptitle('L = {} N = {}'.format(L, len(set.union(*pos_to_rid))))
-    for (isoform_id,rids),isoform in zip(isoform_to_rids.items(),isoforms):
-        ax0 = axes[isoform_id][0]
+    for ax0,(iid,rids) in zip(axes,iid_to_rids.items()):
+        isoform = iid_to_isoform[iid]
+        ax0 = ax0[0]
         N = len(rids)
         ax0.set_title('N = {}'.format(N))
         coverage = [len(pos_rids&rids) for pos_rids in pos_to_rid]
@@ -118,8 +114,8 @@ def plot_isoforms(exons, pos_to_rid, rid_to_intervals, isoform_to_rids, matrix, 
         for read_count,rid in enumerate(rids):
             h = top-step*read_count
             # plot read mistakes
-            for eid,in_iso in enumerate(isoform):
-                if in_iso and matrix[rid][eid] == 0:
+            for eid in range(len(exons)):
+                if matrix[rid][eid] == 'X':
                     eid_to_mistakes[eid]+=1
                     ax0.scatter(x=mean(exons[eid]), y=h, s=0.5, marker='2', color='red')
             # Plot full read alignments
@@ -145,34 +141,21 @@ def plot_isoforms(exons, pos_to_rid, rid_to_intervals, isoform_to_rids, matrix, 
     plt.savefig('{}.pdf'.format(out_prefix))
 
 def read_isoforms(isoforms):
-    isoform_to_rids = dict()
+    iid_to_rids = dict()
+    iid_to_isoform = dict()
+    matrix = dict()
+    iid = -1
     for line in open(isoforms):
         line = line.rstrip().split('\t')
-        rid        = int(line[0])
-        isoform_id = int(line[1])
-
-        if not isoform_id in isoform_to_rids:
-            isoform_to_rids[isoform_id] = set()
-        isoform_to_rids[isoform_id].add(rid)
-    return isoform_to_rids
-
-def read_matrix(matrix_txt):
-    rids_to_exons = list()
-    for line in open(matrix_txt):
-        line = line.rstrip()
-        rids_to_exons.append([x == '1' for x in line])
-        print(len(rids_to_exons[-1]))
-    return rids_to_exons
-
-def get_isoforms(isoform_to_rids, matrix):
-    M = len(matrix[0])
-    isoforms = [[False for _ in range(M)] for _ in range(len(isoform_to_rids))]
-    for isoform_id,rids in isoform_to_rids.items():
-        print(rids)
-        for rid in rids:
-            for eid in range(M):
-                isoforms[isoform_id][eid] |=  matrix[rid][eid]
-    return isoforms
+        if line[0][0] == '#':
+            iid                 = int(line[0][1:])
+            iid_to_rids[iid]    = set()
+            iid_to_isoform[iid] = [x == '1' for x in line[1]]
+            continue
+        rid         = int(line[0])
+        matrix[rid] = [i.split('(')[0] for i in line[2:]]
+        iid_to_rids[iid].add(rid)
+    return matrix,iid_to_rids,iid_to_isoform
 
 def read_exons(exons_tsv):
     exons = list()
@@ -186,12 +169,9 @@ def main():
     args = parse_args()
 
     exons = read_exons(exons_tsv=args.exons)
-    print('Exons len:', len(exons))
-    matrix = read_matrix(matrix_txt=args.data_matrix)
     pos_to_rid,rid_to_intervals = read_paf(paf=args.paf)
-    isoform_to_rids = read_isoforms(isoforms=args.isoforms)
-    isoforms = get_isoforms(isoform_to_rids=isoform_to_rids, matrix=matrix)
-    plot_isoforms(exons=exons, pos_to_rid=pos_to_rid, matrix=matrix,rid_to_intervals=rid_to_intervals, isoforms=isoforms, isoform_to_rids=isoform_to_rids, out_prefix=args.out_prefix)
+    matrix, iid_to_rids,iid_to_isoform = read_isoforms(isoforms=args.isoforms)
+    plot_isoforms(exons=exons, pos_to_rid=pos_to_rid,rid_to_intervals=rid_to_intervals, iid_to_isoform=iid_to_isoform, matrix=matrix, iid_to_rids=iid_to_rids, out_prefix=args.out_prefix)
 
 if __name__ == "__main__":
     main()

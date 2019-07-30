@@ -44,7 +44,7 @@ rule all:
     input:
          # expand('{}/{{gene}}/{{sample}}/{{data_file}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], data_file=gene_data),
          expand('{}/{{gene}}/{{sample}}/reads.isoforms.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['tsv']),
-         expand('{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['data', 'tsv', 'zeros_unaligned.tsv']),
+         # expand('{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['data', 'tsv', 'zeros_unaligned.tsv']),
          expand('{}/{{gene}}/{{sample}}/reads.isoforms_plots.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf']),
 
 rule freddie_make:
@@ -312,10 +312,10 @@ rule find_isoforms:
         unaligned_gaps  = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.tsv'.format(genes_d),
         zeros_unaligned = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.zeros_unaligned.tsv'.format(genes_d),
     output:
-        log             = '{}/{{gene}}/{{sample}}/reads.isoforms.tsv'.format(genes_d),
+        isoforms        = '{}/{{gene}}/{{sample}}/reads.isoforms.tsv'.format(genes_d),
     params:
         out_prefix      ='{}/{{gene}}/{{sample}}/reads.isoforms'.format(genes_d),
-        k               = 20,
+        k               = 10,
         e               = 0.2,
         order_isoforms  =True,
         timeout         =15,
@@ -340,7 +340,6 @@ rule plot_isoforms:
         paf      = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
         isoforms = '{}/{{gene}}/{{sample}}/reads.isoforms.tsv'.format(genes_d),
         exons    = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.tsv'.format(genes_d),
-        matrix   = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.data'.format(genes_d),
         script   = config['exec']['plot_isoforms'],
     output:
         isoform_plot = '{}/{{gene}}/{{sample}}/reads.isoforms_plots.pdf'.format(genes_d),
@@ -349,4 +348,4 @@ rule plot_isoforms:
     conda:
         'freddie.env'
     shell:
-        '{input.script} -p {input.paf} -i {input.isoforms} -e {input.exons} -d {input.matrix} -op {params.out_prefix}'
+        '{input.script} -p {input.paf} -i {input.isoforms} -e {input.exons} -op {params.out_prefix}'
