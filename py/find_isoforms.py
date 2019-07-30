@@ -25,6 +25,11 @@ def parse_args():
                         type=str,
                         default=None,
                         help="Path to unligned gap tuples per read")
+    parser.add_argument("-uo",
+                        "--unligned-offset",
+                        type=int,
+                        default=10,
+                        help="Slack +- value for exons and the unaligned gaps")
     parser.add_argument("-e",
                         "--epsilon",
                         type=float,
@@ -56,7 +61,7 @@ def parse_args():
                         required=True,
                         help="Output prefix that does not include .EXT part")
     args = parser.parse_args()
-    return args
+    return(args)
 
 def read_matrix(data_matrix):
     result = list()
@@ -83,7 +88,7 @@ def read_exon_length(exons_file,nb_exons):
     assert len(result) == nb_exons, 'Number of lines should be equal to number of exons ({})'.format(nb_exons)
     for e in result:
         assert e>0, 'All exons must be positive'
-    return result
+    return(result)
 
 # TO WRITE
 def read_unaligned_gaps(gaps_file,nb_reads,nb_exons):
@@ -111,14 +116,16 @@ def find_segment_read(M,i):
             max_i = j
     return((min_i,max_i))
 
-def run_ILP(data_matrix, exons_length, unaligned_gaps, K, epsilon, incomp_read_pairs, timeout, order_isoforms, threads, out_file, log_file_name):
+def run_ILP(data_matrix, exons_length, unaligned_gaps, K, epsilon, unligned_offset, incomp_read_pairs, timeout, order_isoforms, threads, out_prefix):
     INPUT_1 = read_matrix(data_matrix) # 0/1/2 matrix
     N = len(INPUT_1)
     M = len(INPUT_1[0])
-    # log_file.write('# Input Matrix has '+str(N)+' rows(reads) and '+str(M)+' columns(canonical exons)\n')
+
+    log_file = open(out_prefix+'.log','w')
+
+    log_file.write('# Input Matrix has '+str(N)+' rows(reads) and '+str(M)+' columns(canonical exons)\n')
 
     INPUT_2 = read_exon_length(exons_length,M)
-    print INPUT_2
     # Format: INPUT_2[j] = length of exon j
     MAX_ISOFORM_LG = sum(INPUT_2)
 
@@ -126,10 +133,12 @@ def run_ILP(data_matrix, exons_length, unaligned_gaps, K, epsilon, incomp_read_p
     # Format: INPUT_3 = list of (i,j1,j2,l) where l = length of unaligned gap of read i between exons j1 and j2
 
     if not os.path.isfile(incomp_read_pairs):
-        # log_file.write('# Empty list of incompatible read pairs\n')
+        log_file.write('# Empty list of incompatible read pairs\n')
         INPUT_4 = list()
     else:
         INPUT_4 = read_incomp_read_pairs(incomp_read_pairs,N)
+
+    OFFSET = unligned_offset
 
     # Variables directly based on the input
     # I[i,j] = 1 if INPUT_1[i][j]==1 and 0 if INPUT_1[i][j]==0 or 2
@@ -149,7 +158,7 @@ def run_ILP(data_matrix, exons_length, unaligned_gaps, K, epsilon, incomp_read_p
                 UB_NB_CORRECTIONS += 1
             else:
                 C[i][j]   = 0
-    # log_file.write('# Maximum number of 0 that can be corrected into 1: '+str(UB_NB_CORRECTIONS)+'\n')
+    log_file.write('# Maximum number of 0 that can be corrected into 1: '+str(UB_NB_CORRECTIONS)+'\n')
 
     # List of incompatible pairs of reads
     INCOMP_READ_PAIRS_AUX1 = list()
@@ -163,17 +172,18 @@ def run_ILP(data_matrix, exons_length, unaligned_gaps, K, epsilon, incomp_read_p
                     break
             if incomp:
                 INCOMP_READ_PAIRS_AUX1.append((i1,i2))
-    # log_file.write('# Number of incompatible read pairs due to a (1,2) pattern: '+str(len(INCOMP_READ_PAIRS_AUX1))+'\n')
+    log_file.write('# Number of incompatible read pairs due to a (1,2) pattern: '+str(len(INCOMP_READ_PAIRS_AUX1))+'\n')
+
     # From the list of provided incompatible pairs
     INCOMP_READ_PAIRS_AUX2 = list()
     for (i1,i2) in INPUT_4:
         if i1>i2:
             i1,i2=i2,i1
         INCOMP_READ_PAIRS_AUX2.append((i1,i2))
-    # log_file.write('# Number of incompatible read pairs provided as input: '+str(len(INCOMP_READ_PAIRS_AUX2))+'\n')
+    log_file.write('# Number of incompatible read pairs provided as input: '+str(len(INCOMP_READ_PAIRS_AUX2))+'\n')
     # Fusing both lists
     INCOMP_READ_PAIRS = list(set(INCOMP_READ_PAIRS_AUX1+INCOMP_READ_PAIRS_AUX2))
-    # log_file.write('# Toral number of incompatible read pairs: '+str(len(INCOMP_READ_PAIRS))+'\n')
+    log_file.write('# Toral number of incompatible read pairs: '+str(len(INCOMP_READ_PAIRS))+'\n')
 
 
     # ILP model
@@ -222,14 +232,12 @@ def run_ILP(data_matrix, exons_length, unaligned_gaps, K, epsilon, incomp_read_p
     GAPI_C1 = {} # Constraint fixing the value of GAPI
     GAPR_C1 = {} # Constraint ensuring that the unaligned gap is not too short for every isoform and gap
     GAPR_C2 = {} # Constraint ensuring that the unaligned gap is not too long for every isoform and gap
-    print MAX_ISOFORM_LG
-    print epsilon
     for (i,j1,j2,l) in INPUT_3:
         for k in range(0,K):
-            GAPI[(j1,j2,k)]      = ILP_ISOFORMS.addVar(vtype=GRB.INTEGER,name='GAPI['+str(j1)+','+str(j2)+','+str(k)+')]')
-            GAPI_C1[(j1,j2,k)]   = ILP_ISOFORMS.addLConstr(GAPI[(j1,j2,k)],GRB.EQUAL,quicksum(E2I[j][k]*INPUT_2[j] for j in range(j1+1,j2)),'GAPI_C1['+str(j1)+','+str(j2)+','+str(k)+')]')
-            GAPR_C1[(i,j1,j2,k)] = ILP_ISOFORMS.addLConstr((1.0-epsilon)*GAPI[(j1,j2,k)]-((1-R2I[i][k])*MAX_ISOFORM_LG),GRB.LESS_EQUAL,l,'GAPR_C1['+str(i)+','+str(j1)+','+str(j2)+','+str(k)+')]')
-            GAPR_C2[(i,j1,j2,k)] = ILP_ISOFORMS.addLConstr((1.0+epsilon)*GAPI[(j1,j2,k)]+((1-R2I[i][k])*MAX_ISOFORM_LG),GRB.GREATER_EQUAL,l,'GAPR_C2['+str(i)+','+str(j1)+','+str(j2)+','+str(k)+')]')
+            GAPI[(j1,j2,k)]      = ILP_ISOFORMS.addVar(vtype=GRB.INTEGER,name='GAPI[('+str(j1)+','+str(j2)+','+str(k)+')]')
+            GAPI_C1[(j1,j2,k)]   = ILP_ISOFORMS.addLConstr(GAPI[(j1,j2,k)],GRB.EQUAL,quicksum(E2I[j][k]*INPUT_2[j] for j in range(j1+1,j2)),'GAPI_C1[('+str(j1)+','+str(j2)+','+str(k)+')]')
+            GAPR_C1[(i,j1,j2,k)] = ILP_ISOFORMS.addLConstr((1.0-epsilon)*GAPI[(j1,j2,k)]-OFFSET-((1-R2I[i][k])*MAX_ISOFORM_LG),GRB.LESS_EQUAL,l,'GAPR_C1[('+str(i)+','+str(j1)+','+str(j2)+','+str(k)+')]')
+            GAPR_C2[(i,j1,j2,k)] = ILP_ISOFORMS.addLConstr((1.0+epsilon)*GAPI[(j1,j2,k)]+OFFSET+((1-R2I[i][k])*MAX_ISOFORM_LG),GRB.GREATER_EQUAL,l,'GAPR_C2[('+str(i)+','+str(j1)+','+str(j2)+','+str(k)+')]')
             # GAPR_C1[(i,j1,j2,k)] = ILP_ISOFORMS.addLConstr((1.0-epsilon)*(GAPI[(j1,j2,k)]-(1)*MAX_ISOFORM_LG),GRB.LESS_EQUAL,l,'GAPR_C1['+str(i)+','+str(j1)+','+str(j2)+','+str(k)+')]')
             # GAPR_C2[(i,j1,j2,k)] = ILP_ISOFORMS.addLConstr((1.0+epsilon)*(GAPI[(j1,j2,k)]+(1)*MAX_ISOFORM_LG),GRB.GREATER_EQUAL,l,'GAPR_C2['+str(i)+','+str(j1)+','+str(j2)+','+str(k)+')]')
 
@@ -273,45 +281,48 @@ def run_ILP(data_matrix, exons_length, unaligned_gaps, K, epsilon, incomp_read_p
                    OBJ_SUM.addTerms(1.0, OBJ[i][j][k])
     ILP_ISOFORMS.setObjective(OBJ_SUM,GRB.MINIMIZE)
 
-    ILP_ISOFORMS.write('TMP.lp')
+    ILP_ISOFORMS.write(out_prefix+'.lp')
+
     # Optimization
     #ILP_ISOFORMS.Params.PoolSearchMode=2
     #ILP_ISOFORMS.Params.PoolSolutions=5
-    ILP_ISOFORMS.setParam('LogFile', log_file_name)
+    ILP_ISOFORMS.setParam('LogFile', out_prefix+'.glog')
     ILP_ISOFORMS.setParam('TimeLimit', timeout*60)
     ILP_ISOFORMS.optimize()
 
-    # Solution
-    VAL_R2I = {}
-    for i in range(0,N):
-        VAL_R2I[i] = {}
-        for k in range(0,K):
-            VAL_R2I[i][k] = int(R2I[i][k].getAttr(GRB.Attr.X))
-    VAL_E2I = {}
-    for k in range(0,K):
-        # VAL_E2I[k] = [int(E2I[j][k].getAttr(GRB.Attr.X)) for j in range(0,M)]
-        # out_file.write(str(k)+':'+ str(VAL_E2I[k]) + '\n')
-        for i in range(0,N):
-            if VAL_R2I[i][k] == 1:
-                out_file.write(str(i)+'\t'+str(k))
-                out_file.write('\n')
+    ILP_ISOFORMS_STATUS = ILP_ISOFORMS.Status
+
+    if ILP_ISOFORMS_STATUS == GRB.Status.INF_OR_UNBD or \
+       ILP_ISOFORMS_STATUS == GRB.Status.INFEASIBLE or \
+       ILP_ISOFORMS_STATUS == GRB.Status.UNBOUNDED:
+        log_file.write(' The model can not be solved because it is infeasible or unbounded\n')
+        ILP_ISOFORMS.computeIIS()
+        ILP_ISOFORMS.write(out_prefix+'.ilp')
+        ilp_file.close()
+
+    elif ILP_ISOFORMS_STATUS != GRB.Status.OPTIMAL:
+        log_file.write('The model was stopped with status '+str(ILP_PDG_STATUS))
+
+    else:
+        ILP_ISOFORMS.write(out_prefix+'.mst')
+
+    log_file.close()
+    #return((VAL_R2I,VAL_E2I))
 
 def main():
     args = parse_args()
-    print args
-    out_file = open('{}.tsv'.format(args.out_prefix), 'w+')
+    #out_file = open('{}.tsv'.format(args.out_prefix), 'w+')
     run_ILP(data_matrix       = args.data_matrix,
             exons_length      = args.exons_tsv,
             unaligned_gaps    = args.unaligned_gaps,
             K                 = args.isoform_count,
             epsilon           = args.epsilon,
+            unligned_offset   = args.unligned_offset,
             incomp_read_pairs = args.incomp_read_pairs,
             order_isoforms    = args.order_isoforms,
             timeout           = args.timeout,
             threads           = args.threads,
-            out_file          = out_file,
-            log_file_name     = args.out_prefix+'.glog')
-    out_file.close()
+            out_prefix        = args.out_prefix)
 
 
 if __name__ == "__main__":
