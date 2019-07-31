@@ -94,6 +94,8 @@ def plot_isoforms(exons, pos_to_rid, rid_to_intervals, matrix, iid_to_isoform, i
         isoform = iid_to_isoform[iid]
         ax0 = ax0[0]
         N = len(rids)
+        if N == 0:
+            continue
         ax0.set_title('N = {}'.format(N))
         coverage = [len(pos_rids&rids) for pos_rids in pos_to_rid]
         ax0.plot(range(len(coverage)), coverage, color='green', zorder=50)

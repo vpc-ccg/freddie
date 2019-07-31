@@ -9,6 +9,8 @@ from scipy.signal import find_peaks
 from scipy.cluster import hierarchy
 from os import remove
 
+MIN_READS_ABS = 20
+MIN_READS_PRC = 0.25
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Cluster aligned reads into isoforms")
@@ -125,9 +127,9 @@ def find_exons(pos_to_rid, interval, rids, range_len=15):
         x.append(i)
         y_rmved.append(len(j_rids - i_rids))
         y_added.append(len(i_rids - j_rids))
-    peaks_rmv, _ = find_peaks(y_rmved, height =max(N*0.025,10), distance=range_len)
+    peaks_rmv, _ = find_peaks(y_rmved, height =max(N*MIN_READS_PRC,MIN_READS_ABS), distance=range_len)
     peaks_rmv    = [max(0,i+interval[0]-range_len//2) for i in peaks_rmv]
-    peaks_add, _ = find_peaks(y_added, height =max(N*0.025,10), distance=range_len)
+    peaks_add, _ = find_peaks(y_added, height =max(N*MIN_READS_PRC,MIN_READS_ABS), distance=range_len)
     peaks_add    = [max(0,i+interval[0]-range_len//2) for i in peaks_add]
 
     peaks = merge_peaks(peaks_a=peaks_rmv, peaks_b=peaks_add, range_len=range_len)
@@ -172,7 +174,7 @@ def plot_data(data, coverage, rid_to_intervals, final_exon_intervals, final_matr
     reads_order = hierarchy.leaves_list(hierarchy.linkage(final_matrix, 'single'))
 
     cmap_ins = plt.get_cmap('gnuplot2_r')
-    norm_ins = mpl.colors.Normalize(vmin=10, vmax=800)
+    norm_ins = mpl.colors.Normalize(vmin=MIN_READS_ABS, vmax=800)
     top    = N*0.95
     bottom = N*0.05
     step = (top-bottom)/N
@@ -305,7 +307,7 @@ def main():
             else:
                 hetero_rids = get_hetero_rids(matrix[:,eid])
             exon['h_cnt'] = len(hetero_rids)
-            exon['fixed'] = len(hetero_rids) <= min(N*0.10,25) or exon['interval'][1]-exon['interval'][0] < range_len
+            exon['fixed'] = len(hetero_rids) <= min(N*MIN_READS_PRC*0.5,MIN_READS_ABS) or exon['interval'][1]-exon['interval'][0] < range_len
             if not exon['fixed']:
                 print(exon['interval'])
                 x, y_rmved, y_added, new_exon_intervals = find_exons(pos_to_rid=pos_to_rid, interval=exon['interval'].copy(), rids=hetero_rids)
@@ -338,7 +340,7 @@ def main():
     binary_matrix = binarize_matrix(final_matrix)
     output_last_matrix(binary_matrix=binary_matrix, outpath='{}.data'.format(args.out_prefix))
     output_read_unaligned_values(exons=final_exon_intervals, binary_matrix=binary_matrix, rid_to_intervals=rid_to_intervals, outpath='{}.zeros_unaligned.tsv'.format(args.out_prefix))
-    # plot_data(data=data, coverage=coverage, rid_to_intervals=rid_to_intervals, final_matrix=final_matrix, final_exon_intervals=final_exon_intervals, N=N, M=M, range_len=range_len, out_prefix=args.out_prefix)
+    plot_data(data=data, coverage=coverage, rid_to_intervals=rid_to_intervals, final_matrix=final_matrix, final_exon_intervals=final_exon_intervals, N=N, M=M, range_len=range_len, out_prefix=args.out_prefix)
 
 
 

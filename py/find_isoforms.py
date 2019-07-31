@@ -209,8 +209,9 @@ def run_ILP(data_matrix, exons_length, unaligned_gaps, K, epsilon, unligned_offs
 
     # Implied variable: canonical exons presence in isoforms
     # E2I[j,k]    = 1 if canonical exon j is in isoform k
+    # E2IR[j,k,i] = 1 if read i assigned to isoform k AND exon j covered by read i
     # Auxiliary variable
-    # E2IR[j,k,i] = R2I[i,k] AND I[i,j] (read i assigned to isoform k and exon j covered by read i)
+    # E2IR[j,k,i] = R2I[i,k] AND I[i,j]
     # E2I[j,k]    = max over  all reads i of E2IR[j,k,i]
     E2I     = {}
     E2I_C1  = {}
@@ -234,7 +235,7 @@ def run_ILP(data_matrix, exons_length, unaligned_gaps, K, epsilon, unligned_offs
     # If read i is assigned to isoform k, and INPUT_3[i] contains (j1,j2,l), and
     # the sum of the lengths of exons in isoform k between exons j1 and j2 is L
     # the (1-epsilon)L <= l <= (1+epsilon)L
-    GAPI    = {} # GAPI[(j1,j2,k)] = sum of the length of the exons between exons j1 and j2 (exlusively) in isoform k
+    GAPI    = {} # GAPI[(j1,j2,k)] = sum of the length of the exons between exons j1 and j2 (exclusively) in isoform k
     GAPI_C1 = {} # Constraint fixing the value of GAPI
     GAPR_C1 = {} # Constraint ensuring that the unaligned gap is not too short for every isoform and gap
     GAPR_C2 = {} # Constraint ensuring that the unaligned gap is not too long for every isoform and gap
@@ -269,23 +270,18 @@ def run_ILP(data_matrix, exons_length, unaligned_gaps, K, epsilon, unligned_offs
     # OBJ[i][j][k] = 1 if read i assigned to isoform k and exon j in isoform k, 0 otherwise
     OBJ    = {}
     OBJ_C1 = {}
+    OBJ_SUM = LinExpr(0.0)
     for i in RIDS:
         OBJ[i]    = {}
         OBJ_C1[i] = {}
         for j in range(0,M):
-            OBJ[i][j]    = {}
-            OBJ_C1[i][j] = {}
-            for k in range(0,K):
-                OBJ[i][j][k]    = ILP_ISOFORMS.addVar(vtype=GRB.BINARY,name='OBJ['+str(i)+']['+str(j)+']['+str(k)+']')
-                OBJ_C1[i][j][k] = ILP_ISOFORMS.addGenConstrAnd(OBJ[i][j][k],[R2I[i][k],E2I[j][k]],'OBJ_C1['+str(i)+']['+str(j)+']['+str(k)+']')
-
-    # Objective function
-    OBJ_SUM = LinExpr(0.0)
-    for i in RIDS:
-       for j in range(0,M):
-           if (1-I[i][j])*C[i][j]==1: # 1 if exon j not in read i but can be added to it
-               for k in range(0,K):
-                   OBJ_SUM.addTerms(1.0, OBJ[i][j][k])
+            if (1-I[i][j])*C[i][j]==1: # 1 if exon j not in read i but can be added to it
+                OBJ[i][j]    = {}
+                OBJ_C1[i][j] = {}
+                for k in range(0,K):
+                    OBJ[i][j][k]    = ILP_ISOFORMS.addVar(vtype=GRB.BINARY,name='OBJ['+str(i)+']['+str(j)+']['+str(k)+']')
+                    OBJ_C1[i][j][k] = ILP_ISOFORMS.addGenConstrAnd(OBJ[i][j][k],[R2I[i][k],E2I[j][k]],'OBJ_C1['+str(i)+']['+str(j)+']['+str(k)+']')
+                    OBJ_SUM.addTerms(1.0, OBJ[i][j][k])
     ILP_ISOFORMS.setObjective(OBJ_SUM,GRB.MINIMIZE)
 
     ILP_ISOFORMS.write(out_prefix+'.lp')
@@ -305,7 +301,6 @@ def run_ILP(data_matrix, exons_length, unaligned_gaps, K, epsilon, unligned_offs
         log_file.write(' The model can not be solved because it is infeasible or unbounded\n')
         ILP_ISOFORMS.computeIIS()
         ILP_ISOFORMS.write(out_prefix+'.ilp')
-        ilp_file.close()
 
     elif ILP_ISOFORMS_STATUS != GRB.Status.OPTIMAL:
         log_file.write('The model was stopped with status '+str(ILP_PDG_STATUS))

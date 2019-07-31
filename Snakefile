@@ -293,7 +293,7 @@ rule find_canonical_exon_iteratively:
         paf    = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
         script = config['exec']['find_canonical_exon_iteratively'],
     output:
-        # disentanglement = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.pdf'.format(genes_d),
+        disentanglement = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.pdf'.format(genes_d),
         zeros_unaligned = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.zeros_unaligned.tsv'.format(genes_d),
         matrix          = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.data'.format(genes_d),
         exons           = '{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.tsv'.format(genes_d),
