@@ -317,23 +317,19 @@ rule find_isoforms:
         out_prefix      ='{}/{{gene}}/{{sample}}/reads.isoforms'.format(genes_d),
         k               = 10,
         e               = 0.2,
-        order_isoforms  =True,
-        timeout         =15,
+        order_isoforms  = True,
+        timeout         = 15,
+        garbage_isoform = True,
     threads:
         32
-    # conda:
-    #     'freddie.env'
+    conda:
+        'freddie.env'
     shell:
-        'PATH_OLD=$PATH; '
-        'LD_LIBRARY_PATH_OLD=$LD_LIBRARY_PATH; '
-        'export GUROBI_HOME="/home/borabi/docs/gurobi/gurobi811/linux64"; '
-        'export PATH="${{GUROBI_HOME}}/bin:${{PATH}}"; '
-        'export LD_LIBRARY_PATH="${{GUROBI_HOME}}/lib:${{LD_LIBRARY_PATH}}"; '
-        'my_hostname=$(hostname); '
-        'export GRB_LICENSE_FILE="/home/borabi/gurobi-licences/"$my_hostname".lic"; '
-        'python2.7 {input.script} -k {params.k} -d {input.matrix} -op {params.out_prefix} -t {threads} -et {input.exons} -ug {input.zeros_unaligned} -e {params.e} -irp {params.order_isoforms} -to {params.timeout}; '
-        'export PATH=$PATH_OLD; '
-        'export LD_LIBRARY_PATH=$LD_LIBRARY_PATH_OLD; '
+        'export GRB_LICENSE_FILE="/home/borabi/gurobi-licences/$(hostname).lic"; '
+        '{input.script} -d {input.matrix} -et {input.exons} '
+        ' -k {params.k} --garbage-isoform {params.garbage_isoform} -irp {params.order_isoforms}'
+        ' -e {params.e} -ug {input.zeros_unaligned}'
+        ' -t {threads} -to {params.timeout} -op {params.out_prefix}'
 
 rule plot_isoforms:
     input:
