@@ -40,6 +40,11 @@ def parse_args():
                         type=str,
                         default='./incomp_read_pairs',
                         help="Path to file of read pairs that can not originate from the same isoform")
+    parser.add_argument("-garb",
+                        "--garbage-isoform",
+                        type=bool,
+                        default=False,
+                        help="Include in the model a garbage isoform collecting unassigned reads"),
     parser.add_argument("-oi",
                         "--order-isoforms",
                         type=bool,
@@ -120,33 +125,48 @@ def find_segment_read(M,i):
             max_i = j
     return((min_i,max_i))
 
-def run_ILP(data_matrix, exons_length, unaligned_gaps, K, epsilon, unligned_offset, incomp_read_pairs, timeout, order_isoforms, threads, out_prefix):
-    INPUT_1 = read_matrix(data_matrix) # 0/1/2 matrix
-    RIDS = list(INPUT_1.keys())
-    RIDS_SET = set(RIDS)
-    N = len(RIDS)
-    M = len(INPUT_1[RIDS[0]])
+def garbage_cost(C):
+    # Sum of 1, i.e. exons that could be corrected, minus 0.5 to make sure that assigning anyway
+    # to an isoform with maximum correction score is not at least as good as assigning to the garbage isoform    
+    return(sum(C.values())-0.5)
+# TO DO: think about better ways to define the cost to assign to the garbagte isoform
 
+
+def run_ILP(data_matrix, exons_length, unaligned_gaps, K, epsilon, unaligned_offset, incomp_read_pairs, garbage_isoform, order_isoforms, timeout, threads, out_prefix):
+    
     log_file = open(out_prefix+'.log','w')
 
+    # Reading data and parameters ------------------------------------------------------
+    # Reading the data matrix
+    INPUT_1  = read_matrix(data_matrix) # 0/1/2 matrix
+    RIDS     = list(INPUT_1.keys())
+    RIDS_SET = set(RIDS)
+
+    N = len(RIDS)
+    M = len(INPUT_1[RIDS[0]])
     log_file.write('# Input Matrix has '+str(N)+' rows(reads) and '+str(M)+' columns(canonical exons)\n')
 
+    # Reading the canonical exons length
     INPUT_2 = read_exon_length(exons_length,M)
     # Format: INPUT_2[j] = length of exon j
     MAX_ISOFORM_LG = sum(INPUT_2)
 
+    # Reading the unaligned gaps information
     INPUT_3 = read_unaligned_gaps(gaps_file=unaligned_gaps,nb_exons=M,valid_rids=RIDS_SET)
     # Format: INPUT_3 = dict (i ==> list of gaps) with gap being (j1,j2,l) where l = length of unaligned gap of read i between exons j1 and j2
 
+    # Reading the list of incompatible read pairs that can not be assigned to the same isoform
     if not os.path.isfile(incomp_read_pairs):
         log_file.write('# Empty list of incompatible read pairs\n')
         INPUT_4 = list()
     else:
         INPUT_4 = read_incomp_read_pairs(pairs_file=incomp_read_pairs,INPUT_1=INPUT_1)
 
-    OFFSET = unligned_offset
+    # Offset for constraints on unaligned gaps
+    OFFSET = unaligned_offset
 
-    # Variables directly based on the input
+    # Variables directly based on the input ------------------------------------------------------
+    
     # I[i,j] = 1 if INPUT_1[i][j]==1 and 0 if INPUT_1[i][j]==0 or 2
     # C[i,j] = 1 if exon j is between the first and last exons (included) covered by read i and is not in read i but can be turned into a 1
     I = {}
@@ -180,7 +200,7 @@ def run_ILP(data_matrix, exons_length, unaligned_gaps, K, epsilon, unligned_offs
                 INCOMP_READ_PAIRS_AUX1.append((i1,i2))
     log_file.write('# Number of incompatible read pairs due to a (1,2) pattern: '+str(len(INCOMP_READ_PAIRS_AUX1))+'\n')
 
-    # From the list of provided incompatible pairs
+    # Reading the list of provided incompatible pairs
     INCOMP_READ_PAIRS_AUX2 = list()
     for (i1,i2) in INPUT_4:
         if i1>i2:
@@ -191,9 +211,17 @@ def run_ILP(data_matrix, exons_length, unaligned_gaps, K, epsilon, unligned_offs
     INCOMP_READ_PAIRS = list(set(INCOMP_READ_PAIRS_AUX1+INCOMP_READ_PAIRS_AUX2))
     log_file.write('# Toral number of incompatible read pairs: '+str(len(INCOMP_READ_PAIRS))+'\n')
 
-
-    # ILP model
-    ILP_ISOFORMS = Model('isoforms_v3_25072019')
+    # Assigning a cost to the assignment of reads to the garbage isoform if any
+    if garbage_isoform:
+        GARBAGE_COST = {}
+        ISOFORM_INDEX_START = 1 # The garbage isoform is isoform 0
+        for i in RIDS:
+            GARBAGE_COST[i] = garbage_cost(C[i])
+    else:
+        ISOFORM_INDEX_START = 0
+            
+    # ILP model ------------------------------------------------------
+    ILP_ISOFORMS = Model('isoforms_v4_31072019')
     ILP_ISOFORMS.setParam(GRB.Param.Threads, threads)
 
     # Decision variables
@@ -206,7 +234,7 @@ def run_ILP(data_matrix, exons_length, unaligned_gaps, K, epsilon, unligned_offs
         for k in range(0,K):
             R2I[i][k] = ILP_ISOFORMS.addVar(vtype=GRB.BINARY,name='R2I['+str(i)+']['+str(k)+']')
         R2I_C1[i] = ILP_ISOFORMS.addLConstr(quicksum(R2I[i][k] for k in range(0,K)),GRB.EQUAL,1,'R2I_C1['+str(i)+']')
-
+        
     # Implied variable: canonical exons presence in isoforms
     # E2I[j,k]    = 1 if canonical exon j is in isoform k
     # E2IR[j,k,i] = 1 if read i assigned to isoform k AND exon j covered by read i
@@ -222,7 +250,7 @@ def run_ILP(data_matrix, exons_length, unaligned_gaps, K, epsilon, unligned_offs
         E2I_C1[j]  = {}
         E2IR[j]    = {}
         E2IR_C1[j] = {}
-        for k in range(0,K):
+        for k in range(ISOFORM_INDEX_START,K): # We do not assign exons for the garbage isoform if any
             E2I[j][k]     = ILP_ISOFORMS.addVar(vtype=GRB.BINARY,name='E2I['+str(j)+']['+str(k)+']')
             E2IR[j][k]    = {}
             E2IR_C1[j][k] = {}
@@ -230,6 +258,10 @@ def run_ILP(data_matrix, exons_length, unaligned_gaps, K, epsilon, unligned_offs
                 E2IR[j][k][i]    = ILP_ISOFORMS.addVar(vtype=GRB.BINARY,name='E2IR['+str(j)+']['+str(k)+']['+str(i)+']')
                 E2IR_C1[j][k][i] = ILP_ISOFORMS.addLConstr(E2IR[j][k][i],GRB.EQUAL,R2I[i][k]*I[i][j],'E2IR_C1['+str(j)+']['+str(k)+']['+str(i)+']')
             E2I_C1[j][k] = ILP_ISOFORMS.addGenConstrMax(E2I[j][k],[E2IR[j][k][i] for i in RIDS],0.0,'E2I_C1['+str(j)+']['+str(k)+']')
+        if garbage_isoform:
+            # No exon is assignd to the garbage isoform
+            E2I[j][0]    = ILP_ISOFORMS.addVar(vtype=GRB.BINARY,name='E2I['+str(j)+']['+str(0)+']')
+            E2I_C1[j][0] = ILP_ISOFORMS.addLConstr(E2I[j][0],GRB.Equal,0,'E2I_C1['+str(j)+']['+str(0)+']')
 
     # Adding constraints for unaligned gaps
     # If read i is assigned to isoform k, and INPUT_3[i] contains (j1,j2,l), and
@@ -241,33 +273,31 @@ def run_ILP(data_matrix, exons_length, unaligned_gaps, K, epsilon, unligned_offs
     GAPR_C2 = {} # Constraint ensuring that the unaligned gap is not too long for every isoform and gap
     for i in RIDS:
         for (j1,j2,l) in INPUT_3[i]:
-            for k in range(0,K):
+            for k in range(ISOFORM_INDEX_START,K): # No such constraint on the garbage isoform if any
                 GAPI[(j1,j2,k)]      = ILP_ISOFORMS.addVar(vtype=GRB.INTEGER,name='GAPI[('+str(j1)+','+str(j2)+','+str(k)+')]')
                 GAPI_C1[(j1,j2,k)]   = ILP_ISOFORMS.addLConstr(GAPI[(j1,j2,k)],GRB.EQUAL,quicksum(E2I[j][k]*INPUT_2[j] for j in range(j1+1,j2)),'GAPI_C1[('+str(j1)+','+str(j2)+','+str(k)+')]')
                 GAPR_C1[(i,j1,j2,k)] = ILP_ISOFORMS.addLConstr((1.0-epsilon)*GAPI[(j1,j2,k)]-OFFSET-((1-R2I[i][k])*MAX_ISOFORM_LG),GRB.LESS_EQUAL,l,'GAPR_C1[('+str(i)+','+str(j1)+','+str(j2)+','+str(k)+')]')
                 GAPR_C2[(i,j1,j2,k)] = ILP_ISOFORMS.addLConstr((1.0+epsilon)*GAPI[(j1,j2,k)]+OFFSET+((1-R2I[i][k])*MAX_ISOFORM_LG),GRB.GREATER_EQUAL,l,'GAPR_C2[('+str(i)+','+str(j1)+','+str(j2)+','+str(k)+')]')
-                # GAPR_C1[(i,j1,j2,k)] = ILP_ISOFORMS.addLConstr((1.0-epsilon)*(GAPI[(j1,j2,k)]-(1)*MAX_ISOFORM_LG),GRB.LESS_EQUAL,l,'GAPR_C1['+str(i)+','+str(j1)+','+str(j2)+','+str(k)+')]')
-                # GAPR_C2[(i,j1,j2,k)] = ILP_ISOFORMS.addLConstr((1.0+epsilon)*(GAPI[(j1,j2,k)]+(1)*MAX_ISOFORM_LG),GRB.GREATER_EQUAL,l,'GAPR_C2['+str(i)+','+str(j1)+','+str(j2)+','+str(k)+')]')
 
     # Adding constraints for incompatible read pairs
     INCOMP_READ_PAIRS_C1 = {}
     for (i1,i2) in INCOMP_READ_PAIRS:
-        for k in range(K):
+        for k in range(ISOFORM_INDEX_START,K): # Again, no such constraint on the garbage isoform if any
             INCOMP_READ_PAIRS_C1[(i1,i2,k)] = ILP_ISOFORMS.addLConstr(R2I[i1][k]+R2I[i2][k],GRB.LESS_EQUAL,1,'INCOMP_READ_PAIRS_C1[('+str(i1)+','+str(i2)+','+str(k)+')]')
 
-    # [OPTIONAL] Labeling strains by their exon content and forcing them to occur in increasing label order
+    # [OPTIONAL] Labeling non-garbage isoforms by their exon content and forcing them to occur in increasing label order
     if order_isoforms==1:
         LABEL_I    = {}
         LABEL_I_C1 = {}
         LABEL_I_C2 = {}
-        for k in range(0,K):
+        for k in range(ISOFORM_INDEX_START,K):
             LABEL_I[k]    = ILP_ISOFORMS.addVar(vtype=GRB.INTEGER,name='LABEL_I['+str(k)+']')
             LABEL_I_C1[k] = ILP_ISOFORMS.addLConstr(LABEL_I[k],GRB.EQUAL,quicksum(E2I[j][k]*(2**j) for j in range(0,M)),'LABEL_I_C1['+str(k)+']')
-            if k > 0:
+            if k > ISOFORM_INDEX_START:
                 LABEL_I_C2[k] = ILP_ISOFORMS.addLConstr(LABEL_I[k],GRB.LESS_EQUAL,LABEL_I[k-1]-0.1,'LABEL_I_C2['+str(k)+']')
 
     # Objective function
-    # OBJ[i][j][k] = 1 if read i assigned to isoform k and exon j in isoform k, 0 otherwise
+    # OBJ[i][j][k] = 1 if read i assigned to isoform k and exon j in isoform k, 0 otherwise (k non-garbage isoform)
     OBJ    = {}
     OBJ_C1 = {}
     OBJ_SUM = LinExpr(0.0)
@@ -278,10 +308,15 @@ def run_ILP(data_matrix, exons_length, unaligned_gaps, K, epsilon, unligned_offs
             if (1-I[i][j])*C[i][j]==1: # 1 if exon j not in read i but can be added to it
                 OBJ[i][j]    = {}
                 OBJ_C1[i][j] = {}
-                for k in range(0,K):
+                for k in range(ISOFORM_INDEX_START,K):
                     OBJ[i][j][k]    = ILP_ISOFORMS.addVar(vtype=GRB.BINARY,name='OBJ['+str(i)+']['+str(j)+']['+str(k)+']')
                     OBJ_C1[i][j][k] = ILP_ISOFORMS.addGenConstrAnd(OBJ[i][j][k],[R2I[i][k],E2I[j][k]],'OBJ_C1['+str(i)+']['+str(j)+']['+str(k)+']')
                     OBJ_SUM.addTerms(1.0, OBJ[i][j][k])
+    # We add the chosen cost for each isoform assigned to the garbage isoform if any    
+    if garbage_isoform:
+        for i in RIDS:
+            OBJ_SUM.addTerms(1.0*GARBAGE_COST[i], R2I[i][0])
+                    
     ILP_ISOFORMS.setObjective(OBJ_SUM,GRB.MINIMIZE)
 
     ILP_ISOFORMS.write(out_prefix+'.lp')
@@ -319,7 +354,7 @@ def run_ILP(data_matrix, exons_length, unaligned_gaps, K, epsilon, unligned_offs
                 if int(R2I[i][k].getAttr(GRB.Attr.X)) == 1:
                     VAL_I2R[k].add(i)
         VAL_RID_CORRECTED = dict()
-        for k in range(0,K):
+        for k in range(ISOFORM_INDEX_START,K):
             for i in VAL_I2R[k]:
                 VAL_RID_CORRECTED[i] = ['' for _ in range(M)]
                 for j in range(0,M):
@@ -329,6 +364,12 @@ def run_ILP(data_matrix, exons_length, unaligned_gaps, K, epsilon, unligned_offs
                         VAL_RID_CORRECTED[i][j] = 'X'
                     else:
                         VAL_RID_CORRECTED[i][j] = '0'
+        if garbage_isoform:
+             for i in VAL_I2R[k]:
+                VAL_RID_CORRECTED[i] = ['' for _ in range(M)]
+                for j in range(0,M):
+                    if C[i][j] == 1:
+                        VAL_RID_CORRECTED[i][j] = 'X'
             #
             # print i,[OBJ[i][j][k].getAttr(GRB.Attr.X) for j in range(0,M)]
             # print i,VAL_RID_CORRECTED[i]
@@ -343,7 +384,6 @@ def run_ILP(data_matrix, exons_length, unaligned_gaps, K, epsilon, unligned_offs
             outpath             = '{}.tsv'.format(out_prefix)
         )
     log_file.close()
-    #return((VAL_R2I,VAL_E2I))
 
 def output_isoform_clusters(clusters, matrix, isoforms, unaligned_gaps, rid_corrected_exons, exons_lengths, outpath):
     out_file = open(outpath, 'w+')
@@ -375,6 +415,7 @@ def main():
         epsilon           = args.epsilon,
         unligned_offset   = args.unligned_offset,
         incomp_read_pairs = args.incomp_read_pairs,
+        garbage_isoform   = args.garbage_isoform,
         order_isoforms    = args.order_isoforms,
         timeout           = args.timeout,
         threads           = args.threads,
