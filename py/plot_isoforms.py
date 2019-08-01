@@ -91,6 +91,7 @@ def plot_isoforms(exons, pos_to_rid, rid_to_intervals, matrix, iid_to_isoform, i
     norm_ins = mpl.colors.Normalize(vmin=10, vmax=800)
     fig.suptitle('L = {} N = {}'.format(L, len(set.union(*pos_to_rid))))
     for ax0,(iid,rids) in zip(axes,iid_to_rids.items()):
+        print('Plotting isoform {}'.format(iid, len(iid_to_rids)))
         isoform = iid_to_isoform[iid]
         ax0 = ax0[0]
         N = len(rids)
@@ -112,6 +113,8 @@ def plot_isoforms(exons, pos_to_rid, rid_to_intervals, matrix, iid_to_isoform, i
         # Plot the reads
         eid_to_mistakes = [0 for _ in exons]
         for read_count,rid in enumerate(rids):
+            if read_count%50 == 0:
+                print('Processing read {}/{}'.format(read_count, len(rids)))
             h = top-step*read_count
             # plot read mistakes
             for eid in range(len(exons)):

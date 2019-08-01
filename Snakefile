@@ -315,7 +315,7 @@ rule find_isoforms:
         isoforms        = '{}/{{gene}}/{{sample}}/reads.isoforms.tsv'.format(genes_d),
     params:
         out_prefix      ='{}/{{gene}}/{{sample}}/reads.isoforms'.format(genes_d),
-        k               = 10,
+        k               = 2,
         e               = 0.2,
         order_isoforms  = True,
         timeout         = 15,

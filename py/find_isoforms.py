@@ -129,7 +129,7 @@ def find_segment_read(M,i):
 def garbage_cost(C):
     # Sum of 1, i.e. exons that could be corrected, minus 0.5 to make sure that assigning anyway
     # to an isoform with maximum correction score is not at least as good as assigning to the garbage isoform
-    return(sum(C.values())-0.5)
+    return(max(sum(C.values())-0.5,1))
 # TO DO: think about better ways to define the cost to assign to the garbagte isoform
 
 
