@@ -105,8 +105,6 @@ def plot_isoforms(exons, pos_to_rid, rid_to_intervals, matrix, iid_to_isoform, i
         step = (top-bottom)/N
         # plot the isoform's exons and introns
         for eid,in_iso in enumerate(isoform):
-            print(eid,in_iso, len(isoform))
-            print(len(exons))
             if in_iso:
                 ax0.plot(exons[eid], [N,N], color='black', alpha=0.8, marker='o')
             else:

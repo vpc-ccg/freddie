@@ -10,7 +10,7 @@ from scipy.cluster import hierarchy
 from os import remove
 
 MIN_READS_ABS = 20
-MIN_READS_PRC = 0.25
+MIN_READS_PRC = 0.025
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Cluster aligned reads into isoforms")
