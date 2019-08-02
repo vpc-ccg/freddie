@@ -3,6 +3,8 @@ import os
 import argparse
 from gurobipy import *
 
+MIN_READS = 10
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Cluster aligned reads into isoforms")
@@ -469,9 +471,12 @@ def main():
         incomp_rids   = read_incomp_read_pairs(pairs_file=args.incomp_read_pairs, rids=matrix.keys())
 
     round = -1
+    iid_to_isoform     = dict()
+    iid_to_rids        = dict()
+    rid_to_corrections = dict()
     while True:
         round += 1
-        iid_to_isoform,iid_to_rids,rid_to_corrections = run_ILP(
+        iid_to_isoform_cur,iid_to_rids_cur,rid_to_corrections_cur = run_ILP(
             RIDS            = rids,
             MATRIX          = matrix,
             EXON_L          = exon_lens,
@@ -486,8 +491,19 @@ def main():
             threads         = args.threads,
             out_prefix      = '{}.{}'.format(args.out_prefix, round)
         )
-        if round >= 0:
+        if args.recycle_garbage == False or len(iid_to_isoform_cur) == 0 or round >= 0:
             break
+        rids = iid_to_rids_cur[0]
+        if len(rids) < MIN_READS:
+            break
+        for iid_cur in iid_to_isoform_cur.keys():
+            if iid_cur == 0:
+                continue
+            iid = len(iid_to_isoform)
+            assert not iid in iid_to_isoform, 'Isoform ids should be sequential'
+            iid_to_isoform[iid]     = iid_to_isoform_cur[iid_cur]
+            iid_to_rids[iid]        = iid_to_rids_cur[iid_cur]
+            rid_to_corrections[iid] = rid_to_corrections_cur[iid_cur]
     output_isoform_clusters(
         clusters            = iid_to_rids,
         isoforms            = iid_to_isoform,
