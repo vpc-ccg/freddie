@@ -327,7 +327,7 @@ rule find_isoforms:
     shell:
         'export GRB_LICENSE_FILE="/home/borabi/gurobi-licences/$(hostname).lic"; '
         '{input.script} -d {input.matrix} -et {input.exons} '
-        ' -k {params.k} --garbage-isoform {params.garbage_isoform} -irp {params.order_isoforms}'
+        ' -k {params.k} --garbage-isoform {params.garbage_isoform} -oi {params.order_isoforms}'
         ' -e {params.e} -ug {input.zeros_unaligned}'
         ' -t {threads} -to {params.timeout} -op {params.out_prefix}'
 
