@@ -317,9 +317,10 @@ rule find_isoforms:
         out_prefix      ='{}/{{gene}}/{{sample}}/reads.isoforms'.format(genes_d),
         k               = 2,
         e               = 0.2,
-        order_isoforms  = True,
+        order_isoforms  = 'True',
+        garbage_isoform = 'True',
+        recycle_garbage = 'True',
         timeout         = 15,
-        garbage_isoform = True,
     threads:
         32
     conda:
@@ -327,8 +328,8 @@ rule find_isoforms:
     shell:
         'export GRB_LICENSE_FILE="/home/borabi/gurobi-licences/$(hostname).lic"; '
         '{input.script} -d {input.matrix} -et {input.exons} '
-        ' -k {params.k} --garbage-isoform {params.garbage_isoform} -oi {params.order_isoforms}'
-        ' -e {params.e} -ug {input.zeros_unaligned}'
+        ' -k {params.k} --garbage-isoform {params.garbage_isoform} --recycle-garbage {params.recycle_garbage} '
+        ' -oi {params.order_isoforms} -e {params.e} -ug {input.zeros_unaligned}'
         ' -t {threads} -to {params.timeout} -op {params.out_prefix}'
 
 rule plot_isoforms:

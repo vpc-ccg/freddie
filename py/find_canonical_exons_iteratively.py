@@ -11,6 +11,7 @@ from os import remove
 
 MIN_READS_ABS = 20
 MIN_READS_PRC = 0.025
+EXON_THRESHOLD = 0.8
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Cluster aligned reads into isoforms")
@@ -152,7 +153,7 @@ def simpify_singal(matrix, low=0.1, high=0.9):
                 result[rid] += '2'
     return result
 
-def binarize_matrix(matrix, cutoff=0.5):
+def binarize_matrix(matrix, cutoff=EXON_THRESHOLD):
     return [[1 if matrix[i,j]>cutoff else 0 for j in range(matrix.shape[1])] for i in range(matrix.shape[0])]
 
 def plot_data(data, coverage, rid_to_intervals, final_exon_intervals, final_matrix, N, M, range_len, out_prefix):

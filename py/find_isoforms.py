@@ -4,8 +4,18 @@ import argparse
 from gurobipy import *
 
 MIN_READS = 10
+MAX_ROUND = 10
 
 def parse_args():
+    def str2bool(v):
+        if isinstance(v, bool):
+           return v
+        if v.lower() in ('yes', 'true', 't', 'y', '1'):
+            return True
+        elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+            return False
+        else:
+            raise argparse.ArgumentTypeError('Boolean value expected.')
     parser = argparse.ArgumentParser(
         description="Cluster aligned reads into isoforms")
     parser.add_argument("-d",
@@ -31,7 +41,7 @@ def parse_args():
     parser.add_argument("-uo",
                         "--unaligned-offset",
                         type=int,
-                        default=100,
+                        default=20,
                         help="Slack +- value for exons and the unaligned gaps")
     parser.add_argument("-e",
                         "--epsilon",
@@ -45,17 +55,23 @@ def parse_args():
                         help="Path to file of read pairs that can not originate from the same isoform")
     parser.add_argument("-garb",
                         "--garbage-isoform",
-                        type=bool,
+                        type=str2bool,
+                        nargs='?',
+                        const=True,
                         default=False,
                         help="Include in the model a garbage isoform collecting unassigned reads"),
     parser.add_argument("-rg",
                         "--recycle-garbage",
-                        type=bool,
+                        type=str2bool,
+                        nargs='?',
+                        const=True,
                         default=False,
                         help="Recycle garbage reads. To have effect -garb needs to be True."),
     parser.add_argument("-oi",
                         "--order-isoforms",
-                        type=bool,
+                        type=str2bool,
+                        nargs='?',
+                        const=True,
                         default=False,
                         help="Force to label isoforms and order them increasingly")
     parser.add_argument("-to",
@@ -144,7 +160,7 @@ def run_ILP(MATRIX, RIDS, GAP_L, EXON_L, K, EPSILON, OFFSET, INCOMP_RIDS, garbag
 
     # Variables directly based on the input ------------------------------------------------------
     # I[i,j] = 1 if MATRIX[i][j]==1 and 0 if MATRIX[i][j]==0 or 2
-    # C[i,j] = 1 if exon j is between the first and last exons (included) covered by read i and is not in read i but can be turned into a 1
+    # C[i,j] = 1 if exon j is between the first and last exons (inclusively) covered by read i and is not in read i but can be turned into a 1
     M = len(EXON_L)
     MAX_ISOFORM_LG = sum(EXON_L)
     I = dict()
@@ -156,13 +172,14 @@ def run_ILP(MATRIX, RIDS, GAP_L, EXON_L, K, EPSILON, OFFSET, INCOMP_RIDS, garbag
             I[i][j] = MATRIX[i][j]%2
         C[i] = dict()
         (min_i,max_i) = find_segment_read(I,i)
+        max_i = M
         for j in range(0,M):
-            if j>=min_i and j<=max_i and MATRIX[i][j]==0:
+            if min_i <= j <= max_i and MATRIX[i][j]==0:
                 C[i][j]   = 1
                 UB_NB_CORRECTIONS += 1
             else:
                 C[i][j]   = 0
-    log_file.write('# Maximum number of 0 that can be corrected into 1: {X}\n'.format(X=UB_NB_CORRECTIONS))
+    log_file.write('# Maximum number of 0\'s that can be corrected into 1: {X}\n'.format(X=UB_NB_CORRECTIONS))
 
     # List of incompatible pairs of reads
     INCOMP_READ_PAIRS_AUX1 = list()
@@ -352,7 +369,7 @@ def run_ILP(MATRIX, RIDS, GAP_L, EXON_L, K, EPSILON, OFFSET, INCOMP_RIDS, garbag
         OBJ[i]    = {}
         OBJ_C1[i] = {}
         for j in range(0,M):
-            if (1-I[i][j])*C[i][j]==1: # 1 if exon j not in read i but can be added to it
+            if C[i][j]==1: # 1 if exon j not in read i but can be added to it
                 OBJ[i][j]    = {}
                 OBJ_C1[i][j] = {}
                 for k in range(ISOFORM_INDEX_START,K):
@@ -373,7 +390,7 @@ def run_ILP(MATRIX, RIDS, GAP_L, EXON_L, K, EPSILON, OFFSET, INCOMP_RIDS, garbag
     if garbage_isoform:
         for i in RIDS:
             OBJ_SUM.addTerms(
-                coeffs = 1.0*GARBAGE_COST[i],
+                coeffs = 1.0,#*GARBAGE_COST[i],
                 vars   = R2I[i][0]
             )
 
@@ -399,12 +416,15 @@ def run_ILP(MATRIX, RIDS, GAP_L, EXON_L, K, EPSILON, OFFSET, INCOMP_RIDS, garbag
     if ILP_ISOFORMS_STATUS == GRB.Status.INF_OR_UNBD or \
            ILP_ISOFORMS_STATUS == GRB.Status.INFEASIBLE or \
            ILP_ISOFORMS_STATUS == GRB.Status.UNBOUNDED:
+        status = 'NO_SOLUTION'
         log_file.write(' The model can not be solved because it is infeasible or unbounded\n')
         ILP_ISOFORMS.computeIIS()
         ILP_ISOFORMS.write('{}.ilp'.format(out_prefix))
     elif ILP_ISOFORMS_STATUS != GRB.Status.OPTIMAL:
+        status = 'SUBOPTIMAL'
         log_file.write('The model was stopped with status {ILP_PDG_STATUS}'.format(ILP_PDG_STATUS))
     else:
+        status = 'OPTIMAL'
         # Writing the optimal solution to disk
         solution_file = open('{}.sol'.format(out_prefix), 'w+')
         for v in ILP_ISOFORMS.getVars():
@@ -424,19 +444,20 @@ def run_ILP(MATRIX, RIDS, GAP_L, EXON_L, K, EPSILON, OFFSET, INCOMP_RIDS, garbag
         # Read id to its exon corrections
         if garbage_isoform:
             for i in iid_to_rids[0]:
-                rid_to_corrections[i] = [str(int(MATRIX[i][j])) for j in range(M)]
+                rid_to_corrections[i] = [str(MATRIX[i][j]) for j in range(M)]
                 for j in range(M):
                     if C[i][j] == 1:
                         rid_to_corrections[i][j] = 'X'
         for k in range(ISOFORM_INDEX_START,K):
             for i in iid_to_rids[k]:
-                rid_to_corrections[i] = [str(int(MATRIX[i][j])) for j in range(M)]
+                rid_to_corrections[i] = [str(MATRIX[i][j]) for j in range(M)]
                 for j in range(0,M):
                     if C[i][j] == 1 and OBJ[i][j][k].getAttr(GRB.Attr.X) == 1:
                         rid_to_corrections[i][j] = 'X'
+
         assert sum([len(x) for x in iid_to_rids.values()])==len(RIDS), 'Some reads have been assigned to more than one isoform!'
     log_file.close()
-    return(iid_to_isoform,iid_to_rids,rid_to_corrections)
+    return(status,iid_to_isoform,iid_to_rids,rid_to_corrections)
 
 def output_isoform_clusters(clusters, matrix, isoforms, unaligned_gaps, rid_corrected_exons, exons_lengths, outpath):
     out_file = open(outpath, 'w+')
@@ -476,7 +497,7 @@ def main():
     rid_to_corrections = dict()
     while True:
         round += 1
-        iid_to_isoform_cur,iid_to_rids_cur,rid_to_corrections_cur = run_ILP(
+        status,iid_to_isoform_cur,iid_to_rids_cur,rid_to_corrections_cur = run_ILP(
             RIDS            = rids,
             MATRIX          = matrix,
             EXON_L          = exon_lens,
@@ -491,19 +512,22 @@ def main():
             threads         = args.threads,
             out_prefix      = '{}.{}'.format(args.out_prefix, round)
         )
-        if args.recycle_garbage == False or len(iid_to_isoform_cur) == 0 or round >= 0:
-            break
-        rids = iid_to_rids_cur[0]
-        if len(rids) < MIN_READS:
+        if status != 'OPTIMAL':
             break
         for iid_cur in iid_to_isoform_cur.keys():
-            if iid_cur == 0:
+            if args.recycle_garbage and iid_cur == 0:
                 continue
             iid = len(iid_to_isoform)
             assert not iid in iid_to_isoform, 'Isoform ids should be sequential'
-            iid_to_isoform[iid]     = iid_to_isoform_cur[iid_cur]
-            iid_to_rids[iid]        = iid_to_rids_cur[iid_cur]
-            rid_to_corrections[iid] = rid_to_corrections_cur[iid_cur]
+            iid_to_isoform[iid]     = list(iid_to_isoform_cur[iid_cur])
+            iid_to_rids[iid]        = list(iid_to_rids_cur[iid_cur])
+            for rid in iid_to_rids[iid]:
+                rid_to_corrections[rid] = rid_to_corrections_cur[rid]
+        if args.recycle_garbage == False or round >= MAX_ROUND:
+            break
+        rids = sorted(iid_to_rids_cur[0])
+        if len(rids) < MIN_READS:
+            break
     output_isoform_clusters(
         clusters            = iid_to_rids,
         isoforms            = iid_to_isoform,
