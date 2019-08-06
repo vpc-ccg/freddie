@@ -84,6 +84,5 @@
         "name" : "find_isoforms",
         "mem" : "128GB",
         "time" : "23:59:00",
-        "p" : "big-mem",
     },
 }

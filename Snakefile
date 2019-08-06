@@ -321,12 +321,13 @@ rule find_isoforms:
         garbage_isoform = 'True',
         recycle_garbage = 'True',
         timeout         = 15,
+        license         = config['gurobi_license'],
     threads:
         32
     conda:
         'freddie.env'
     shell:
-        'export GRB_LICENSE_FILE="/home/borabi/gurobi-licences/$(hostname).lic"; '
+        'export GRB_LICENSE_FILE={params.license}; '
         '{input.script} -d {input.matrix} -et {input.exons} '
         ' -k {params.k} --garbage-isoform {params.garbage_isoform} --recycle-garbage {params.recycle_garbage} '
         ' -oi {params.order_isoforms} -e {params.e} -ug {input.zeros_unaligned}'
