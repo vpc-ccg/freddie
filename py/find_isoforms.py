@@ -4,7 +4,7 @@ import argparse
 from gurobipy import *
 
 MIN_READS = 10
-MAX_ROUND = 10
+MAX_ROUND = 3
 
 def parse_args():
     def str2bool(v):
@@ -301,18 +301,17 @@ def run_ILP(MATRIX, RIDS, GAP_L, EXON_L, K, EPSILON, OFFSET, INCOMP_RIDS, garbag
     for i in RIDS:
         for (j1,j2,l) in GAP_L[i]:
             for k in range(ISOFORM_INDEX_START,K): # No such constraint on the garbage isoform if any
-                if (j1,j2,k) in GAPI:
-                    continue
-                GAPI[(j1,j2,k)]      = ILP_ISOFORMS.addVar(
-                    vtype = GRB.INTEGER,
-                    name  = 'GAPI[({j1},{j2},{k})]'.format(j1=j1,j2=j2,k=k)
-                )
-                GAPI_C1[(j1,j2,k)]   = ILP_ISOFORMS.addLConstr(
-                    lhs   = GAPI[(j1,j2,k)],
-                    sense = GRB.EQUAL,
-                    rhs   = quicksum(E2I[j][k]*EXON_L[j] for j in range(j1+1,j2)),
-                    name  = 'GAPI_C1[({j1},{j2},{k})]'.format(j1=j1,j2=j2,k=k)
-                )
+                if not (j1,j2,k) in GAPI:
+                    GAPI[(j1,j2,k)]      = ILP_ISOFORMS.addVar(
+                        vtype = GRB.INTEGER,
+                        name  = 'GAPI[({j1},{j2},{k})]'.format(j1=j1,j2=j2,k=k)
+                    )
+                    GAPI_C1[(j1,j2,k)]   = ILP_ISOFORMS.addLConstr(
+                        lhs   = GAPI[(j1,j2,k)],
+                        sense = GRB.EQUAL,
+                        rhs   = quicksum(E2I[j][k]*EXON_L[j] for j in range(j1+1,j2)),
+                        name  = 'GAPI_C1[({j1},{j2},{k})]'.format(j1=j1,j2=j2,k=k)
+                    )
                 GAPR_C1[(i,j1,j2,k)] = ILP_ISOFORMS.addLConstr(
                     lhs   = (1.0-EPSILON)*GAPI[(j1,j2,k)]-OFFSET-((1-R2I[i][k])*MAX_ISOFORM_LG),
                     sense = GRB.LESS_EQUAL,
@@ -413,6 +412,7 @@ def run_ILP(MATRIX, RIDS, GAP_L, EXON_L, K, EPSILON, OFFSET, INCOMP_RIDS, garbag
     iid_to_isoform = dict()
     iid_to_rids = dict()
     rid_to_corrections = dict()
+    rid_to_iid = dict()
     if ILP_ISOFORMS_STATUS == GRB.Status.INF_OR_UNBD or \
            ILP_ISOFORMS_STATUS == GRB.Status.INFEASIBLE or \
            ILP_ISOFORMS_STATUS == GRB.Status.UNBOUNDED:
@@ -434,13 +434,20 @@ def run_ILP(MATRIX, RIDS, GAP_L, EXON_L, K, EPSILON, OFFSET, INCOMP_RIDS, garbag
         if garbage_isoform:
             iid_to_isoform[0] = [0 for _ in range(0,M)]
         for k in range(ISOFORM_INDEX_START,K):
-            iid_to_isoform[k] = [int(E2I[j][k].getAttr(GRB.Attr.X)) for j in range(0,M)]
+            iid_to_isoform[k] = [int(E2I[j][k].getAttr(GRB.Attr.X)>0.9) for j in range(0,M)]
         # Isoform id to read ids set
+        for i in RIDS:
+            rid_to_iid[i] = set()
+            for k in range(0,K):
+                if R2I[i][k].getAttr(GRB.Attr.X) > 0.9:
+                    rid_to_iid[i].add(k)
+            assert len(rid_to_iid[i])==1, 'Read {} has been assigned to {} isoforms!'.format(i,rid_to_iid[i])
+            rid_to_iid[i] = next(iter(rid_to_iid[i]))
         for k in range(0,K):
             iid_to_rids[k] = set()
-            for i in RIDS:
-                if int(R2I[i][k].getAttr(GRB.Attr.X)) == 1:
-                    iid_to_rids[k].add(i)
+        for i in RIDS:
+            k = rid_to_iid[i]
+            iid_to_rids[k].add(i)
         # Read id to its exon corrections
         if garbage_isoform:
             for i in iid_to_rids[0]:
@@ -452,7 +459,7 @@ def run_ILP(MATRIX, RIDS, GAP_L, EXON_L, K, EPSILON, OFFSET, INCOMP_RIDS, garbag
             for i in iid_to_rids[k]:
                 rid_to_corrections[i] = [str(MATRIX[i][j]) for j in range(M)]
                 for j in range(0,M):
-                    if C[i][j] == 1 and OBJ[i][j][k].getAttr(GRB.Attr.X) == 1:
+                    if C[i][j] == 1 and OBJ[i][j][k].getAttr(GRB.Attr.X) > 0.9:
                         rid_to_corrections[i][j] = 'X'
 
         assert sum([len(x) for x in iid_to_rids.values()])==len(RIDS), 'Some reads have been assigned to more than one isoform!'
@@ -465,7 +472,7 @@ def output_isoform_clusters(clusters, matrix, isoforms, unaligned_gaps, rid_corr
         output = list()
         output.append(str(k))
         output.append(''.join([str(e) for e in isoforms[k]]))
-        output.extend([str(l) for l in exons_lengths])
+        output.extend([str(l*isoforms[k][eid]) for eid,l in enumerate(exons_lengths)])
         out_file.write('#{}\n'.format('\t'.join(output)))
         for i in rids:
             output = list()
