@@ -156,6 +156,7 @@ def garbage_cost(C):
 
 
 def run_ILP(MATRIX, RIDS, GAP_L, EXON_L, K, EPSILON, OFFSET, INCOMP_RIDS, garbage_isoform, order_isoforms, timeout, threads, out_prefix):
+    os.makedirs(out_prefix[:out_prefix.rfind('/')], exist_ok=True)
     log_file = open('{}.log'.format(out_prefix),'w+')
 
     # Variables directly based on the input ------------------------------------------------------
@@ -517,7 +518,7 @@ def main():
             order_isoforms  = args.order_isoforms,
             timeout         = args.timeout,
             threads         = args.threads,
-            out_prefix      = '{}.{}'.format(args.out_prefix, round)
+            out_prefix      = '{}.gurobi_logs/round.{}'.format(args.out_prefix, round)
         )
         if status != 'OPTIMAL':
             break
