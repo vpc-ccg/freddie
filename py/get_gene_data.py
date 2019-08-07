@@ -344,9 +344,9 @@ def output_reads(reads, gene_info, out_path):
     for read in reads:
         print('>{} {}:{}-{}'.format(read.qname, read.reference_name, read.reference_start, read.reference_end), file=out_file)
         if (gene_info['strand'] == '+'):
-            print(read.query, file=out_file)
+            print(read.query_sequence, file=out_file)
         elif (gene_info['strand'] == '-'):
-            print(Seq(read.query).reverse_complement(), file=out_file)
+            print(Seq(read.query_sequence).reverse_complement(), file=out_file)
         else:
             raise Exception('Unknown strand {}'.format(gene_info['strand']))
 
