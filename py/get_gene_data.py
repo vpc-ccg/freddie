@@ -1,9 +1,28 @@
 #!/usr/bin/env python3
 import argparse
+import os
+import sys
+import pyfaidx
+import pysam
+import numpy as np
+from Bio.Seq import Seq
 
+POLY_A_LEN = 100
+CIGAR = {
+    0 : 'MATCH',
+    1 : 'INS',
+    2 : 'DEL',
+    3 : 'REF_SKIP',
+    4 : 'SOFT_CLIP',
+    5 : 'HARD_CLIP',
+    6 : 'PAD',
+    7 : 'EQUAL',
+    8 : 'DIFF',
+    9 : 'BACK',
+}
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Cluster all barcodes with hamming distance thershold")
+        description="Output the given gene, its reads, and transcripts. Any intronic region will be omitted")
     parser.add_argument("-t",
                         "--gtf",
                         type=str,
@@ -29,7 +48,7 @@ def parse_args():
                         required=True,
                         help="Gene name or ENSEMBL ID")
     parser.add_argument("-p",
-                        "--pad-size",
+                        "--padding",
                         type=int,
                         default=1000,
                         help="Pad size before and after the gene")
@@ -50,8 +69,6 @@ def parse_args():
                         help="Output path for SAM file. Default is genome.sam under --output directory")
     args = parser.parse_args()
     return args
-
-import sys
 
 def query_yes_no(question, default=None):
     """Ask a yes/no question via input() and return their answer.
@@ -88,6 +105,15 @@ def query_yes_no(question, default=None):
                              "(or 'y' or 'n').\n")
 
 def get_coordinates_zero_based_end_exclusive(gene, gtf):
+    if (gene[0:4]=='ENSG'):
+        try:
+            int(gene[4:])
+            gene_gtf_id = 'gene_id "{}"'.format(gene)
+        except:
+            gene_gtf_id = 'gene_name "{}"'.format(gene)
+    else:
+        gene_gtf_id = 'gene_name "{}"'.format(gene)
+
     print('Getting {} coordinates from {}'.format(gene, gtf))
     gene_info = dict()
     found = False
@@ -97,7 +123,7 @@ def get_coordinates_zero_based_end_exclusive(gene, gtf):
         line = line.rstrip().split('\t')
         if (line[2] != 'gene'):
             continue
-        if (gene in line[8]):
+        if (gene_gtf_id in line[8]):
             if len(gene_info) == 0:
                 info = {x.split()[0] : x.split()[1].strip('"') for x in line[8].strip('; ').split(';')}
                 gene_info['gene_id']   = info['gene_id']
@@ -113,7 +139,7 @@ def get_coordinates_zero_based_end_exclusive(gene, gtf):
                 found = True
                 result = line
             else:
-                print("There are multiple gene records in GTF with GTF gene identifier {}. We will pick only the first one. Offending line:".format(gene))
+                print("There are multiple gene records in GTF with GTF gene identifier {}. We will pick only the first one. Offending line:".format(gene_gtf_id))
                 print(line)
     if found:
         print(result)
@@ -123,7 +149,6 @@ def get_coordinates_zero_based_end_exclusive(gene, gtf):
         exit(-1)
 
 def align_reads(minimap2, threads, genome, reads, sam):
-    import os
     if os.path.isfile(sam):
         if not query_yes_no(question='====\nSAM output file already exists "{}".\nDo you want to overwrite it?'.format(sam)):
             print('Existing..')
@@ -131,72 +156,103 @@ def align_reads(minimap2, threads, genome, reads, sam):
     print('Aligning reads using command:')
     cmd = "{} -aY -x splice -t {} --secondary=no {} {} > {}".format(minimap2, threads, genome, reads, sam)
     print(cmd)
-    import os
     os.system(cmd)
 
-def output_gene_reads(sam, gene_info, padding, out, filter_out):
+def get_exonic_positions(read, padding):
+    i = read.reference_start
+    for pos in range(i-padding,i):
+        yield pos
+    for (op,l) in read.cigartuples:
+        op = CIGAR[op]
+        if op in ['MATCH', 'DEL', 'EQUAL', 'DIFF']:
+            for pos in range(i,i+l):
+                yield pos
+            i += l
+        elif op in ['INS', 'SOFT_CLIP']:
+            continue
+        elif op in ['REF_SKIP']:
+            i += l
+            for pos in range(i-padding,i):
+                yield pos
+        else:
+            raise Exception('Unrecognized cigar op: {}'.format(op))
+    i = read.reference_end
+    for pos in range(i,i+padding):
+        yield pos
+
+def get_gene_reads(sam, gene_info, filter_out_path):
+    result = list()
     chr = gene_info['chr']
     strand = gene_info['strand']
-    start = gene_info['start']
-    end = gene_info['end']
-    print('Outputing {} reads of the gene at coordinates ({}) {}-{} and left padding of {}'.format(sam, chr, start, end, padding))
-    import pysam
-    from Bio.Seq import Seq
-    sam = pysam.AlignmentFile(sam)
-    if (sam.has_index()):
-        print('{} has an index. Using that'.format(sam))
-        sam = sam.fetch(contig=chr, start=max(start-padding,0), stop=end)
-    else:
-        print('{} has no index. Scanning the whole thing'.format(sam))
-        sam = sam.fetch(until_eof=True)
+    start = gene_info['padded_start']
+    end   = gene_info['padded_end']
+    print('Outputing {} reads of the gene at coordinates ({}) {}-{}'.format(sam, chr, start, end))
 
-    print('>{} {}:{}-{}'.format('UNALINED_READ', 'NO_CHROM', '-1', '-1'), file=out)
-    print('NNNNNNNNNNNNNNNNNNNNNNN', file=out)
+    sam = pysam.AlignmentFile(sam).fetch(contig=chr, start=start, stop=end)
+
+    filter_out = open(filter_out_path, 'w+')
     for idx,read in enumerate(sam):
-        if idx%500==0:
-            print('Read the {}-th read'.format(idx))
-        if (read.flag > 255 or read.mapping_quality < 60):
+        to_filter_out = False
+        if read.flag > 255:
+            to_filter_out = True
+        if read.mapping_quality < 60:
+            to_filter_out = True
+        if read.reference_name != chr:
+            to_filter_out = True
+        if read.reference_start < start:
+            to_filter_out = True
+        if read.reference_end > end:
+            to_filter_out = True
+        if to_filter_out:
             print('>{} {}:{}-{}'.format(read.qname, read.reference_name, read.reference_start, read.reference_end), file=filter_out)
             print(read.query, file=filter_out)
-            continue
-        if (read.reference_name == chr and read.reference_start > start-padding and read.reference_start < end):
-            print('>{} {}:{}-{}'.format(read.qname, read.reference_name, read.reference_start, read.reference_end), file=out)
-            if (strand == '+'):
-                print(read.query, file=out)
-            elif (strand == '-'):
-                print(Seq(read.query).reverse_complement(), file=out)
-            else:
-                print('strand_error:"{}"'.format(strand), file=out)
+        else:
+            result.append(read)
+        if (idx+1)%100==0:
+            print('Added {}/{} reads'.format(len(result),idx+1))
+    filter_out.close()
+    return result
 
-def output_gene(genome, gene_info, out):
-    gene_id = gene_info['gene_id']
-    gene_name = gene_info['gene_name']
-    chr = gene_info['chr']
-    strand = gene_info['strand']
-    start = gene_info['start']
-    end = gene_info['end']
+def output_gene(genome, gene_info, out_path, polyA_len=POLY_A_LEN):
+    gene_id              = gene_info['gene_id']
+    gene_name            = gene_info['gene_name']
+    chr                  = gene_info['chr']
+    strand               = gene_info['strand']
+    start                = gene_info['padded_start']
+    end                  = gene_info['padded_end']
+    is_exonic            = gene_info['is_exonic']
+    genomic_to_genic_pos = gene_info['genomic_to_genic_pos']
+    assert end-start == gene_info['padded_len']
     print('Outputting {} ({}) from reference {}'.format(gene_name, gene_id, genome))
-    import pyfaidx
-    from Bio.Seq import Seq
-    genome = pyfaidx.Fasta(genome)
-    print('>{}.{}'.format(gene_id, gene_name), file=out)
-    if (strand == '+'):
-        print(genome[chr][start:end], file=out)
-    elif (strand == '-'):
-        print(str(Seq(str(genome[chr][start:end])).reverse_complement()), file=out)
-    else:
-        print('strand_error:"{}"'.format(strand), file=out)
 
-def output_transcripts(genome, gtf, gene_info, out_tsv, out_seq):
+    is_exonic_keys,is_exonic_vals = [list(l) for l in zip(*sorted(is_exonic.items()))]
+    exon_idx_intervals = get_stretches_of_x(l=is_exonic_vals, x=True)
+    print(exon_idx_intervals)
+
+    genome = pyfaidx.Fasta(genome)
+    out_file = open(out_path, 'w+')
+    print('>{}.{}'.format(gene_id, gene_name), file=out_file)
+    if (strand == '+'):
+        for start,end in exon_idx_intervals:
+            print((start, end), (is_exonic_keys[start], is_exonic_keys[end-1]))
+            exon_seq = genome[chr][is_exonic_keys[start]:is_exonic_keys[end-1]]
+            print(exon_seq, file=out_file, end='')
+    elif (strand == '-'):
+        for start,end in reversed(exon_idx_intervals):
+            print((start, end), (is_exonic_keys[start], is_exonic_keys[end-1]))
+            exon_seq = str(Seq(str(genome[chr][is_exonic_keys[start]:is_exonic_keys[end-1]])).reverse_complement())
+            print(exon_seq, file=out_file, end='')
+    else:
+        raise Exception('strand_error:"{}"'.format(strand))
+    print('A'*polyA_len, file=out_file)
+    out_file.close()
+
+def get_transcript_info(gtf, gene_info):
     gene_id = gene_info['gene_id']
     gene_name = gene_info['gene_name']
     chr = gene_info['chr']
     strand = gene_info['strand']
-    gene_start = gene_info['start']
-    gene_end = gene_info['end']
     print('Outputting {} transcripts from {}'.format(gene_name, gtf))
-    import pyfaidx
-    from Bio.Seq import Seq
 
     transcript_infos = dict()
     for line in open(gtf):
@@ -224,26 +280,31 @@ def output_transcripts(genome, gtf, gene_info, out_tsv, out_seq):
             transcript_infos[key].append([exon_start, exon_end])
         else:
             transcript_infos[key] = [[exon_start, exon_end]]
+    return transcript_infos
 
-    genome = pyfaidx.Fasta(genome)
+def output_transcripts(genome, transcript_infos, gene_info, out_tsv_path, out_seq_path):
+    gene_id   = gene_info['gene_id']
+    gene_name = gene_info['gene_name']
+    chr       = gene_info['chr']
+    strand    = gene_info['strand']
+    genome    = pyfaidx.Fasta(genome)
+
+    out_tsv = open(out_tsv_path, 'w+')
+    out_seq = open(out_seq_path, 'w+')
     for tid, exons in transcript_infos.items():
-        if (strand == '+'):
-            sorted(exons)
-        else:
-            sorted(exons, reverse=True)
+        sorted(exons, reverse=strand=='-')
         print('{}\t{}\t{}\t'.format(tid, chr, strand), file=out_tsv, end='')
         print('>{}'.format(tid), file=out_seq)
         for start,end in exons:
             exon = str(genome[chr][start:end])
             assert(len(exon) == end-start)
             if (strand == '+'):
-                interval = '{}-{}'.format(start-gene_start, end-gene_start)
+                interval = '{}-{}'.format(gene_info['genomic_to_genic_pos'][start], gene_info['genomic_to_genic_pos'][end])
             elif (strand == '-'):
                 exon = str(Seq(exon).reverse_complement())
-                interval = '{}-{}'.format(gene_end-end, gene_end-start)
+                interval = '{}-{}'.format(gene_info['genomic_to_genic_pos'][end], gene_info['genomic_to_genic_pos'][start])
             else:
-                exon = 'err_strand'
-                interval = strand
+                raise Exception('Unknown strand {}'.format(strand))
             print('{}'.format(exon), file=out_seq, end='')
             if [start,end]==exons[-1]:
                 print('{}'.format(interval), file=out_tsv, end='')
@@ -251,27 +312,59 @@ def output_transcripts(genome, gtf, gene_info, out_tsv, out_seq):
                 print('{}'.format(interval), file=out_tsv, end=',')
         print('', file=out_tsv)
         print('', file=out_seq)
+    out_tsv.close()
+    out_seq.close()
+
+def get_chr_lens(fai):
+    result = dict()
+    for line in open(fai):
+        line = line.rstrip().split('\t')
+        assert len(line) == 5, 'FAI records each has 5 fields'
+        result[line[0]] = int(line[1])
+    return result
+
+def get_stretches_of_x(l, x):
+    result = list()
+    idx = 0
+    while idx < len(l):
+        s = idx
+        while s < len(l) and l[s] != x:
+            s+=1
+        e = s + 1
+        while e < len(l) and l[e] == x:
+            e+=1
+        if e < len(l) and l[e] == x:
+            e+=1
+        result.append((s,e))
+        idx = e + 1
+    return result
+
+def output_reads(reads, gene_info, out_path):
+    out_file = open(out_path, 'w+')
+    for read in reads:
+        print('>{} {}:{}-{}'.format(read.qname, read.reference_name, read.reference_start, read.reference_end), file=out_file)
+        if (gene_info['strand'] == '+'):
+            print(read.query, file=out_file)
+        elif (gene_info['strand'] == '-'):
+            print(Seq(read.query).reverse_complement(), file=out_file)
+        else:
+            raise Exception('Unknown strand {}'.format(gene_info['strand']))
 
 def main():
     args = parse_args()
-    import os
     args.output = args.output.rstrip('/')
     args.output += '/'
     print('Making output directory: {}'.format(args.output))
     os.makedirs(args.output, exist_ok=True)
-    if (args.gene[0:4]=='ENSG'):
-        try:
-            int(args.gene[4:])
-            gene_gtf_id = 'gene_id "{}"'.format(args.gene)
-        except:
-            gene_gtf_id = 'gene_name "{}"'.format(args.gene)
-    else:
-        gene_gtf_id = 'gene_name "{}"'.format(args.gene)
 
-    gene_info = get_coordinates_zero_based_end_exclusive(gene=gene_gtf_id, gtf=args.gtf)
+    gene_info = get_coordinates_zero_based_end_exclusive(gene=args.gene, gtf=args.gtf)
+    chr_lens = get_chr_lens(fai='{}.fai'.format(args.dna))
+    gene_info['padded_start'] = max(gene_info['start'] - args.padding, 0)
+    gene_info['padded_end']   = min(gene_info['end']   + args.padding, chr_lens[gene_info['chr']])
+    gene_info['padded_len'] = gene_info['padded_end'] - gene_info['padded_start']
 
+    is_exonic = {pos:False for pos in range(gene_info['padded_start'],gene_info['padded_end'])}
     if (args.reads):
-        import pysam
         try:
             sam = pysam.AlignmentFile(args.reads)
             sam.close()
@@ -284,21 +377,40 @@ def main():
             else:
                 sam = args.sam_output
             align_reads(minimap2=args.minimap2, threads=args.threads, genome=args.dna, reads=args.reads, sam=sam)
-        out = open('{}reads.fasta'.format(args.output), 'w+')
-        filter_out = open('{}reads.filtered_out.fasta'.format(args.output), 'w+')
-        output_gene_reads(sam=sam, gene_info=gene_info, padding=args.pad_size, out=out, filter_out=filter_out)
-        out.close()
-        filter_out.close()
+        reads = get_gene_reads(sam=sam, gene_info=gene_info, filter_out_path='{}reads.filtered_out.fasta'.format(args.output))
+        print('There are {} reads that belong to the gene'.format(len(reads)))
+        output_reads(reads=reads, gene_info=gene_info, out_path='{}reads.fasta'.format(args.output))
+        for read in reads:
+            for pos in get_exonic_positions(read=read, padding=args.padding):
+                is_exonic[pos] = True
 
-    out = open('{}gene.fasta'.format(args.output), 'w+')
-    output_gene(genome=args.dna, gene_info=gene_info, out=out)
-    out.close()
+    transcript_infos = get_transcript_info(gtf=args.gtf, gene_info=gene_info)
+    for tid,exons in transcript_infos.items():
+        for (start,end) in exons:
+            for pos in range(start-args.padding,end+args.padding):
+                is_exonic[pos] = True
 
-    out_tsv = open('{}transcripts.tsv'.format(args.output), 'w+')
-    out_seq = open('{}transcripts.fasta'.format(args.output), 'w+')
-    output_transcripts(genome=args.dna, gtf=args.gtf, gene_info=gene_info, out_tsv=out_tsv, out_seq=out_seq)
-    out_tsv.close()
-    out_seq.close()
+    genomic_positions = sorted(is_exonic.keys(), reverse=gene_info['strand']=='-')
+    genomic_to_genic_pos = dict()
+    genic_pos = 0
+    for pos in genomic_positions:
+        genic_pos+=is_exonic[pos]
+        genomic_to_genic_pos[pos] = genic_pos
+    gene_info['genomic_to_genic_pos'] = genomic_to_genic_pos
+    gene_info['is_exonic'] = is_exonic
+
+    output_transcripts(
+        genome           = args.dna,
+        transcript_infos = transcript_infos,
+        gene_info        = gene_info,
+        out_tsv_path     = '{}transcripts.tsv'.format(args.output),
+        out_seq_path     = '{}transcripts.fasta'.format(args.output)
+    )
+    output_gene(
+        genome    = args.dna,
+        gene_info = gene_info,
+        out_path  = '{}gene.fasta'.format(args.output)
+    )
 
 if __name__ == "__main__":
     main()

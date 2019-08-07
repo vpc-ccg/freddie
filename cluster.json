@@ -3,7 +3,6 @@
     {
         "time" : "00:59:00",
         "mem" : "8GB",
-        "n" : 1,
         "c" : 1,
         "name" : "freddie_snake",
         "p" : "long,big-mem,normal,express",

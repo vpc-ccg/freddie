@@ -29,35 +29,37 @@ exec:
     simulator                       : extern/nanosim/src/simulator.py
 
 genes:
-    # MYC        : MYC
-    # PLSCR3     : PLSCR3
-    # E2F1       : E2F1
-    # EEF1A1     : EEF1A1
-    # BLOC1S1    : BLOC1S1
-    # SRSF2      : SRSF2
+    MYC        : MYC
+    PLSCR3     : PLSCR3
+    E2F1       : E2F1
+    EEF1A1     : EEF1A1
+    BLOC1S1    : BLOC1S1
+    SRSF2      : SRSF2
     ATP5F1D    : ATP5F1D
-    # HAX1       : HAX1
-    # JTB        : JTB
-    # SLC50A1    : SLC50A1
-    # CTXN1      : CTXN1
-    # CEBPB      : CEBPB
-    # PGAM2      : PGAM2
-    # GADD45GIP1 : GADD45GIP1
-    # SFN        : SFN
-    # NDUFA1     : NDUFA1
-    # HIGD2A     : HIGD2A
-    # ENDOG      : ENDOG
-    # HOXB13     : HOXB13
-    # TMEM238    : TMEM238
-    # ZNF503     : ZNF503
-    # PYURF      : PYURF
-    # ARF6       : ARF6
-    # SEPHS2     : SEPHS2
-    # BEX1       : BEX1
-    # SF3B5      : SF3B5
+    HAX1       : HAX1
+    JTB        : JTB
+    SLC50A1    : SLC50A1
+    CTXN1      : CTXN1
+    CEBPB      : CEBPB
+    PGAM2      : PGAM2
+    GADD45GIP1 : GADD45GIP1
+    SFN        : SFN
+    NDUFA1     : NDUFA1
+    HIGD2A     : HIGD2A
+    ENDOG      : ENDOG
+    HOXB13     : HOXB13
+    TMEM238    : TMEM238
+    ZNF503     : ZNF503
+    PYURF      : PYURF
+    ARF6       : ARF6
+    SEPHS2     : SEPHS2
+    BEX1       : BEX1
+    SF3B5      : SF3B5
+    GTDC1         : GTDC1
 
 references:
-    genome : /groups/hachgrp/annotations/DNA/92/Homo_sapiens.GRCh38.dna.fa
+    genome     : /groups/hachgrp/annotations/DNA/92/Homo_sapiens.GRCh38.dna.fa
+    genome_fai : /groups/hachgrp/annotations/DNA/92/Homo_sapiens.GRCh38.dna.fa.fai
 
 annotations:
     gtf : /groups/hachgrp/annotations/GTF/92/Homo_sapiens.GRCh38.92.gtf
