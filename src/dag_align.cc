@@ -40,10 +40,10 @@ using std::ceil;
 constexpr matrix_coordinate_t INVALID_COORDINATE = {-1,-1};
 constexpr align_score_t EXONIC_S   =  0;
 constexpr align_score_t MATCH_S    =  1;
-constexpr align_score_t GAP_S      = -6;
-constexpr align_score_t MISMATCH_S = -6;
+constexpr align_score_t GAP_S      = -3;
+constexpr align_score_t MISMATCH_S = -3;
 constexpr size_t MAX_MAPPINGS = 10;
-constexpr align_score_t MIN_SCORE = 30;
+constexpr align_score_t MIN_SCORE = 10;
 constexpr index_t COCHAINING_PERMISSIBILITY = 10;
 constexpr double MAX_UNALN_GENE_RATIO = 1.5;
 constexpr align_score_t AFFIX_EXONIC_S   =  0;
@@ -720,7 +720,7 @@ void dag_aligner::align_read(const string& read_name, const string& read) {
         compress_align_path(loc_aln);
     }
     cochain_mappings(opt_chain, loc_alns);
-    extend_opt_chain(loc_alns, opt_chain, read);
+    // extend_opt_chain(loc_alns, opt_chain, read);
     update_dag(read_name, loc_alns, opt_chain);
     sort(loc_alns.begin(), loc_alns.end());
     opt_chain.clear();

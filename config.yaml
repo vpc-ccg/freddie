@@ -55,7 +55,7 @@ genes:
     SEPHS2     : SEPHS2
     BEX1       : BEX1
     SF3B5      : SF3B5
-    GTDC1         : GTDC1
+    GTDC1      : GTDC1
 
 references:
     genome     : /groups/hachgrp/annotations/DNA/92/Homo_sapiens.GRCh38.dna.fa

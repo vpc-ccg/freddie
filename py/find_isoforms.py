@@ -172,8 +172,9 @@ def run_ILP(MATRIX, RIDS, GAP_L, EXON_L, K, EPSILON, OFFSET, INCOMP_RIDS, garbag
         for j in range(0,M):
             I[i][j] = MATRIX[i][j]%2
         C[i] = dict()
-        (min_i,max_i) = find_segment_read(I,i)
-        max_i = M
+        # (min_i,max_i) = find_segment_read(I,i)
+        min_i = 0
+        max_i = M-1
         for j in range(0,M):
             if min_i <= j <= max_i and MATRIX[i][j]==0:
                 C[i][j]   = 1

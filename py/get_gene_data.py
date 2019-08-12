@@ -7,7 +7,7 @@ import pysam
 import numpy as np
 from Bio.Seq import Seq
 
-POLY_A_LEN = 100
+POLY_A_LEN = 20 
 CIGAR = {
     0 : 'MATCH',
     1 : 'INS',
