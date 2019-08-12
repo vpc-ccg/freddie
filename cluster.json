@@ -61,6 +61,12 @@
         "mem" : "32GB",
         "name" : "get_nanosim_tsv",
     },
+    "freddie_align_real" :
+    {
+        "time" : "23:59:00",
+        "mem" : "128GB",
+        "name" : "freddie_align_real",
+    },
     "freddie_align" :
     {
         "time" : "23:59:00",
