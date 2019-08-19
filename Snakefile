@@ -76,50 +76,31 @@ rule nanosim_make:
         patch {{output.simulator}} extern/nanosim.patch
         '''.format(config['url']['nanosim'])
 
-rule minimap2_map:
+rule reads_to_bam:
     input:
-        genome=config['references']['genome'],
-        reads=lambda wildcards: config['samples'][wildcards.sample],
+        reads  = lambda wildcards: config['samples'][wildcards.sample],
+        target = lambda wildcards: config['references'][wildcards.target]
     output:
-        temp('{}/{{sample}}.sam'.format(mapped_d))
+        bam = '{}/{{sample}}.{{target}}.sorted.bam'.format(mapped_d),
+        bai = '{}/{{sample}}.{{target}}.sorted.bam.bai'.format(mapped_d),
+    params:
+        mapping_settings = lambda wildcards: config['mapping_settings'][wildcards.target]
     conda:
         'freddie.env'
     threads:
         32
     shell:
-        'minimap2 -aY -x splice --eqx -t {threads} {input.genome} {input.reads} > {output}'
-
-rule samtools_sort:
-    input:
-        '{}/{{sample}}.sam'.format(mapped_d),
-    output:
-        bam='{}/{{sample}}.sorted.bam'.format(mapped_d),
-    conda:
-        'freddie.env'
-    threads:
-        32
-    shell:
-        'samtools sort -T {}/{{wildcards.sample}}.tmp -m 2G -@ {{threads}} -O bam {{input}} > {{output.bam}}'.format(mapped_d)
-
-rule samtools_index:
-    input:
-        bam='{}/{{sample}}.sorted.bam'.format(mapped_d),
-    output:
-        index='{}/{{sample}}.sorted.bam.bai'.format(mapped_d),
-    conda:
-        'freddie.env'
-    threads:
-        32
-    shell:
-        'samtools index -b -@ {threads} {input.bam}'
+        'minimap2 -aY -x {params.mapping_settings} --eqx -t {threads} {input.target} {input.reads} | '
+        '  samtools sort -T {output.bam}.tmp -m 2G -@ {threads} -O bam - > {output.bam}; '
+        'samtools index -b -@ {threads} {output.bam}; '
 
 rule get_gene_data:
     input:
-        reads  =  '{}/{{sample}}.sorted.bam'.format(mapped_d),
-        index  =  '{}/{{sample}}.sorted.bam.bai'.format(mapped_d),
+        reads  =  '{}/{{sample}}.dna.sorted.bam'.format(mapped_d),
+        index  =  '{}/{{sample}}.dna.sorted.bam.bai'.format(mapped_d),
         gtf    =  config['annotations']['gtf'],
-        genome =  config['references']['genome'],
-        genome_fai =  config['references']['genome_fai'],
+        genome =  config['references']['dna'],
+        genome_fai =  config['references']['dna_fai'],
         script =  config['exec']['gene_data'],
     params:
         out_dir=lambda wildcards: '{}/{}/{}'.format(genes_d, config['genes'][wildcards.gene], wildcards.sample)
@@ -129,18 +110,6 @@ rule get_gene_data:
         'freddie.env'
     shell:
         '{input.script} -g {wildcards.gene} -t {input.gtf} -d {input.genome} -r {input.reads} -o {params.out_dir}'
-
-rule freddie_align_real:
-    input:
-        reads='{}/{{gene}}/{{sample}}/reads.fasta'.format(genes_d),
-        gene = '{}/{{gene}}/{{sample}}/gene.fasta'.format(genes_d),
-        script = config['exec']['freddie'],
-    output:
-        paf = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
-    conda:
-        'freddie.env'
-    shell:
-        '{input.script} align -g {input.gene} -r {input.reads} > {output.paf}'
 
 rule train_nanosim:
     input:
@@ -183,24 +152,24 @@ rule run_nanosim:
 
 rule freddie_align:
     input:
-        reads = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.fasta'.format(genes_d),
+        reads = '{}/{{gene}}/{{sample}}/{{read_type}}.fasta'.format(genes_d),
         gene = '{}/{{gene}}/{{sample}}/gene.fasta'.format(genes_d),
         script = config['exec']['freddie'],
     output:
-        paf = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.paf'.format(genes_d),
+        paf = '{}/{{gene}}/{{sample}}/{{read_type}}.paf'.format(genes_d),
     conda:
         'freddie.env'
     shell:
         '{input.script} align -g {input.gene} -r {input.reads} > {output.paf}'
 
-rule freddie_plot:
+rule freddie_plot_simulated:
     input:
-        paf = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.paf'.format(genes_d),
+        paf             = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.paf'.format(genes_d),
         transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
-        simulated_tsv='{}/{{gene}}/{{sample}}/simulated_reads.oriented.tsv'.format(genes_d),
-        script = config['exec']['freddie'],
+        simulated_tsv   = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.tsv'.format(genes_d),
+        script          = config['exec']['freddie'],
     output:
-        dot = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.dot'.format(genes_d),
+        dot             = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.dot'.format(genes_d),
     conda:
         'freddie.env'
     shell:
@@ -208,13 +177,13 @@ rule freddie_plot:
 
 rule split_dot:
     input:
-        dot = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.dot'.format(genes_d),
-        simulated_tsv='{}/{{gene}}/{{sample}}/simulated_reads.oriented.tsv'.format(genes_d),
-        script = config['exec']['split_dot'],
+        dot           = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.dot'.format(genes_d),
+        simulated_tsv = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.tsv'.format(genes_d),
+        script        = config['exec']['split_dot'],
     output:
-        done = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.split_dot.done'.format(genes_d),
+        done          = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.split_dot.done'.format(genes_d),
     params:
-        prefix = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.split.'.format(genes_d),
+        prefix        = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.split.'.format(genes_d),
     conda:
         'freddie.env'
     shell:
@@ -223,9 +192,9 @@ rule split_dot:
 
 rule split_pdf:
     input:
-        done = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.split_dot.done'.format(genes_d),
+        done   = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.split_dot.done'.format(genes_d),
     output:
-        done = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.split_pdf.done'.format(genes_d),
+        done   = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.split_pdf.done'.format(genes_d),
     params:
         prefix = '{}/{{gene}}/{{sample}}/simulated_reads.oriented.split.'.format(genes_d),
     conda:
@@ -243,36 +212,6 @@ rule dot_to_pdf:
         'freddie.env'
     shell:
         'cat {input.dot} | dot -T pdf > {output.pdf}'
-
-# rule cluster_paf_real:
-#     input:
-#         paf    = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
-#         script = config['exec']['clustering'],
-#         transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
-#     output:
-#         cluster      = '{}/{{gene}}/{{sample}}/reads.cluster'.format(genes_d),
-#         raw_coverage = '{}/{{gene}}/{{sample}}/reads.cluster.raw_coverage.txt'.format(genes_d),
-#         log          = '{}/{{gene}}/{{sample}}/reads.cluster.log'.format(genes_d),
-#         coverage_pdf = '{}/{{gene}}/{{sample}}/reads.cluster.coverage.pdf'.format(genes_d),
-#     conda:
-#         'freddie.env'
-#     shell:
-#         '{input.script} -p {input.paf} -o {output.cluster} -t {input.transcripts_tsv}'
-
-rule find_canonical_exon:
-    input:
-        transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
-        paf             = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
-        script          = config['exec']['find_canonical_exon'],
-    output:
-        canonical_exons_pdf = '{}/{{gene}}/{{sample}}/reads.canonical_exons.pdf'.format(genes_d),
-        canonical_exons_txt = '{}/{{gene}}/{{sample}}/reads.canonical_exons.txt'.format(genes_d),
-    params:
-        out_prefix='{}/{{gene}}/{{sample}}/reads.canonical_exons'.format(genes_d),
-    conda:
-        'freddie.env'
-    shell:
-        '{input.script} -p {input.paf} -t {input.transcripts_tsv} -op {params.out_prefix}'
 
 rule disentangle:
     input:
@@ -316,7 +255,7 @@ rule find_isoforms:
     output:
         isoforms        = '{}/{{gene}}/{{sample}}/reads.isoforms.tsv'.format(genes_d),
     params:
-        out_prefix      ='{}/{{gene}}/{{sample}}/reads.isoforms'.format(genes_d),
+        out_prefix      = '{}/{{gene}}/{{sample}}/reads.isoforms'.format(genes_d),
         k               = 2,
         e               = 0.2,
         order_isoforms  = 'True',
