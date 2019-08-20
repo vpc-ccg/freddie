@@ -70,5 +70,6 @@ references:
 annotations:
     gtf : /groups/hachgrp/annotations/GTF/92/Homo_sapiens.GRCh38.92.gtf
 
-url:
-    nanosim : https://github.com/bcgsc/NanoSim/archive/77a4393e18c67adddf60427a617499ac352bc9d8.zip
+nanosim:
+    git : https://github.com/bcgsc/NanoSim.git
+    tag : v2.4-beta

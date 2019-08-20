@@ -12,38 +12,30 @@
         "c" : 6,
         "name" : "nanosim_make",
     },
-    "cluster_paf_real" :
-    {
-        "name" : "cluster_paf_real",
-    },
-    "meanshift_real" :
-    {
-        "name" : "meanshift_real",
-    },
     "nanosim_make" :
     {
         "name" : "nanosim_make",
     },
-    "minimap2_map" :
+    "reads_to_bam" :
     {
         "c" : 32,
         "time" : "05:59:00",
         "mem" : "128GB",
-        "name" : "minimap2_map",
-    },
-    "samtools_sort" :
-    {
-        "c" : 32,
-        "time" : "05:59:00",
-        "mem" : "128GB",
-        "name" : "samtools_sort",
+        "name" : "reads_to_bam",
     },
     "get_gene_data" :
     {
         "mem" : "32GB",
         "name" : "get_gene_data",
     },
-    "nanosim_read_analysis" :
+    "train_nanosim" :
+    {
+        "c" : 32,
+        "time" : "11:59:00",
+        "mem" : "256GB",
+        "name" : "nanosim_read_analysis",
+    },
+    "run_nanosim" :
     {
         "c" : 32,
         "time" : "05:59:00",
@@ -60,12 +52,6 @@
     {
         "mem" : "32GB",
         "name" : "get_nanosim_tsv",
-    },
-    "freddie_align_real" :
-    {
-        "time" : "23:59:00",
-        "mem" : "128GB",
-        "name" : "freddie_align_real",
     },
     "freddie_align" :
     {
