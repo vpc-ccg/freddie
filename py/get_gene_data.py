@@ -377,9 +377,9 @@ def main():
             else:
                 sam = args.sam_output
             align_reads(minimap2=args.minimap2, threads=args.threads, genome=args.dna, reads=args.reads, sam=sam)
-        reads = get_gene_reads(sam=sam, gene_info=gene_info, filter_out_path='{}reads.filtered_out.fasta'.format(args.output))
+        reads = get_gene_reads(sam=sam, gene_info=gene_info, filter_out_path='{}reads_raw.filtered_out.fasta'.format(args.output))
         print('There are {} reads that belong to the gene'.format(len(reads)))
-        output_reads(reads=reads, gene_info=gene_info, out_path='{}reads.fasta'.format(args.output))
+        output_reads(reads=reads, gene_info=gene_info, out_path='{}reads_raw.fasta'.format(args.output))
         for read in reads:
             for pos in get_exonic_positions(read=read, padding=args.padding):
                 is_exonic[pos] = True
