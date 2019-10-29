@@ -7,7 +7,7 @@ import pysam
 import numpy as np
 from Bio.Seq import Seq
 
-POLY_A_LEN = 20
+POLY_A_LEN = 0
 CIGAR = {
     0 : 'MATCH',
     1 : 'INS',
@@ -205,7 +205,7 @@ def get_gene_reads(sam, gene_info, filter_out_path):
             to_filter_out = True
         if to_filter_out:
             print('>{} {}:{}-{}'.format(read.qname, read.reference_name, read.reference_start, read.reference_end), file=filter_out)
-            print(read.query, file=filter_out)
+            print(read.query_sequence, file=filter_out)
         else:
             result.append(read)
         if (idx+1)%100==0:

@@ -23,33 +23,33 @@ gene_data=[
     'reads_raw.fasta',
     'reads_raw.filtered_out.fasta',
 ]
-ns_train_files=[
-    # '_unaligned_length.pkl',
-    # '_aligned_region.pkl',
-    # '_aligned_reads.pkl',
-    # '_ht_length.pkl',
-    # '_match.hist',
-    # '_mis.hist',
-    # '_del.hist',
-    # '_ins.hist',
-    # '_first_match.hist',
-    # '_error_markov_model',
-    # '_ht_ratio.pkl',
-    # '.sam',
-    # '_match_markov_model',
-    # '_model_profile',
-    # '_error_rate.tsv',
-    '_done'
-]
-
+# ns_train_files=[
+#     # '_unaligned_length.pkl',
+#     # '_aligned_region.pkl',
+#     # '_aligned_reads.pkl',
+#     # '_ht_length.pkl',
+#     # '_match.hist',
+#     # '_mis.hist',
+#     # '_del.hist',
+#     # '_ins.hist',
+#     # '_first_match.hist',
+#     # '_error_markov_model',
+#     # '_ht_ratio.pkl',
+#     # '.sam',
+#     # '_match_markov_model',
+#     # '_model_profile',
+#     # '_error_rate.tsv',
+#     '_done'
+# ]
+#
 rule all:
     input:
-        expand('{}/{{sample}}{{training_file}}'.format(ns_train_d), sample=config['samples'], training_file=ns_train_files),
+        # expand('{}/{{sample}}{{training_file}}'.format(ns_train_d), sample=config['samples'], training_file=ns_train_files),
         # expand('{}/{{gene}}/{{sample}}/{{data_file}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], data_file=gene_data),
         # expand('{}/{{gene}}/{{sample}}/reads_raw.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['paf']),
-        # expand('{}/{{gene}}/{{sample}}/reads_raw.isoforms.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['tsv']),
+        expand('{}/{{gene}}/{{sample}}/reads_raw.isoforms.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['tsv']),
         # expand('{}/{{gene}}/{{sample}}/reads_raw.iterative_canonical_exons.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['data', 'tsv', 'zeros_unaligned.tsv']),
-        # expand('{}/{{gene}}/{{sample}}/reads_raw.isoforms_plots.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf']),
+        expand('{}/{{gene}}/{{sample}}/reads_raw.isoforms_plots.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf']),
 
 rule freddie_make:
     input:
@@ -63,17 +63,17 @@ rule freddie_make:
     shell:
         'make -j {{threads}} -C {}'.format(config['exec']['freddie'][0:config['exec']['freddie'].rfind('/')])
 
-rule nanosim_make:
-    output:
-        simulator = config['exec']['simulator'],
-        trainer   = config['exec']['read_analysis'],
-    params:
-        nanosim_d = '/'.join(config['exec']['simulator'].split('/')[:-2]),
-    conda:
-        'freddie.env'
-    shell:
-        'rm -r {{params.nanosim_d}}; git clone --branch {} {} {{params.nanosim_d}}'.format(config['nanosim']['tag'], config['nanosim']['git'])
-
+# rule nanosim_make:
+#     output:
+#         simulator = config['exec']['simulator'],
+#         trainer   = config['exec']['read_analysis'],
+#     params:
+#         nanosim_d = '/'.join(config['exec']['simulator'].split('/')[:-2]),
+#     conda:
+#         'freddie.env'
+#     shell:
+#         'rm -r {{params.nanosim_d}}; git clone --branch {} {} {{params.nanosim_d}}'.format(config['nanosim']['tag'], config['nanosim']['git'])
+#
 rule reads_to_bam:
     input:
         reads  = lambda wildcards: config['samples'][wildcards.sample],
@@ -111,45 +111,56 @@ rule get_gene_data:
     shell:
         '{input.script} -g {wildcards.gene} -t {input.gtf} -d {input.genome} -r {input.reads} -o {params.out_dir}'
 
-rule train_nanosim:
+rule process_polyA:
     input:
-        cdna   = config['references']['cdna'],
-        reads  = lambda wildcards: config['samples'][wildcards.sample],
-        sam    = '{}/{{sample}}.cdna.sorted.sam'.format(mapped_d),
-        script = config['exec']['read_analysis'],
-    params:
-        out_prefix = '{}/{{sample}}'.format(ns_train_d),
+        reads  = '{}/{{gene}}/{{sample}}/{{read_type}}.fasta'.format(genes_d),
+        script = config['exec']['polyA'],
     output:
-        training_files = ['{}/{{sample}}{}'.format(ns_train_d, f) for  f in ns_train_files],
+        report  = '{}/{{gene}}/{{sample}}/{{read_type}}.polyA.tsv'.format(genes_d),
     conda:
         'freddie.env'
-    threads:
-        32
     shell:
-        '{input.script} transcriptome -i <(cat {input.reads}) -rt {input.cdna} -ta {input.sam} -t {threads} -o {params.out_prefix} --no_intron_retention; touch ' + ns_train_files[0]
+        'python {input.script} {input.reads} {output.report}'
 
-rule run_nanosim:
-    input:
-        training_files   = ['{}/{{wildcards.sample}}{}'.format(ns_train_d, f) for f in ns_train_files],
-        transcript_tsv   = '{}/{{gene}}/{{sample}}/{}'.format(genes_d, 'transcripts.tsv'),
-        transcript_fasta = '{}/{{gene}}/{{sample}}/transcripts.fasta'.format(genes_d),
-        nanosim          = config['exec']['simulator'],
-        script           = config['exec']['run_nanosim']
-    params:
-        train_prefix           = '{}/{{gene}}/{{sample}}/nanosim/training'.format(genes_d),
-        intermediate_directory = '{}/{{gene}}/{{sample}}/nanosim/'.format(genes_d),
-        read_count             = 100,
-        distribution           = 'normal'
-    output:
-        simulated_tsv  = '{}/{{gene}}/{{sample}}/reads_sim.oriented.tsv'.format(genes_d),
-        oriented_reads = '{}/{{gene}}/{{sample}}/reads_sim.oriented.fasta'.format(genes_d),
-    conda:
-        'freddie.env'
-    shell:
-        '{input.script} -tt {input.transcript_tsv} -tf {input.transcript_fasta}'
-        ' -ns {input.nanosim} -tr {params.train_prefix}'
-        ' -d {params.intermediate_directory} -c {params.read_count} -f {params.distribution}'
-        ' -or {output.oriented_reads} -ot {output.simulated_tsv}'
+# rule train_nanosim:
+#     input:
+#         cdna   = config['references']['cdna'],
+#         reads  = lambda wildcards: config['samples'][wildcards.sample],
+#         sam    = '{}/{{sample}}.cdna.sorted.sam'.format(mapped_d),
+#         script = config['exec']['read_analysis'],
+#     params:
+#         out_prefix = '{}/{{sample}}'.format(ns_train_d),
+#     output:
+#         training_files = ['{}/{{sample}}{}'.format(ns_train_d, f) for  f in ns_train_files],
+#     conda:
+#         'freddie.env'
+#     threads:
+#         32
+#     shell:
+#         '{input.script} transcriptome -i <(cat {input.reads}) -rt {input.cdna} -ta {input.sam} -t {threads} -o {params.out_prefix} --no_intron_retention; touch ' + ns_train_files[0]
+#
+# rule run_nanosim:
+#     input:
+#         training_files   = ['{}/{{wildcards.sample}}{}'.format(ns_train_d, f) for f in ns_train_files],
+#         transcript_tsv   = '{}/{{gene}}/{{sample}}/{}'.format(genes_d, 'transcripts.tsv'),
+#         transcript_fasta = '{}/{{gene}}/{{sample}}/transcripts.fasta'.format(genes_d),
+#         nanosim          = config['exec']['simulator'],
+#         script           = config['exec']['run_nanosim']
+#     params:
+#         train_prefix           = '{}/{{gene}}/{{sample}}/nanosim/training'.format(genes_d),
+#         intermediate_directory = '{}/{{gene}}/{{sample}}/nanosim/'.format(genes_d),
+#         read_count             = 100,
+#         distribution           = 'normal'
+#     output:
+#         simulated_tsv  = '{}/{{gene}}/{{sample}}/reads_sim.oriented.tsv'.format(genes_d),
+#         oriented_reads = '{}/{{gene}}/{{sample}}/reads_sim.oriented.fasta'.format(genes_d),
+#     conda:
+#         'freddie.env'
+#     shell:
+#         '{input.script} -tt {input.transcript_tsv} -tf {input.transcript_fasta}'
+#         ' -ns {input.nanosim} -tr {params.train_prefix}'
+#         ' -d {params.intermediate_directory} -c {params.read_count} -f {params.distribution}'
+#         ' -or {output.oriented_reads} -ot {output.simulated_tsv}'
 
 rule freddie_align:
     input:

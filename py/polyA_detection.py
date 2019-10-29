@@ -6,8 +6,8 @@ def find_polyA_substrs(seq, match_score=1, mismatch_score=-1):
 	starts = [ -1 ]	# keeps one index before start
 	i = 0
 	for ch in seq:
-		to_be_added = match_score if (ch == 'A' or ch == 'a') else mismatch_score
-		new_score = scores[-1] + to_be_added 
+		to_be_added = match_score if (ch == 'T' or ch == 't') else mismatch_score
+		new_score = scores[-1] + to_be_added
 		new_start = starts[-1]
 
 		if new_score <= 0:
@@ -26,7 +26,7 @@ def find_longest_polyA(seq):
 
 	max_ind = 0
 	for i in range(len(scores)):
-		if (scores[i] > scores[max_ind]) or (scores[i] == scores[max_ind] and starts[i] > starts[max_ind]):
+		if (scores[i] > scores[max_ind]) or (scores[i] == scores[max_ind] and starts[i] < starts[max_ind]):
 			max_ind = i
 
 	# [start, end)
@@ -35,7 +35,7 @@ def find_longest_polyA(seq):
 	score = scores[max_ind]
 
 	return start, end, score
-			
+
 def process_all_reads(fq_in, report_out):
 	fout = open(report_out, 'w')
 

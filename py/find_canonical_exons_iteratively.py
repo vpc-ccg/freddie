@@ -9,8 +9,8 @@ from scipy.signal import find_peaks
 from scipy.cluster import hierarchy
 from os import remove
 
-MIN_READS_ABS = 20
-MIN_READS_PRC = 0.025
+MIN_READS_ABS = 10
+MIN_READS_PRC = 0.01
 EXON_THRESHOLD = 0.8
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -97,7 +97,7 @@ def get_banded_matrix(N, pos_to_rid, intervals):
             banded_matrix[rid][bid] = np.mean(l)
     return banded_matrix
 
-def get_hetero_rids(band, low=0.1, high=0.9):
+def get_hetero_rids(band, low=1-EXON_THRESHOLD, high=EXON_THRESHOLD):
     return [rid for rid,cov in enumerate(band) if cov < high and cov > low]
 
 def merge_peaks(peaks_a, peaks_b, range_len):
