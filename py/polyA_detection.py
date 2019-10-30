@@ -6,7 +6,7 @@ def find_polyA_substrs(seq, match_score=1, mismatch_score=-1):
 	starts = [ -1 ]	# keeps one index before start
 	i = 0
 	for ch in seq:
-		to_be_added = match_score if (ch == 'T' or ch == 't') else mismatch_score
+		to_be_added = match_score if (ch == 'A' or ch == 'a') else mismatch_score
 		new_score = scores[-1] + to_be_added
 		new_start = starts[-1]
 
@@ -26,7 +26,7 @@ def find_longest_polyA(seq):
 
 	max_ind = 0
 	for i in range(len(scores)):
-		if (scores[i] > scores[max_ind]) or (scores[i] == scores[max_ind] and starts[i] < starts[max_ind]):
+		if (scores[i] > scores[max_ind]) or (scores[i] == scores[max_ind] and starts[i] > starts[max_ind]):
 			max_ind = i
 
 	# [start, end)
@@ -50,7 +50,7 @@ def process_all_reads(fq_in, report_out):
 
 			start, end, score = find_longest_polyA(seq)
 			rid = rname.split()[0][1:]
-			fout.write('{}\t{}\t{}\t{}\n'.format(rid, start, end, score))
+			fout.write('{}\n'.format('\t'.join([str(x) for x in [rid, len(seq), start, end, score, seq]])))
 
 def usage():
 	print('Usage: python {} reads_FASTQ report_TSV'.format(sys.argv[0]))
