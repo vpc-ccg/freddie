@@ -224,6 +224,7 @@ rule find_canonical_exon_iteratively:
         zeros_unaligned = '{}/{{gene}}/{{sample}}/{{read_type}}.iterative_canonical_exons.zeros_unaligned.tsv'.format(genes_d),
         matrix          = '{}/{{gene}}/{{sample}}/{{read_type}}.iterative_canonical_exons.data'.format(genes_d),
         exons           = '{}/{{gene}}/{{sample}}/{{read_type}}.iterative_canonical_exons.tsv'.format(genes_d),
+        read_names      = '{}/{{gene}}/{{sample}}/{{read_type}}.iterative_canonical_exons.read_names.txt'.format(genes_d),
     params:
         out_prefix='{}/{{gene}}/{{sample}}/{{read_type}}.iterative_canonical_exons'.format(genes_d),
     conda:
@@ -238,6 +239,8 @@ rule find_isoforms:
         exons           = '{}/{{gene}}/{{sample}}/{{read_type}}.iterative_canonical_exons.tsv'.format(genes_d),
         unaligned_gaps  = '{}/{{gene}}/{{sample}}/{{read_type}}.iterative_canonical_exons.tsv'.format(genes_d),
         zeros_unaligned = '{}/{{gene}}/{{sample}}/{{read_type}}.iterative_canonical_exons.zeros_unaligned.tsv'.format(genes_d),
+        read_names      = '{}/{{gene}}/{{sample}}/{{read_type}}.iterative_canonical_exons.read_names.txt'.format(genes_d),
+        polyA_report    = '{}/{{gene}}/{{sample}}/{{read_type}}.polyA.trimmed.tsv'.format(genes_d),
     output:
         isoforms        = '{}/{{gene}}/{{sample}}/{{read_type}}.isoforms.tsv'.format(genes_d),
     params:
@@ -256,6 +259,7 @@ rule find_isoforms:
     shell:
         'export GRB_LICENSE_FILE={params.license}; '
         '{input.script} -d {input.matrix} -et {input.exons} '
+        ' -names {input.read_names} -ptinfo {input.polyA_report} '
         ' -k {params.k} --garbage-isoform {params.garbage_isoform} --recycle-garbage {params.recycle_garbage} '
         ' -oi {params.order_isoforms} -e {params.e} -ug {input.zeros_unaligned}'
         ' -t {threads} -to {params.timeout} -op {params.out_prefix}'

@@ -55,11 +55,21 @@ def parse_args():
                         help="Path to file of read pairs that can not originate from the same isoform")
     parser.add_argument("-garb",
                         "--garbage-isoform",
-                        type=str2bool,
+                        type=str,
                         nargs='?',
                         const=True,
                         default=False,
                         help="Include in the model a garbage isoform collecting unassigned reads"),
+    parser.add_argument("-names",
+                        "--valid-read-names",
+                        type=str,
+                        required=True,
+                        help="Valid read ids to do ilp"),
+    parser.add_argument("-ptinfo",
+                        "--poly-tail-status",
+                        type=str,
+                        required=True,
+                        help="A file which tells if polyA tail is cut or no, first col is read name second cold is 1 if cut 0 is uncut"),
     parser.add_argument("-rg",
                         "--recycle-garbage",
                         type=str2bool,
@@ -155,7 +165,7 @@ def garbage_cost(C):
 # TO DO: think about better ways to define the cost to assign to the garbagte isoform
 
 
-def run_ILP(MATRIX, RIDS, GAP_L, EXON_L, K, EPSILON, OFFSET, INCOMP_RIDS, garbage_isoform, order_isoforms, timeout, threads, out_prefix):
+def run_ILP(MATRIX, RIDS, GAP_L, EXON_L, K, polyA_trimmed, EPSILON, OFFSET, INCOMP_RIDS, garbage_isoform, order_isoforms, timeout, threads, out_prefix):
     os.makedirs(out_prefix[:out_prefix.rfind('/')], exist_ok=True)
     log_file = open('{}.log'.format(out_prefix),'w+')
 
@@ -172,9 +182,9 @@ def run_ILP(MATRIX, RIDS, GAP_L, EXON_L, K, EPSILON, OFFSET, INCOMP_RIDS, garbag
         for j in range(0,M):
             I[i][j] = MATRIX[i][j]%2
         C[i] = dict()
-        # (min_i,max_i) = find_segment_read(I,i)
-        min_i = 0
-        max_i = M-1
+        (min_i,max_i) = find_segment_read(I,i)
+        if polyA_trimmed[i]:
+            max_i = M-1
         for j in range(0,M):
             if min_i <= j <= max_i and MATRIX[i][j]==0:
                 C[i][j]   = 1
@@ -487,6 +497,21 @@ def output_isoform_clusters(clusters, matrix, isoforms, unaligned_gaps, rid_corr
             out_file.write('{}\n'.format('\t'.join(output)))
     out_file.close()
 
+def make_polyAcut_info_lookup_table(names_file,cuts_file):
+
+    name2index = {}
+    lookup = {}
+    with open(names_file, 'r') as nh , open(cuts_file, 'r') as ch:
+        for index, line in enumerate(nh):
+            name2index[line.rstrip()] = index
+
+        for line in ch:
+            name, cut_info = fields = line.rstrip().split("\t")
+            if name in name2index:
+                lookup[name2index[name]] = cut_info
+
+    return lookup
+
 def main():
     args = parse_args()
 
@@ -500,6 +525,8 @@ def main():
     if args.incomp_read_pairs != '':
         incomp_rids   = read_incomp_read_pairs(pairs_file=args.incomp_read_pairs, rids=matrix.keys())
 
+    polyA_trimmed = make_polyAcut_info_lookup_table(args.valid_read_names, args.poly_tail_status)
+
     round = -1
     iid_to_isoform     = dict()
     iid_to_rids        = dict()
@@ -507,6 +534,7 @@ def main():
     while True:
         round += 1
         status,iid_to_isoform_cur,iid_to_rids_cur,rid_to_corrections_cur = run_ILP(
+            polyA_trimmed   = polyA_trimmed,
             RIDS            = rids,
             MATRIX          = matrix,
             EXON_L          = exon_lens,
