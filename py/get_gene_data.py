@@ -340,6 +340,7 @@ def get_stretches_of_x(l, x):
     return result
 
 def output_reads(reads, gene_info, out_path):
+    print('Outputting reads to {}'.format(out_path))
     out_file = open(out_path, 'w+')
     for read in reads:
         print('>{} {}:{}-{}'.format(read.qname, read.reference_name, read.reference_start, read.reference_end), file=out_file)

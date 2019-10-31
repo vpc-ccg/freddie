@@ -10,7 +10,7 @@ samples:
         # - /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R001/P000R001.pass.fastq
         # - /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R002/P000R002.pass.fastq
     P000S000_sim:
-        - /groups/hachgrp/projects/dev-ltr-simulator/analysis/ltr-sim-dev/reads/P000S000.cdna.polyA.degraded.fasta
+        - /groups/hachgrp/projects/dev-ltr-simulator/analysis/ltr-sim-dev/reads/P000S000.cdna.polyA.degraded.reads.renamed.fastq
     # P001S000:
     #     - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R410/P001R410.pass.fastq
     #     - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R411/P001R411.pass.fastq
@@ -30,6 +30,7 @@ exec:
     read_analysis                   : extern/nanosim/src/read_analysis.py
     simulator                       : extern/nanosim/src/simulator.py
     polyA                           : py/polyA_detection.py
+    trim                            : py/polyA_trim.py
 
 genes:
     # AR : AR

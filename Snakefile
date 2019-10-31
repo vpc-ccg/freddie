@@ -122,49 +122,23 @@ rule process_polyA:
     shell:
         'python {input.script} {input.reads} {output.report}'
 
-# rule train_nanosim:
-#     input:
-#         cdna   = config['references']['cdna'],
-#         reads  = lambda wildcards: config['samples'][wildcards.sample],
-#         sam    = '{}/{{sample}}.cdna.sorted.sam'.format(mapped_d),
-#         script = config['exec']['read_analysis'],
-#     params:
-#         out_prefix = '{}/{{sample}}'.format(ns_train_d),
-#     output:
-#         training_files = ['{}/{{sample}}{}'.format(ns_train_d, f) for  f in ns_train_files],
-#     conda:
-#         'freddie.env'
-#     threads:
-#         32
-#     shell:
-#         '{input.script} transcriptome -i <(cat {input.reads}) -rt {input.cdna} -ta {input.sam} -t {threads} -o {params.out_prefix} --no_intron_retention; touch ' + ns_train_files[0]
-#
-# rule run_nanosim:
-#     input:
-#         training_files   = ['{}/{{wildcards.sample}}{}'.format(ns_train_d, f) for f in ns_train_files],
-#         transcript_tsv   = '{}/{{gene}}/{{sample}}/{}'.format(genes_d, 'transcripts.tsv'),
-#         transcript_fasta = '{}/{{gene}}/{{sample}}/transcripts.fasta'.format(genes_d),
-#         nanosim          = config['exec']['simulator'],
-#         script           = config['exec']['run_nanosim']
-#     params:
-#         train_prefix           = '{}/{{gene}}/{{sample}}/nanosim/training'.format(genes_d),
-#         intermediate_directory = '{}/{{gene}}/{{sample}}/nanosim/'.format(genes_d),
-#         read_count             = 100,
-#         distribution           = 'normal'
-#     output:
-#         simulated_tsv  = '{}/{{gene}}/{{sample}}/reads_sim.oriented.tsv'.format(genes_d),
-#         oriented_reads = '{}/{{gene}}/{{sample}}/reads_sim.oriented.fasta'.format(genes_d),
-#     conda:
-#         'freddie.env'
-#     shell:
-#         '{input.script} -tt {input.transcript_tsv} -tf {input.transcript_fasta}'
-#         ' -ns {input.nanosim} -tr {params.train_prefix}'
-#         ' -d {params.intermediate_directory} -c {params.read_count} -f {params.distribution}'
-#         ' -or {output.oriented_reads} -ot {output.simulated_tsv}'
+rule trim_polyA:
+    input:
+        report  = '{}/{{gene}}/{{sample}}/{{read_type}}.polyA.tsv'.format(genes_d),
+        script = config['exec']['trim'],
+    output:
+        reads  = '{}/{{gene}}/{{sample}}/{{read_type}}.polyA.trimmed.fasta'.format(genes_d),
+        report  = '{}/{{gene}}/{{sample}}/{{read_type}}.polyA.trimmed.tsv'.format(genes_d),
+    params:
+        min_score = 20
+    conda:
+        'freddie.env'
+    shell:
+        'cat {input.report} | python {input.script} {output.report} {params.min_score} > {output.reads}'
 
 rule freddie_align:
     input:
-        reads  = '{}/{{gene}}/{{sample}}/{{read_type}}.fasta'.format(genes_d),
+        reads  = '{}/{{gene}}/{{sample}}/{{read_type}}.polyA.trimmed.fasta'.format(genes_d),
         gene   = '{}/{{gene}}/{{sample}}/gene.fasta'.format(genes_d),
         script = config['exec']['freddie'],
     output:
