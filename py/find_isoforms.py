@@ -3,8 +3,8 @@ import os
 import argparse
 from gurobipy import *
 
-MIN_READS = 10
-MAX_ROUND = 3
+MIN_READS = 5
+MAX_ROUND = 1
 
 def parse_args():
     def str2bool(v):
@@ -478,16 +478,19 @@ def run_ILP(MATRIX, RIDS, GAP_L, EXON_L, K, polyA_trimmed, EPSILON, OFFSET, INCO
     log_file.close()
     return(status,iid_to_isoform,iid_to_rids,rid_to_corrections)
 
-def output_isoform_clusters(clusters, matrix, isoforms, unaligned_gaps, rid_corrected_exons, exons_lengths, outpath):
+def output_isoform_clusters(read_name_path, clusters, matrix, isoforms, unaligned_gaps, rid_corrected_exons, exons_lengths, outpath):
+    rid_to_name = [name.rstrip() for name in open(read_name_path, 'r')]
     out_file = open(outpath, 'w+')
     for k,rids in clusters.items():
         output = list()
-        output.append(str(k))
+        output.append('isoform_{:03d}'.format(k))
         output.append(''.join([str(e) for e in isoforms[k]]))
         output.extend([str(l*isoforms[k][eid]) for eid,l in enumerate(exons_lengths)])
         out_file.write('#{}\n'.format('\t'.join(output)))
         for i in rids:
             output = list()
+            output.append('isoform_{:03d}'.format(k))
+            output.append(str(rid_to_name[i]))
             output.append(str(i))
             output.append(''.join([str(e) for e in matrix[i]]))
             exon_strs = [str(x) for x in rid_corrected_exons[i]]
@@ -533,6 +536,7 @@ def main():
     rid_to_corrections = dict()
     while True:
         round += 1
+        print('Running {}-th round with {} reads...'.format(round, len(rids)))
         status,iid_to_isoform_cur,iid_to_rids_cur,rid_to_corrections_cur = run_ILP(
             polyA_trimmed   = polyA_trimmed,
             RIDS            = rids,
@@ -566,6 +570,7 @@ def main():
         if len(rids) < MIN_READS:
             break
     output_isoform_clusters(
+        read_name_path      = args.valid_read_names,
         clusters            = iid_to_rids,
         isoforms            = iid_to_isoform,
         matrix              = matrix,

@@ -234,8 +234,8 @@ rule find_canonical_exon_iteratively:
 
 rule find_isoforms:
     input:
-        matrix          = '{}/{{gene}}/{{sample}}/{{read_type}}.iterative_canonical_exons.data'.format(genes_d),
         script          = config['exec']['find_isoforms'],
+        matrix          = '{}/{{gene}}/{{sample}}/{{read_type}}.iterative_canonical_exons.data'.format(genes_d),
         exons           = '{}/{{gene}}/{{sample}}/{{read_type}}.iterative_canonical_exons.tsv'.format(genes_d),
         unaligned_gaps  = '{}/{{gene}}/{{sample}}/{{read_type}}.iterative_canonical_exons.tsv'.format(genes_d),
         zeros_unaligned = '{}/{{gene}}/{{sample}}/{{read_type}}.iterative_canonical_exons.zeros_unaligned.tsv'.format(genes_d),
@@ -263,6 +263,18 @@ rule find_isoforms:
         ' -k {params.k} --garbage-isoform {params.garbage_isoform} --recycle-garbage {params.recycle_garbage} '
         ' -oi {params.order_isoforms} -e {params.e} -ug {input.zeros_unaligned}'
         ' -t {threads} -to {params.timeout} -op {params.out_prefix}'
+
+rule score_clustering:
+    input:
+        script   = config['exec']['rand_index'],
+        isoforms = '{}/{{gene}}/{{sample}}/{{read_type}}.isoforms.tsv'.format(genes_d),
+        reads    = '{}/{{gene}}/{{sample}}/{{read_type}}.fasta'.format(genes_d),
+    output:
+        accuracy = '{}/{{gene}}/{{sample}}/{{read_type}}.rand'.format(genes_d),
+    conda:
+        'freddie.env'
+    shell:
+        'python {input.script} -r {input.reads} -i {input.isoforms} -o {output.accuracy}'
 
 rule plot_isoforms:
     input:
