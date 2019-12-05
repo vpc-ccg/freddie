@@ -36,16 +36,14 @@ def find_longest_polyA(seq):
 
 	return start, end, score
 
-def process_all_reads(fq_in, report_out):
+def process_all_reads(fasta_in, report_out):
 	fout = open(report_out, 'w')
 
-	with open(fq_in) as fin:
+	with open(fasta_in) as fin:
 		while True:
 			rname = fin.readline().strip()
 			seq   = fin.readline().strip()
-			comment = fin.readline().strip()
-			qual  = fin.readline().strip()
-			if not qual:
+			if not seq:
 				break
 
 			start, end, score = find_longest_polyA(seq)
@@ -53,7 +51,7 @@ def process_all_reads(fq_in, report_out):
 			fout.write('{}\n'.format('\t'.join([str(x) for x in [rid, len(seq), start, end, score, seq]])))
 
 def usage():
-	print('Usage: python {} reads_FASTQ report_TSV'.format(sys.argv[0]))
+	print('Usage: python {} reads_FASTA report_TSV'.format(sys.argv[0]))
 
 def main():
 	print('This script finds the longest stretch of \'A\'s for each given read.')
@@ -63,12 +61,12 @@ def main():
 		usage()
 		exit(1)
 
-	fq_in = args[0]
+	fasta_in   = args[0]
 	report_out = args[1]
 
-	print('Input FASTQ: {}\nOutput report: {}'.format(fq_in, report_out))
+	print('Input FASTA: {}\nOutput report: {}'.format(fasta_in, report_out))
 
-	process_all_reads(fq_in, report_out)
+	process_all_reads(fasta_in, report_out)
 
 if __name__ == '__main__':
 	main()

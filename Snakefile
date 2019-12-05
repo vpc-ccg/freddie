@@ -278,10 +278,11 @@ rule score_clustering:
 
 rule plot_isoforms:
     input:
-        paf      = '{}/{{gene}}/{{sample}}/{{read_type}}.paf'.format(genes_d),
-        isoforms = '{}/{{gene}}/{{sample}}/{{read_type}}.isoforms.tsv'.format(genes_d),
-        exons    = '{}/{{gene}}/{{sample}}/{{read_type}}.iterative_canonical_exons.tsv'.format(genes_d),
-        script   = config['exec']['plot_isoforms'],
+        paf             = '{}/{{gene}}/{{sample}}/{{read_type}}.paf'.format(genes_d),
+        isoforms        = '{}/{{gene}}/{{sample}}/{{read_type}}.isoforms.tsv'.format(genes_d),
+        exons           = '{}/{{gene}}/{{sample}}/{{read_type}}.iterative_canonical_exons.tsv'.format(genes_d),
+        transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
+        script          = config['exec']['plot_isoforms'],
     output:
         isoform_plot = '{}/{{gene}}/{{sample}}/{{read_type}}.isoforms_plots.pdf'.format(genes_d),
     params:
@@ -289,4 +290,4 @@ rule plot_isoforms:
     conda:
         'freddie.env'
     shell:
-        '{input.script} -p {input.paf} -i {input.isoforms} -e {input.exons} -op {params.out_prefix}'
+        '{input.script} -p {input.paf} -i {input.isoforms} -e {input.exons} -t {input.transcripts_tsv} -op {params.out_prefix}'
