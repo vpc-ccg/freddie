@@ -9,9 +9,11 @@ samples:
         # - /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R000/P000R000.pass.fastq
         # - /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R001/P000R001.pass.fastq
         # - /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R002/P000R002.pass.fastq
-    P000S000_sim:
+    N_sim:
         - /groups/hachgrp/projects/dev-ltr-simulator/analysis/ltr-sim-dev/reads/P000S000.L-non.fastq
+    L_sim:
         - /groups/hachgrp/projects/dev-ltr-simulator/analysis/ltr-sim-dev/reads/P000S000.L-low.fastq
+    N_sim:
         - /groups/hachgrp/projects/dev-ltr-simulator/analysis/ltr-sim-dev/reads/P000S000.L-high.fastq
     # P001S000:
     #     - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R410/P001R410.pass.fastq
@@ -39,12 +41,12 @@ genes:
     # AR : AR
     # MYC        : MYC
     # PLSCR3     : PLSCR3
-    # E2F1       : E2F1
-    ENSG00000187838     : ENSG00000187838
+    E2F1       : E2F1
+    # ENSG00000187838     : ENSG00000187838
     # BLOC1S1    : BLOC1S1
     # SRSF2      : SRSF2
     # ATP5F1D    : ATP5F1D
-    HAX1       : HAX1
+    # HAX1       : HAX1
     # JTB        : JTB
     # SLC50A1    : SLC50A1
     # CTXN1      : CTXN1
