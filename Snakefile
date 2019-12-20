@@ -250,8 +250,8 @@ rule find_isoforms:
         order_isoforms  = 'True',
         garbage_isoform = 'True',
         recycle_garbage = 'True',
-        timeout         = 15,
-        license         = config['gurobi_license'],
+        timeout         = config['gurobi']['timeout'],
+        license         = config['gurobi']['license'],
     threads:
         32
     conda:

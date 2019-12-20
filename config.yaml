@@ -1,8 +1,9 @@
 outpath:
     /groups/hachgrp/projects/dev-long-iso/analysis/freddie-dev
 
-gurobi_license:
-    /groups/share/modules/gurobi811/linux64/license/gurobi.lic
+gurobi:
+    license: /groups/share/modules/gurobi811/linux64/license/gurobi.lic
+    timeout: 30
 
 samples:
     # P000S000:
@@ -46,7 +47,7 @@ genes:
     # BLOC1S1    : BLOC1S1
     SRSF2      : SRSF2
     # ATP5F1D    : ATP5F1D
-    HAX1       : HAX1
+    # HAX1       : HAX1
     # JTB        : JTB
     # SLC50A1    : SLC50A1
     # CTXN1      : CTXN1
