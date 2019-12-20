@@ -9,9 +9,11 @@ from scipy.signal import find_peaks
 from scipy.cluster import hierarchy
 from os import remove
 
-MIN_READS_ABS = 10
-MIN_READS_PRC = 0.01
+MIN_READS_ABS  = 3
+MIN_READS_PRC  = 0.01
 EXON_THRESHOLD = 0.8
+RANGE_LEN      = 15
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Cluster aligned reads into isoforms")
@@ -33,7 +35,7 @@ def parse_args():
     args = parser.parse_args()
     return args
 
-def read_paf(paf, range_len=15):
+def read_paf(paf, range_len=RANGE_LEN):
     is_first = True
     pos_to_rid = list()
     read_name_to_id = dict()
@@ -112,7 +114,7 @@ def merge_peaks(peaks_a, peaks_b, range_len):
         idx_s = idx_e
     return result
 
-def find_exons(pos_to_rid, interval, rids, range_len=15):
+def find_exons(pos_to_rid, interval, rids, range_len=RANGE_LEN):
     rids = set(rids)
     print('Finding exons in interval [{}:{}] with {} reads'.format(interval[0], interval[1], len(rids)))
     N = len(rids)
@@ -294,7 +296,7 @@ def main():
         )
     ]
     data = [exons]
-    range_len = 15
+    range_len = RANGE_LEN
     for d in data:
         print(d)
     for stage_id in range(args.iterations):

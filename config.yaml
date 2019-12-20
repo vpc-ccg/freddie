@@ -40,13 +40,13 @@ exec:
 genes:
     # AR : AR
     # MYC        : MYC
-    # PLSCR3     : PLSCR3
+    PLSCR3     : PLSCR3
     E2F1       : E2F1
     # ENSG00000187838     : ENSG00000187838
     # BLOC1S1    : BLOC1S1
-    # SRSF2      : SRSF2
+    SRSF2      : SRSF2
     # ATP5F1D    : ATP5F1D
-    # HAX1       : HAX1
+    HAX1       : HAX1
     # JTB        : JTB
     # SLC50A1    : SLC50A1
     # CTXN1      : CTXN1
@@ -57,7 +57,7 @@ genes:
     # NDUFA1     : NDUFA1
     # HIGD2A     : HIGD2A
     # ENDOG      : ENDOG
-    # HOXB13     : HOXB13
+    HOXB13     : HOXB13
     # TMEM238    : TMEM238
     # ZNF503     : ZNF503
     # PYURF      : PYURF
@@ -65,7 +65,7 @@ genes:
     # SEPHS2     : SEPHS2
     # BEX1       : BEX1
     # SF3B5      : SF3B5
-    # GTDC1      : GTDC1
+    GTDC1      : GTDC1
 
 mapping_settings:
     dna  : splice
