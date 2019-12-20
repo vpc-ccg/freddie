@@ -425,6 +425,7 @@ def run_ILP(MATRIX, RIDS, GAP_L, EXON_L, K, polyA_trimmed, EPSILON, OFFSET, INCO
     iid_to_rids = dict()
     rid_to_corrections = dict()
     rid_to_iid = dict()
+    print('STATUS: {}'.format(ILP_ISOFORMS.Status))
     if ILP_ISOFORMS_STATUS == GRB.Status.INF_OR_UNBD or \
            ILP_ISOFORMS_STATUS == GRB.Status.INFEASIBLE or \
            ILP_ISOFORMS_STATUS == GRB.Status.UNBOUNDED:
@@ -432,11 +433,15 @@ def run_ILP(MATRIX, RIDS, GAP_L, EXON_L, K, polyA_trimmed, EPSILON, OFFSET, INCO
         log_file.write(' The model can not be solved because it is infeasible or unbounded\n')
         ILP_ISOFORMS.computeIIS()
         ILP_ISOFORMS.write('{}.ilp'.format(out_prefix))
-    elif ILP_ISOFORMS_STATUS != GRB.Status.OPTIMAL:
-        status = 'SUBOPTIMAL'
-        log_file.write('The model was stopped with status {ILP_PDG_STATUS}'.format(ILP_PDG_STATUS))
-    else:
-        status = 'OPTIMAL'
+    elif ILP_ISOFORMS_STATUS == GRB.Status.OPTIMAL or ILP_ISOFORMS_STATUS == GRB.Status.SUBOPTIMAL or ILP_ISOFORMS_STATUS == GRB.Status.TIME_LIMIT:
+        if ILP_ISOFORMS_STATUS == GRB.Status.SUBOPTIMAL:
+            status = 'SUBOPTIMAL'
+            log_file.write('The model was stopped with status {}'.format(ILP_ISOFORMS_STATUS))
+        elif ILP_ISOFORMS_STATUS == GRB.Status.TIME_LIMIT:
+            status = 'TIME_LIMIT'
+            log_file.write('The model was stopped with status {}'.format(ILP_ISOFORMS_STATUS))
+        else:
+            status = 'OPTIMAL'
         # Writing the optimal solution to disk
         solution_file = open('{}.sol'.format(out_prefix), 'w+')
         for v in ILP_ISOFORMS.getVars():
