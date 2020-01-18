@@ -106,13 +106,22 @@ def get_splice(gene_len, rid_to_intervals):
     Y_a = Y_i + Y_o
     return X, Y_i, Y_o, Y_a
 
-def plot(Y_roll, peaks, brks, outpath):
+
+
+
+def plot(Y_roll, peaks, brks, pos_to_rid, outpath):
     pp.figure(figsize=(20,5))
-    pp.plot(Y_roll)
-    pp.plot(peaks, [Y_roll[p] for p in peaks], "x")
-    for b in brks:
-        pp.axvline(b,ymin=0, ymax=max(Y_roll)*1.05, color='green', ls='dashed', alpha=0.4, linewidth=1)
+    pp.xlabel('Gene position')
+    pp.ylabel('# of read splicing events')
+    pp.plot(peaks, [Y_roll[p] for p in peaks], "x", label='Candidate splice points', color='#66c2a5', zorder=1)
+    pp.plot(Y_roll, label='Gaussian filtered', color='#fc8d62', zorder=3)
+    pp.vlines(brks,ymin=0, ymax=max(Y_roll)*1.05, colors='#8da0cb', linestyles='dashed', alpha=0.4, linewidth=1, label='Annotation splice points',zorder=4)
+    pp.legend()
+    pp.twinx()
+    pp.ylabel('Coverage')
+    pp.plot([len(p) for p in pos_to_rid], label='Read coverage', color='black', alpha=.4,zorder=2)
     pp.title('|p|={}'.format(len(peaks)))
+    pp.legend()
     pp.savefig(fname=outpath)
 
 def main():
@@ -132,7 +141,7 @@ def main():
     else:
         Y_roll=gaussian_filter1d(Y_a,args.sigma)
     peaks, _ = find_peaks(Y_roll)
-    plot(Y_roll=Y_roll, peaks=peaks, brks=brks, outpath='{}.pdf'.format(args.out_prefix))
+    plot(Y_roll=Y_roll, peaks=peaks, brks=brks, pos_to_rid=pos_to_rid, outpath='{}.pdf'.format(args.out_prefix))
     out_file = open('{}.txt'.format(args.out_prefix), 'w+')
     for i in peaks:
         print(i, file=out_file)
