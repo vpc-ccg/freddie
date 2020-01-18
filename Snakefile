@@ -46,10 +46,11 @@ rule all:
     input:
         # expand('{}/{{sample}}{{training_file}}'.format(ns_train_d), sample=config['samples'], training_file=ns_train_files),
         # expand('{}/{{gene}}/{{sample}}/{{data_file}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], data_file=gene_data),
-        # expand('{}/{{gene}}/{{sample}}/reads_raw.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['paf']),
-        expand('{}/{{gene}}/{{sample}}/reads_raw.isoforms.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['tsv']),
+        expand('{}/{{gene}}/{{sample}}/reads_raw.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['paf']),
+        expand('{}/{{gene}}/{{sample}}/reads_raw.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['candidate_segments.pdf']),
+        # expand('{}/{{gene}}/{{sample}}/reads_raw.isoforms.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['tsv']),
         # expand('{}/{{gene}}/{{sample}}/reads_raw.iterative_canonical_exons.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['data', 'tsv', 'zeros_unaligned.tsv']),
-        expand('{}/{{gene}}/{{sample}}/reads_raw.isoforms_plots.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf']),
+        # expand('{}/{{gene}}/{{sample}}/reads_raw.isoforms_plots.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf']),
 
 rule freddie_make:
     input:
@@ -199,21 +200,20 @@ rule dot_to_pdf:
     shell:
         'cat {input.dot} | dot -T pdf > {output.pdf}'
 
-rule disentangle:
+rule find_candidate_segments:
     input:
-        transcripts_tsv     = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
-        paf                 = '{}/{{gene}}/{{sample}}/{{read_type}}.paf'.format(genes_d),
-        canonical_exons_txt = '{}/{{gene}}/{{sample}}/{{read_type}}.canonical_exons.txt'.format(genes_d),
-        script              = config['exec']['disentangle'],
+        transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
+        paf             = '{}/{{gene}}/{{sample}}/{{read_type}}.paf'.format(genes_d),
+        script          = config['exec']['find_candidate_segments'],
     output:
-        disentanglement = '{}/{{gene}}/{{sample}}/{{read_type}}.disentanglement.pdf'.format(genes_d),
-        leaves = '{}/{{gene}}/{{sample}}/{{read_type}}.disentanglement.leaves.txt'.format(genes_d),
+        pdf = '{}/{{gene}}/{{sample}}/{{read_type}}.candidate_segments.pdf'.format(genes_d),
+        txt = '{}/{{gene}}/{{sample}}/{{read_type}}.candidate_segments.txt'.format(genes_d),
     params:
-        out_prefix='{}/{{gene}}/{{sample}}/{{read_type}}.disentanglement'.format(genes_d),
+        out_prefix='{}/{{gene}}/{{sample}}/{{read_type}}.candidate_segments'.format(genes_d),
     conda:
         'freddie.env'
     shell:
-        '{input.script} -p {input.paf} -t {input.transcripts_tsv} -pk {input.canonical_exons_txt} -op {params.out_prefix}'
+        '{input.script} -p {input.paf} -t {input.transcripts_tsv} -op {params.out_prefix}'
 
 rule find_canonical_exon_iteratively:
     input:

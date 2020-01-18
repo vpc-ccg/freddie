@@ -14,13 +14,13 @@ samples:
         - /groups/hachgrp/projects/dev-ltr-simulator/analysis/ltr-sim-dev/reads/P000S000.L-non.fastq
     L_sim:
         - /groups/hachgrp/projects/dev-ltr-simulator/analysis/ltr-sim-dev/reads/P000S000.L-low.fastq
-    N_sim:
-        - /groups/hachgrp/projects/dev-ltr-simulator/analysis/ltr-sim-dev/reads/P000S000.L-high.fastq
-    # P001S000:
-    #     - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R410/P001R410.pass.fastq
-    #     - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R411/P001R411.pass.fastq
-    #     - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R510/P001R510.pass.fastq
-    #     - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R511/P001R511.pass.fastq
+    # H_sim:
+    #     - /groups/hachgrp/projects/dev-ltr-simulator/analysis/ltr-sim-dev/reads/P000S000.L-high.fastq
+    P001S000:
+        - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R410/P001R410.pass.fastq
+        - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R411/P001R411.pass.fastq
+        - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R510/P001R510.pass.fastq
+        - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R511/P001R511.pass.fastq
 
 exec:
     freddie                         : ./freddie
@@ -31,7 +31,7 @@ exec:
     find_canonical_exon_iteratively : py/find_canonical_exons_iteratively.py
     find_isoforms                   : py/find_isoforms.py
     plot_isoforms                   : py/plot_isoforms.py
-    disentangle                     : py/disentangle.py
+    find_candidate_segments         : py/find_candidate_segments.py
     read_analysis                   : extern/nanosim/src/read_analysis.py
     simulator                       : extern/nanosim/src/simulator.py
     polyA                           : py/polyA_detection.py
