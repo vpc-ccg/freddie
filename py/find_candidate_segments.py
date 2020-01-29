@@ -87,6 +87,9 @@ def read_paf(paf, range_len=5):
     return pos_to_rid,rid_to_intervals,read_name_to_id
 
 def get_brks(tsv):
+    """
+    Get splicing breakpoints from annotation TSV file for plotting purposes only.
+    """
     brks = set()
     for line in open(tsv):
         line = line.rstrip().split()
@@ -96,6 +99,9 @@ def get_brks(tsv):
     return sorted(brks)
 
 def get_splice(gene_len, rid_to_intervals):
+    """
+    Get splicing in and out for each postion on the gene.
+    """
     X = [x for x in range(0,gene_len+1)]
     Y_i = np.zeros(len(X))
     Y_o = np.zeros(len(X))
@@ -106,16 +112,41 @@ def get_splice(gene_len, rid_to_intervals):
     Y_a = Y_i + Y_o
     return X, Y_i, Y_o, Y_a
 
+def get_desert_free_regions(peaks, pos_to_rid, width=50):
+    """
+    Returns inclusive intervals of peak indices of regions that do not include
+    desserts of size >= 50.
+    """
+    brks = list()
+    for idx,(a,b) in enumerate(zip(peaks[:-1], peaks[1:])):
+        if b-a < width:
+            continue
+        s = a
+        for i in range(a+1,b):
+            if len(pos_to_rid[i]) > 0:
+                s = i
+            if i - s >= width:
+                brks.append(idx)
+                break
+    brks.append(len(peaks)-1)
+    intervals = list()
+    s = 0
+    for i in brks:
+        intervals.append((s,i))
+        s = i+1
+    return intervals
 
-
-
-def plot(Y_roll, peaks, brks, pos_to_rid, outpath):
+def plot(Y_roll, peaks, brks, intervals, pos_to_rid, outpath):
     pp.figure(figsize=(20,5))
     pp.xlabel('Gene position')
     pp.ylabel('# of read splicing events')
     pp.plot(peaks, [Y_roll[p] for p in peaks], "x", label='Candidate splice points', color='#66c2a5', zorder=1)
     pp.plot(Y_roll, label='Gaussian filtered', color='#fc8d62', zorder=3)
     pp.vlines(brks,ymin=0, ymax=max(Y_roll)*1.05, colors='#8da0cb', linestyles='dashed', alpha=0.4, linewidth=1, label='Annotation splice points',zorder=4)
+    for s,e in intervals:
+        print(peaks[s],peaks[e])
+        pp.hlines(y=max(Y_roll)*0.75, xmin=peaks[s], xmax=peaks[e])
+        pp.text(y=max(Y_roll)*0.80, x=peaks[s]+(peaks[e]-peaks[s])*.4, s='|p|={}'.format(e-s+1), rotation=45)
     pp.legend()
     pp.twinx()
     pp.ylabel('Coverage')
@@ -141,7 +172,15 @@ def main():
     else:
         Y_roll=gaussian_filter1d(Y_a,args.sigma)
     peaks, _ = find_peaks(Y_roll)
-    plot(Y_roll=Y_roll, peaks=peaks, brks=brks, pos_to_rid=pos_to_rid, outpath='{}.pdf'.format(args.out_prefix))
+    temp = list()
+    temp.append(0)
+    for p in peaks:
+        if sum(Y_a[p-int(args.sigma):p+1+int(args.sigma)]) > 1:
+            temp.append(p)
+    temp.append(len(pos_to_rid))
+    peaks = np.array(temp)
+    intervals = get_desert_free_regions(peaks, pos_to_rid)
+    plot(Y_roll=Y_roll, peaks=peaks, brks=brks, intervals=intervals, pos_to_rid=pos_to_rid, outpath='{}.pdf'.format(args.out_prefix))
     out_file = open('{}.txt'.format(args.out_prefix), 'w+')
     for i in peaks:
         print(i, file=out_file)
