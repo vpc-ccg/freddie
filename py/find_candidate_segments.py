@@ -112,12 +112,19 @@ def get_splice(gene_len, rid_to_intervals):
     Y_a = Y_i + Y_o
     return X, Y_i, Y_o, Y_a
 
-def get_desert_free_regions(peaks, pos_to_rid, width=50):
+def get_high_var_peaks(peaks, Y_roll):
+    thresh = Y_roll.mean() + 3*Y_roll.std()
+    idxs = list()
+    for idx,p in enumerate(peaks):
+        if Y_roll[p] > thresh:
+            idxs.append(idx)
+    return idxs
+
+def get_desert_bound_peaks(peaks, pos_to_rid, width=50):
     """
-    Returns inclusive intervals of peak indices of regions that do not include
-    desserts of size >= 50.
+    Returns peak indices of peaks that neighbor a region of deserts of size >= 50.
     """
-    brks = list()
+    idxs = list()
     for idx,(a,b) in enumerate(zip(peaks[:-1], peaks[1:])):
         if b-a < width:
             continue
@@ -126,33 +133,31 @@ def get_desert_free_regions(peaks, pos_to_rid, width=50):
             if len(pos_to_rid[i]) > 0:
                 s = i
             if i - s >= width:
-                brks.append(idx)
+                idxs.append(idx)
                 break
-    brks.append(len(peaks)-1)
-    intervals = list()
-    s = 0
-    for i in brks:
-        intervals.append((s,i))
-        s = i+1
-    return intervals
+    return idxs
 
-def plot(Y_roll, peaks, brks, intervals, pos_to_rid, outpath):
+def plot(Y_roll, peaks, peaks_opt_idxs, peaks_dessert, peaks_variance, brks, pos_to_rid, outpath):
     pp.figure(figsize=(20,5))
     pp.xlabel('Gene position')
     pp.ylabel('# of read splicing events')
-    pp.plot(peaks, [Y_roll[p] for p in peaks], "x", label='Candidate splice points', color='#66c2a5', zorder=1)
+    pp.plot([peaks[idx] for idx in peaks_opt_idxs], [Y_roll[p] for p in [peaks[idx] for idx in peaks_opt_idxs]], "o", label='peaks_opt_idxs', color='#e78ac3', zorder=1)
+    pp.plot([peaks[idx] for idx in peaks_dessert], [Y_roll[p] for p in [peaks[idx] for idx in peaks_dessert]], ">", label='peaks_dessert', color='brown', zorder=1)
+    pp.plot([peaks[idx] for idx in peaks_variance], [Y_roll[p] for p in [peaks[idx] for idx in peaks_variance]], "<", label='peaks_variance', color='green', zorder=1)
+    peaks_other = set(range(len(peaks))) - set(peaks_opt_idxs) - peaks_dessert - peaks_variance
+    pp.plot([peaks[idx] for idx in peaks_other], [Y_roll[p] for p in peaks_other], "x", label='peaks_other', color='#66c2a5', zorder=1)
     pp.plot(Y_roll, label='Gaussian filtered', color='#fc8d62', zorder=3)
     pp.vlines(brks,ymin=0, ymax=max(Y_roll)*1.05, colors='#8da0cb', linestyles='dashed', alpha=0.4, linewidth=1, label='Annotation splice points',zorder=4)
-    for s,e in intervals:
-        print(peaks[s],peaks[e])
-        pp.hlines(y=max(Y_roll)*0.75, xmin=peaks[s], xmax=peaks[e])
-        pp.text(y=max(Y_roll)*0.80, x=peaks[s]+(peaks[e]-peaks[s])*.4, s='|p|={}'.format(e-s+1), rotation=45)
+    # for s,e in intervals:
+    #     print(peaks[s],peaks[e])
+    #     pp.hlines(y=max(Y_roll)*0.75, xmin=peaks[s], xmax=peaks[e])
+    #     pp.text(y=max(Y_roll)*0.80, x=peaks[s]+(peaks[e]-peaks[s])*.4, s='|p|={}'.format(e-s+1), rotation=45)
     pp.legend()
     pp.twinx()
     pp.ylabel('Coverage')
     pp.plot([len(p) for p in pos_to_rid], label='Read coverage', color='black', alpha=.4,zorder=2)
-    pp.title('|p|={}'.format(len(peaks)))
-    pp.legend()
+    pp.title('|p|={} |opt_p|={}'.format(len(peaks), len(peaks_opt_idxs)))
+    pp.legend(loc='center right')
     pp.savefig(fname=outpath)
 
 def optimize(peaks, C, start, end):
@@ -161,6 +166,7 @@ def optimize(peaks, C, start, end):
     nay_mem = dict()
     amb_mem = dict()
 
+    print('Preomputing coverage mems...')
     for i in range(start, end):
         for j in range(i+1, end):
             cov_mem[(i,j)] = (C[j]-C[i])/(peaks[j]-peaks[i]+1)
@@ -184,29 +190,39 @@ def optimize(peaks, C, start, end):
         return out_mem[(i,j,k)]
     D = dict()
     B = dict()
+    logger = dict()
     def dp(i,j,k):
+        if not (i,j) in logger:
+            # print('(i,j):',(i,j))
+            logger[(i,j)]=None
         if not (i,j,k) in D:
-            max_b = (-1,-1,-1)
-            max_d = float('-inf')
-            for k_ in range(k+1, end):
-                cur_b = (j,k,k_)
-                cur_d = -amb_mem[(i,j)] + outside(i,j,k) + dp(*cur_b)
-                if cur_d > max_d:
-                    max_d = cur_d
-                    max_b = cur_b
-            D[(i,j,k)] = max_d
-            B[(i,j,k)] = max_b
+            if j+1==k:
+                D[(i,j,k)] = -amb_mem[(i,j)].sum() + outside(i,j,k)
+                B[(i,j,k)] = (-1,-1,-1)
+            else:
+                max_b = (-1,-1,-1)
+                max_d = float('-inf')
+                for k_ in range(k+1, end):
+                    cur_b = (j,k,k_)
+                    cur_d = -amb_mem[(i,j)].sum() + outside(i,j,k) + dp(*cur_b)
+                    if cur_d > max_d:
+                        max_d = cur_d
+                        max_b = cur_b
+                D[(i,j,k)] = max_d
+                B[(i,j,k)] = max_b
+        # print('{} : {}'.format((i,j,k), D[(i,j,k)]))
         return D[(i,j,k)]
     max_b = (-1,-1,-1)
     max_d = float('-inf')
-    for j in range(i+1, end):
+    print('DP...')
+    for j in range(start+1, end):
         for k in range(j+1, end):
-            cur_b = (0,j,k)
+            # print('j,k', (j,k))
+            cur_b = (start,j,k)
             cur_d = dp(*cur_b)
             if cur_d > max_d:
                 max_d = cur_d
                 max_b = cur_b
-
     return D,B,max_d,max_b
 
 def get_coverage(peaks, pos_to_rid):
@@ -255,9 +271,36 @@ def main():
             temp.append(p)
     temp.append(len(pos_to_rid))
     peaks = np.array(temp)
-    print(get_coverage(peaks=peaks, pos_to_rid=pos_to_rid))
-    intervals = get_desert_free_regions(peaks, pos_to_rid)
-    plot(Y_roll=Y_roll, peaks=peaks, brks=brks, intervals=intervals, pos_to_rid=pos_to_rid, outpath='{}.pdf'.format(args.out_prefix))
+    peaks_opt_idxs = [0,len(peaks)-1]
+    peaks_dessert = get_desert_bound_peaks(peaks, pos_to_rid)
+    peaks_opt_idxs.extend(peaks_dessert)
+    peaks_variance = get_high_var_peaks(peaks=peaks, Y_roll=Y_roll)
+    peaks_opt_idxs.extend(peaks_variance)
+    peaks_opt_idxs = sorted(set(peaks_opt_idxs))
+    print(peaks_opt_idxs)
+    coverage = get_coverage(peaks=peaks, pos_to_rid=pos_to_rid)
+    for interval in zip(peaks_opt_idxs[:-1],peaks_opt_idxs[1:]):
+        if interval[1]-interval[0]+1 < 4:
+            print('Skipping interval {} since it has less than 3 breakpoints'.format(interval))
+            continue
+        print('Running interval {}'.format(interval))
+        D,B,max_d,max_b=optimize(peaks=peaks, C=coverage, start=interval[0], end=interval[1])
+        # print('Solution:')
+        # print('{}-{}-{}'.format(*max_b),end='')
+        peaks_opt_idxs.extend(max_b)
+        while B[max_b] != (-1,-1,-1):
+            assert(max_b[1:]==B[max_b][:-1])
+            max_b = B[max_b]
+            peaks_opt_idxs.append(max_b[2])
+            # print('-{}'.format(max_b[2]),end='')
+        # print()
+        # break
+    peaks_opt_idxs = sorted(set(peaks_opt_idxs))
+    peaks_dessert=set(peaks_dessert)
+    peaks_variance=set(peaks_variance)
+    peaks_opt_idxs = [idx for idx in peaks_opt_idxs if not idx in peaks_dessert|peaks_variance]
+    print(peaks_opt_idxs)
+    plot(Y_roll=Y_roll, peaks=peaks, peaks_opt_idxs=peaks_opt_idxs, peaks_dessert=peaks_dessert, peaks_variance=peaks_variance, brks=brks, pos_to_rid=pos_to_rid, outpath='{}.pdf'.format(args.out_prefix))
     out_file = open('{}.txt'.format(args.out_prefix), 'w+')
     for i in peaks:
         print(i, file=out_file)
