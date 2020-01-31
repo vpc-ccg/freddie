@@ -155,10 +155,86 @@ def plot(Y_roll, peaks, brks, intervals, pos_to_rid, outpath):
     pp.legend()
     pp.savefig(fname=outpath)
 
+def optimize(peaks, C, start, end):
+    cov_mem = dict()
+    yea_mem = dict()
+    nay_mem = dict()
+    amb_mem = dict()
+
+    for i in range(start, end):
+        for j in range(i+1, end):
+            cov_mem[(i,j)] = (C[j]-C[i])/(peaks[j]-peaks[i]+1)
+            yea_mem[(i,j)] = cov_mem[(i,j)] > 0.9
+            nay_mem[(i,j)] = cov_mem[(i,j)] < 0.1
+            amb_mem[(i,j)] = np.logical_not(np.logical_xor(yea_mem[(i,j)],nay_mem[(i,j)]))
+
+    out_mem = dict()
+    def outside(i, j, k):
+        if not (i,j,k) in out_mem:
+            out_mem[(i,j,k)] = sum(np.logical_or(
+                np.logical_xor(
+                    yea_mem[(i,j)],
+                    nay_mem[(j,k)]
+                ),
+                np.logical_xor(
+                    nay_mem[(i,j)],
+                    yea_mem[(j,k)]
+                ),
+            ))
+        return out_mem[(i,j,k)]
+    D = dict()
+    B = dict()
+    def dp(i,j,k):
+        if not (i,j,k) in D:
+            max_b = (-1,-1,-1)
+            max_d = float('-inf')
+            for k_ in range(k+1, end):
+                cur_b = (j,k,k_)
+                cur_d = -amb_mem[(i,j)] + outside(i,j,k) + dp(*cur_b)
+                if cur_d > max_d:
+                    max_d = cur_d
+                    max_b = cur_b
+            D[(i,j,k)] = max_d
+            B[(i,j,k)] = max_b
+        return D[(i,j,k)]
+    max_b = (-1,-1,-1)
+    max_d = float('-inf')
+    for j in range(i+1, end):
+        for k in range(j+1, end):
+            cur_b = (0,j,k)
+            cur_d = dp(*cur_b)
+            if cur_d > max_d:
+                max_d = cur_d
+                max_b = cur_b
+
+    return D,B,max_d,max_b
+
+def get_coverage(peaks, pos_to_rid):
+    rids_cnt = 0
+    for rids in pos_to_rid:
+        for rid in rids:
+            if rid > rids_cnt:
+                rids_cnt = rid
+    rids_cnt += 1
+    C = np.zeros((len(peaks), rids_cnt), dtype=np.uint32)
+    for idx,(cur,nxt) in enumerate(zip(peaks[:-1],peaks[1:]), start=1):
+        for pos in range(cur,nxt):
+            for rid in pos_to_rid[pos]:
+                C[idx,rid]+=1
+    for i in range(1,len(C)):
+        C[i] += C[i-1]
+    return C
+
 def main():
     args = parse_args()
 
     pos_to_rid,rid_to_intervals,read_name_to_id = read_paf(args.paf)
+    # rid_set = set()
+    # for rids in pos_to_rid:
+    #     for rid in rids:
+    #         rid_set.add(rid)
+    # rid_set = sorted(rid_set)
+    # print(rid_set[0],rid_set[-1], len(rid_set))
     brks = get_brks(args.tsv)
     if len(rid_to_intervals)>0:
         gene_len = int(open(args.paf).readline().split('\t')[6])
@@ -179,6 +255,7 @@ def main():
             temp.append(p)
     temp.append(len(pos_to_rid))
     peaks = np.array(temp)
+    print(get_coverage(peaks=peaks, pos_to_rid=pos_to_rid))
     intervals = get_desert_free_regions(peaks, pos_to_rid)
     plot(Y_roll=Y_roll, peaks=peaks, brks=brks, intervals=intervals, pos_to_rid=pos_to_rid, outpath='{}.pdf'.format(args.out_prefix))
     out_file = open('{}.txt'.format(args.out_prefix), 'w+')
