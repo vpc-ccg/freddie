@@ -321,7 +321,9 @@ def main():
     peaks_dsrt = get_desert_bound_peaks(peaks=peak_positions, pos_to_rid=pos_to_rid)
     peaks_vrnc = get_high_var_peaks(peaks=peak_positions, Y_roll=Y_roll, variance_factor=args.variance_factor)
     peaks_fixd = sorted(peaks_dsrt|peaks_vrnc)
-
+    for s,e in zip(peaks_fixd[:-1],peaks_fixd[1:]):
+        peaks_fixd.extend([s+50*(1+d) for d in range((e-s)//40)])
+    peaks_fixd = sorted(set(peaks_fixd))
     peaks_dyna = set()
     coverage = get_coverage(peaks=peak_positions, pos_to_rid=pos_to_rid)
 
@@ -329,6 +331,7 @@ def main():
     for start,end in zip(peaks_fixd[:-1],peaks_fixd[1:]):
         if end-start+1 < 3:
             continue
+        print((start,end))
         optimizing_args.append((
             peak_positions,
             coverage,
