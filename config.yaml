@@ -31,7 +31,7 @@ exec:
     find_canonical_exon_iteratively : py/find_canonical_exons_iteratively.py
     find_isoforms                   : py/find_isoforms.py
     plot_isoforms                   : py/plot_isoforms.py
-    find_candidate_segments         : py/find_candidate_segments.py
+    segment                         : py/segment.py
     read_analysis                   : extern/nanosim/src/read_analysis.py
     simulator                       : extern/nanosim/src/simulator.py
     polyA                           : py/polyA_detection.py
