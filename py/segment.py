@@ -77,10 +77,10 @@ def read_paf(paf, range_len=0):
             rid_to_intervals[rid] = list()
         rid = read_name_to_id[name]
         if any('oc:c:1' in tag for tag in line[12:]):
-            t_start = max(0, int(line[7]) - 1)
-            t_end = int(line[8]) + 1
-            q_start = max(0, int(line[2]) - 1)
-            q_end = int(line[3]) + 1
+            t_start = int(line[7])
+            t_end   = int(line[8])
+            q_start = int(line[2])
+            q_end   = int(line[3])
             t_interval = (t_start, t_end)
             q_interval = (q_start, q_end)
             rid_to_intervals[rid].append((t_interval, q_interval))
