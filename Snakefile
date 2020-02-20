@@ -19,6 +19,7 @@ gene_data=[
     'transcripts.fasta',
     'gene.fasta',
     'reads.fastq',
+    'reads.paf',
 ]
 
 rule all:
@@ -26,7 +27,7 @@ rule all:
         expand('{}/{{sample}}.deSALT.sam'.format(mapped_d), sample=config['samples']),
         expand('{}/{{sample}}.deSALT.paf'.format(mapped_d), sample=config['samples']),
         expand('{}/{{gene}}/{{sample}}/{{data_file}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], data_file=gene_data),
-        # expand('{}/{{gene}}/{{sample}}/reads.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['segments.pdf']),
+        expand('{}/{{gene}}/{{sample}}/reads.segments.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['txt', 'pdf']),
         # expand('{}/{{gene}}/{{sample}}/reads.isoforms.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['tsv']),
         # expand('{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['data', 'tsv', 'zeros_unaligned.tsv']),
         # expand('{}/{{gene}}/{{sample}}/reads.isoforms_plots.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf']),
@@ -108,7 +109,7 @@ rule find_segments:
         pdf = '{}/{{gene}}/{{sample}}/{{read_type}}.segments.pdf'.format(genes_d),
         txt = '{}/{{gene}}/{{sample}}/{{read_type}}.segments.txt'.format(genes_d),
     threads:
-        32
+        8
     params:
         out_prefix='{}/{{gene}}/{{sample}}/{{read_type}}.segments'.format(genes_d),
     conda:

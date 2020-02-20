@@ -165,9 +165,29 @@ def get_desert_bound_peaks(peaks, pos_to_rid, width=50):
     return peaks_dsrt
 
 def plot(Y_roll, peak_positions, peaks_dyna, peaks_dsrt, peaks_vrnc, annotated_brks, pos_to_rid, outpath):
-    pp.figure(figsize=(20,5))
-    pp.xlabel('Gene position')
-    pp.ylabel('# of read splicing events')
+    intervals = [[0,0]]
+    margin = 50
+    bridge = 200
+    for i in annotated_brks:
+        Y_roll[i]+= 1
+    for idx,i in enumerate(Y_roll):
+        if i == 0:
+            continue
+        if intervals[-1][1]+bridge>=idx:
+            intervals[-1][1] = idx
+        else:
+            intervals[-1][1]+=margin
+            intervals.append([idx-margin,idx])
+    for i in annotated_brks:
+        Y_roll[i]-= 1
+    sizes = [max((e-s)/100, 2) for s,e in intervals]
+    fig, axes = pp.subplots(1, len(intervals), sharey=True, figsize=(sum(sizes),5), gridspec_kw={'width_ratios': sizes})
+    pp.subplots_adjust(left=2/sum(sizes), right=1-6/sum(sizes))
+    axes_cov = [ax.twinx() for ax in axes]
+    axes_cov[0].get_shared_y_axes().join(*axes)
+    fig.text(0.5, 0.04, 'Gene position', ha='center')
+    fig.text(0.5, 0.96, '|p|={} |peaks_dyna|={} |peaks_dsrt|={} |peaks_vrnc|={}'.format(len(peak_positions), len(peaks_dyna), len(peaks_dsrt), len(peaks_vrnc)), ha='center')
+    fig.text(1/sum(sizes), 0.5, '# of read splicing events', va='center', rotation='vertical')
     plot_data = list()
     plot_data.append(dict(
         X=[peak_positions[i] for i in set(range(len(peak_positions)))-set(peaks_dyna)-set(peaks_dsrt)-set(peaks_vrnc)],
@@ -195,17 +215,29 @@ def plot(Y_roll, peak_positions, peaks_dyna, peaks_dsrt, peaks_vrnc, annotated_b
     ))
     for d in plot_data:
         d['Y'] = [Y_roll[p] for p in d['X']]
-    for d in plot_data:
-        pp.plot(d['X'], d['Y'], d['mark'], label=d['label'], color=d['color'], zorder=10)
-    pp.plot(Y_roll, label='Gaussian filtered', color='#fc8d62', zorder=3)
-    pp.vlines(annotated_brks,ymin=0, ymax=max(Y_roll)*1.05, colors='#8da0cb', linestyles='dashed', alpha=0.4, linewidth=1, label='Annotation splice points',zorder=4)
-    pp.legend()
-    pp.twinx()
-    pp.ylabel('Coverage')
-    pp.plot([len(p) for p in pos_to_rid], label='Read coverage', color='black', alpha=.4,zorder=2)
-    pp.title('|p|={} |peaks_dyna|={} |peaks_dsrt|={} |peaks_vrnc|={} '.format(len(peak_positions), len(peaks_dyna), len(peaks_dsrt), len(peaks_vrnc)))
-    pp.legend(loc='center right')
-    pp.savefig(fname=outpath)
+    for idx,ax in enumerate(axes):
+        ax.set_xlim(intervals[idx][0],intervals[idx][1])
+        for d in plot_data:
+            ax.plot(d['X'], d['Y'], d['mark'], label=d['label'], color=d['color'], zorder=10)
+        ax.plot(Y_roll, label='Gaussian filtered', color='#fc8d62', zorder=3)
+        ax.vlines(annotated_brks,ymin=0, ymax=max(Y_roll)*1.05, colors='#8da0cb', linestyles='dashed', alpha=0.4, linewidth=1, label='Annotation splice points',zorder=4)
+        ax.yaxis.tick_left()
+        # ax.set_yticks([])
+        axes_cov[idx].plot([len(p) for p in pos_to_rid], label='Read coverage', color='black', alpha=.4,zorder=2)
+        axes_cov[idx].yaxis.tick_right()
+        # if idx == len(axes)-1:
+        #     ax.legend(loc='center right', bbox_to_anchor=(3, 0, 0.5, 1))
+        #     axes_cov[idx].set_ylabel('Coverage')
+        #     axes_cov[idx].legend(loc='upper right', bbox_to_anchor=(3, 0, 0.5, 1))
+        # ax.set_yticks([])
+        # if idx == len(axes)-1:
+        # else:
+        #     ax.set_yticks([])
+    handles, labels   = axes[-1].get_legend_handles_labels()
+    handles2, labels2 = axes_cov[-1].get_legend_handles_labels()
+    axes[-1].legend(handles+handles2, labels+labels2,bbox_to_anchor=(1+1.5*2/sizes[-1], 0.75), loc='upper left', borderaxespad=0.)
+
+    fig.savefig(fname=outpath)
 
 def optimize(peaks, C, start, end, low, high):
     cov_mem = dict()
