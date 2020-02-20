@@ -138,7 +138,7 @@ def get_high_var_peaks(peaks, Y_roll, variance_factor):
     Returns a set of peak indices that are above mean+variance_factor*std
     of the signal
     """
-    thresh = Y_roll.mean() + variance_factor*Y_roll.std()
+    thresh = Y_roll[Y_roll>0].mean() + variance_factor*Y_roll[Y_roll>0].std()
     peaks_vrnc = set()
     for idx,p in enumerate(peaks):
         if Y_roll[p] > thresh:
