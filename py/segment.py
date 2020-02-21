@@ -51,6 +51,16 @@ def parse_args():
                         type=float,
                         default=3.0,
                         help="The sigma factor to fix a candidate peak. The threshold is set as > mean+3*variance_factor. Default 3.0")
+    parser.add_argument("-hp",
+                        "--max-peak-cnt-per-segment",
+                        type=int,
+                        default=50,
+                        help="Maximum number of peaks allowed per segment")
+    parser.add_argument("-lo",
+                        "--min-read-support-outside",
+                        type=int,
+                        default=3,
+                        help="Minimum reads support for splice site to support a breakpoint")
     args = parser.parse_args()
     return args
 
@@ -164,7 +174,7 @@ def get_desert_bound_peaks(peaks, pos_to_rid, width=50):
                 break
     return peaks_dsrt
 
-def plot(Y_roll, peak_positions, peaks_dyna, peaks_dsrt, peaks_vrnc, annotated_brks, pos_to_rid, outpath):
+def plot(Y_roll, peak_positions, peaks_dyna, peaks_dyna_i, peaks_dyna_o, peaks_dsrt, peaks_vrnc, annotated_brks, pos_to_rid, outpath):
     intervals = [[0,0]]
     margin = 50
     bridge = 200
@@ -182,7 +192,7 @@ def plot(Y_roll, peak_positions, peaks_dyna, peaks_dsrt, peaks_vrnc, annotated_b
         Y_roll[i]-= 1
     sizes = [max((e-s)/100, 2) for s,e in intervals]
     fig, axes = pp.subplots(1, len(intervals), sharey=True, figsize=(sum(sizes),5), gridspec_kw={'width_ratios': sizes})
-    pp.subplots_adjust(left=2/sum(sizes), right=1-6/sum(sizes))
+    pp.subplots_adjust(left=2/sum(sizes), right=1-2/sum(sizes))
     axes_cov = [ax.twinx() for ax in axes]
     axes_cov[0].get_shared_y_axes().join(*axes)
     fig.text(0.5, 0.04, 'Gene position', ha='center')
@@ -221,25 +231,28 @@ def plot(Y_roll, peak_positions, peaks_dyna, peaks_dsrt, peaks_vrnc, annotated_b
             ax.plot(d['X'], d['Y'], d['mark'], label=d['label'], color=d['color'], zorder=10)
         ax.plot(Y_roll, label='Gaussian filtered', color='#fc8d62', zorder=3)
         ax.vlines(annotated_brks,ymin=0, ymax=max(Y_roll)*1.05, colors='#8da0cb', linestyles='dashed', alpha=0.4, linewidth=1, label='Annotation splice points',zorder=4)
+        for idxx,(i,j,k) in enumerate(peaks_dyna_o):
+            if not intervals[idx][0]<= peak_positions[i] <= intervals[idx][1]:
+                continue
+            step = idxx%4
+            max_h = max(Y_roll)
+            height = max_h*0.30+max_h*0.1*step
+            ax.plot((peak_positions[i], peak_positions[j]),(height,height),linewidth=3, color='black', alpha=0.6, zorder=0)
+            height = max_h*0.40+max_h*0.1*step
+            ax.annotate(xy=(peak_positions[i]+(peak_positions[j]-peak_positions[i])*.33,height), s='O: {}'.format(peaks_dyna_o[(i,j,k)]), fontsize=20)
+            height = max_h*0.20+max_h*0.1*step
+            ax.annotate(xy=(peak_positions[i]+(peak_positions[j]-peak_positions[i])*.33,height), s='I: {}'.format(peaks_dyna_i[(i,j)]), fontsize=20)
         ax.yaxis.tick_left()
-        # ax.set_yticks([])
         axes_cov[idx].plot([len(p) for p in pos_to_rid], label='Read coverage', color='black', alpha=.4,zorder=2)
         axes_cov[idx].yaxis.tick_right()
-        # if idx == len(axes)-1:
-        #     ax.legend(loc='center right', bbox_to_anchor=(3, 0, 0.5, 1))
-        #     axes_cov[idx].set_ylabel('Coverage')
-        #     axes_cov[idx].legend(loc='upper right', bbox_to_anchor=(3, 0, 0.5, 1))
-        # ax.set_yticks([])
-        # if idx == len(axes)-1:
-        # else:
-        #     ax.set_yticks([])
     handles, labels   = axes[-1].get_legend_handles_labels()
     handles2, labels2 = axes_cov[-1].get_legend_handles_labels()
     axes[-1].legend(handles+handles2, labels+labels2,bbox_to_anchor=(1+1.5*2/sizes[-1], 0.75), loc='upper left', borderaxespad=0.)
-
+    print(peaks_dyna_i)
+    print(peaks_dyna_o)
     fig.savefig(fname=outpath)
 
-def optimize(peaks, C, start, end, low, high):
+def optimize(peaks, C, start, end, low, high, min_read_support_outside):
     cov_mem = dict()
     yea_mem = dict()
     nay_mem = dict()
@@ -277,6 +290,8 @@ def optimize(peaks, C, start, end, low, high):
                         yea_mem[(j,k)]
                     ),
                 ))
+                if out_mem[(i,j,k)] < min_read_support_outside:
+                    out_mem[(i,j,k)] = -float('inf')
         return out_mem[(i,j,k)]
     D = dict()
     B = dict()
@@ -314,7 +329,7 @@ def optimize(peaks, C, start, end, low, high):
                 max_b = (start,j,k)
                 max_d = dp(*max_b)
     print(max_b,max_d)
-    return D,B,max_d,max_b
+    return D,B,max_d,max_b,in_mem,out_mem
 
 def get_coverage(peaks, pos_to_rid):
     rids_cnt = 0
@@ -323,7 +338,7 @@ def get_coverage(peaks, pos_to_rid):
             if rid > rids_cnt:
                 rids_cnt = rid
     rids_cnt += 1
-    C = np.zeros((len(peaks), rids_cnt), dtype=np.uint32)
+    C = np.zeros((len(peaks)+1, rids_cnt), dtype=np.uint32)
     for idx,(cur,nxt) in enumerate(zip(peaks[:-1],peaks[1:]), start=1):
         for pos in range(cur,nxt):
             for rid in pos_to_rid[pos]:
@@ -334,7 +349,7 @@ def get_coverage(peaks, pos_to_rid):
 
 def main():
     args = parse_args()
-
+    assert(args.max_peak_cnt_per_segment>0)
     pos_to_rid,rid_to_intervals,read_name_to_id = read_paf(args.paf)
     annotated_brks = annotated_breakpoints(args.tsv)
     if len(rid_to_intervals)>0:
@@ -354,9 +369,15 @@ def main():
     peaks_vrnc = get_high_var_peaks(peaks=peak_positions, Y_roll=Y_roll, variance_factor=args.variance_factor)
     peaks_fixd = sorted(peaks_dsrt|peaks_vrnc)
     for s,e in zip(peaks_fixd[:-1],peaks_fixd[1:]):
-        peaks_fixd.extend([s+50*(1+d) for d in range((e-s)//40)])
+        peak_cnt = (e-s)
+        extra_peak_cnt = peak_cnt//args.max_peak_cnt_per_segment
+        for i in range(extra_peak_cnt):
+            peaks_fixd.append(s+(i+1)*peak_cnt//extra_peak_cnt)
     peaks_fixd = sorted(set(peaks_fixd))
     peaks_dyna = set()
+    peaks_dyna_i = dict()
+    peaks_dyna_o = dict()
+
     coverage = get_coverage(peaks=peak_positions, pos_to_rid=pos_to_rid)
 
     optimizing_args = list()
@@ -371,21 +392,28 @@ def main():
             end,
             args.low_threshold,
             args.high_threshold,
+            args.min_read_support_outside,
         ))
-
     with Pool(args.threads) as p:
-        for D,B,max_d,max_b in p.starmap(optimize, optimizing_args):
+        for D,B,max_d,max_b,in_mem,out_mem in p.starmap(optimize, optimizing_args):
             while max_b != (-1,-1,-1):
-                print(max_b)
                 peaks_dyna.update(max_b)
+                peaks_dyna_i[(max_b[0],max_b[1])] = in_mem[(max_b[0],max_b[1])]
+                peaks_dyna_o[max_b] = out_mem[max_b]
+                print('B:', max_b)
+                print('I:', peaks_dyna_i[(max_b[0],max_b[1])])
+                print('O:', peaks_dyna_o[max_b])
                 max_b = B[max_b]
 
     peaks_dyna -= set(peaks_fixd)
     peaks_dyna = sorted(peaks_dyna)
+    peaks_fina = sorted(set(peaks_dyna) | set(peaks_dsrt) | set(peaks_vrnc))
     plot(
         Y_roll=Y_roll,
         peak_positions=peak_positions,
         peaks_dyna=peaks_dyna,
+        peaks_dyna_i=peaks_dyna_i,
+        peaks_dyna_o=peaks_dyna_o,
         peaks_dsrt=peaks_dsrt,
         peaks_vrnc=peaks_vrnc,
         annotated_brks=annotated_brks,
@@ -393,8 +421,8 @@ def main():
         outpath='{}.pdf'.format(args.out_prefix)
     )
     out_file = open('{}.txt'.format(args.out_prefix), 'w+')
-    for i in peak_positions:
-        print(i, file=out_file)
+    for i in peaks_fina:
+        print(peak_positions[i], file=out_file)
     out_file.close()
 
 if __name__ == "__main__":
