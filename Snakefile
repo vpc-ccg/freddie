@@ -38,12 +38,14 @@ rule deSALT:
         reads = lambda wildcards: config['samples'][wildcards.sample],
     output:
         sam = '{}/{{sample}}.deSALT.sam'.format(mapped_d),
+    params:
+        temp = '{}/{{sample}}.deSALT.temp.'.format(mapped_d),
     conda:
         'freddie.env'
     threads:
-        42
+        20
     shell:
-        'deSALT aln -t {threads} -x ont1d -o {output.sam} {input.index} {input.reads}'
+        'deSALT aln -t {threads} -x ont1d --temp-file-perfix {params.temp} -o {output.sam} {input.index} {input.reads}'
 
 rule sam_to_paf:
     input:
