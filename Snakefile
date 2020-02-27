@@ -27,7 +27,7 @@ rule all:
         expand('{}/{{sample}}.deSALT.sam'.format(mapped_d), sample=config['samples']),
         expand('{}/{{sample}}.deSALT.paf'.format(mapped_d), sample=config['samples']),
         expand('{}/{{gene}}/{{sample}}/{{data_file}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], data_file=gene_data),
-        expand('{}/{{gene}}/{{sample}}/reads.segments.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['txt', 'pdf']),
+        expand('{}/{{gene}}/{{sample}}/reads.segments.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['txt', 'pdf', 'data', 'gaps']),
         # expand('{}/{{gene}}/{{sample}}/reads.isoforms.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['tsv']),
         # expand('{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['data', 'tsv', 'zeros_unaligned.tsv']),
         # expand('{}/{{gene}}/{{sample}}/reads.isoforms_plots.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf']),
@@ -110,6 +110,8 @@ rule find_segments:
     output:
         pdf = '{}/{{gene}}/{{sample}}/{{read_type}}.segments.pdf'.format(genes_d),
         txt = '{}/{{gene}}/{{sample}}/{{read_type}}.segments.txt'.format(genes_d),
+        data = '{}/{{gene}}/{{sample}}/{{read_type}}.segments.data'.format(genes_d),
+        gaps = '{}/{{gene}}/{{sample}}/{{read_type}}.segments.gaps'.format(genes_d),
     threads:
         8
     params:

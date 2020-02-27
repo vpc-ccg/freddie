@@ -69,6 +69,7 @@ def read_paf(paf, range_len=0):
     pos_to_rid = list()
     read_name_to_id = dict()
     rid_to_intervals = dict()
+    rid_to_len = dict()
     for line in open(paf):
         line = line.rstrip().split('\t')
         if is_first:
@@ -85,6 +86,7 @@ def read_paf(paf, range_len=0):
             rid = len(read_name_to_id)
             read_name_to_id[name] = rid
             rid_to_intervals[rid] = list()
+            rid_to_len[rid] = int(line[1])
         rid = read_name_to_id[name]
         if any('oc:c:1' in tag for tag in line[12:]):
             t_start = int(line[7])
@@ -94,6 +96,7 @@ def read_paf(paf, range_len=0):
             t_interval = (t_start, t_end)
             q_interval = (q_start, q_end)
             rid_to_intervals[rid].append((t_interval, q_interval))
+            assert rid_to_len[rid] == int(line[1])
     for intervals in rid_to_intervals.values():
         intervals.sort()
     for rid,intervals in rid_to_intervals.items():
@@ -115,7 +118,7 @@ def read_paf(paf, range_len=0):
         for (t_start, t_end),(_, _) in intervals:
             for i in range(t_start, t_end):
                 pos_to_rid[i].add(rid)
-    return pos_to_rid,rid_to_intervals,read_name_to_id
+    return pos_to_rid,rid_to_len,rid_to_intervals,read_name_to_id,t_len
 
 def annotated_breakpoints(tsv):
     """
@@ -165,6 +168,7 @@ def get_desert_bound_peaks(peaks, pos_to_rid, width=50):
         if b-a < width:
             continue
         s = a
+        # print(len(pos_to_rid),b)
         for i in range(a+1,b):
             if len(pos_to_rid[i]) > 0:
                 s = i
@@ -347,10 +351,61 @@ def get_coverage(peaks, pos_to_rid):
         C[i] += C[i-1]
     return C
 
+def get_unaligned_gaps(data,brks,t_len,rid_to_intervals,rid_to_len):
+    rid_to_unaln_gaps = dict()
+    for rid,intervals in rid_to_intervals.items():
+        rid_to_unaln_gaps[rid]=list()
+        int_idx = 0
+        seg_idx = 0
+        # print('---',rid, rid_to_len[rid])
+        # print(''.join((str(x)for x in data[rid])))
+        # print('-'.join((str(x)for x in intervals)))
+        # print('...')
+        while seg_idx < len(data[rid]):
+            eo_idx = -1
+            so_idx = len(data[rid])
+            # Find the next eo_idx such that data[rid][eo_idx]==1 and data[rid][eo_idx+1]!=1
+            while seg_idx < len(data[rid]):
+                if data[rid][seg_idx] != 1:
+                    break
+                eo_idx = seg_idx
+                seg_idx += 1
+            assert eo_idx==-1 or (data[rid][eo_idx]==1 and (eo_idx+1==len(data[rid]) or data[rid][eo_idx+1]!=1))
+            # Find the next so_idx such that data[rid][so_idx]==1 and data[rid][so_idx-1]!=1
+            while seg_idx < len(data[rid]):
+                if data[rid][seg_idx] == 1:
+                    so_idx = seg_idx
+                    break
+                seg_idx += 1
+            assert so_idx==len(data[rid]) or (data[rid][so_idx]==1 and data[rid][so_idx-1]!=1)
+            gap_ts = brks[eo_idx+1]
+            gap_te = brks[so_idx]
+            # print('(eo_idx, so_idx)',(eo_idx, so_idx))
+            # print('(gap_ts, gap_te)',(gap_ts, gap_te))
+            gap_qs = 0
+            gap_qe = rid_to_len[rid]
+            for i in range(int_idx,len(intervals)):
+                ((ts,te),(qs,qe)) = intervals[i]
+                # print('gqs:',i,intervals[i])
+                if ts < gap_ts:
+                    gap_qs = qe + (gap_ts-te)
+                    int_idx=i
+                if ts >= gap_ts:
+                    break
+            for i in range(int_idx,len(intervals)):
+                ((ts,te),(qs,qe)) = intervals[i]
+                int_idx=i
+                # print('gqe:',i,intervals[i])
+                if te >= gap_te:
+                    gap_qe = qs - (ts-gap_te)
+                    break
+            rid_to_unaln_gaps[rid].append((eo_idx+1,so_idx,max(0,gap_qe-gap_qs)))
+    return rid_to_unaln_gaps
+
 def main():
     args = parse_args()
     assert(args.max_peak_cnt_per_segment>0)
-    pos_to_rid,rid_to_intervals,read_name_to_id = read_paf(args.paf)
+    pos_to_rid,rid_to_len,rid_to_intervals,read_name_to_id,t_len = read_paf(args.paf)
     annotated_brks = annotated_breakpoints(args.tsv)
     if len(rid_to_intervals)>0:
         gene_len = int(open(args.paf).readline().split('\t')[6])
@@ -364,6 +419,8 @@ def main():
     else:
         Y_roll=gaussian_filter1d(Y_a,args.sigma)
     peak_positions, _ = find_peaks(Y_roll)
+    peak_positions = sorted(set(peak_positions) | {0,t_len})
+    print(peak_positions)
 
     peaks_dsrt = get_desert_bound_peaks(peaks=peak_positions, pos_to_rid=pos_to_rid)
     peaks_vrnc = get_high_var_peaks(peaks=peak_positions, Y_roll=Y_roll, variance_factor=args.variance_factor)
@@ -407,7 +464,7 @@ def main():
 
     peaks_dyna -= set(peaks_fixd)
     peaks_dyna = sorted(peaks_dyna)
-    peaks_fina = sorted(set(peaks_dyna) | set(peaks_dsrt) | set(peaks_vrnc))
+    peaks_fina = sorted(set(peaks_dyna) | set(peaks_dsrt) | set(peaks_vrnc) | {0,len(peak_positions)-1})
     plot(
         Y_roll=Y_roll,
         peak_positions=peak_positions,
@@ -423,6 +480,21 @@ def main():
     out_file = open('{}.txt'.format(args.out_prefix), 'w+')
     for i in peaks_fina:
         print(peak_positions[i], file=out_file)
+    out_file.close()
+
+    out_file = open('{}.data'.format(args.out_prefix), 'w+')
+    data = np.array([(coverage[j]-coverage[i])/(peak_positions[j]-peak_positions[i]+1) for i,j in zip(peaks_fina[:-1],peaks_fina[1:])])
+    data[data > args.high_threshold] = 1
+    data[data < args.low_threshold] = 0
+    data[(args.high_threshold > data) & (data > args.low_threshold)] = 2
+    data = data.transpose()
+    for l in data:
+        print(''.join([str(int(x)) for x in l]),file=out_file)
+    out_file.close()
+    out_file = open('{}.gaps'.format(args.out_prefix), 'w+')
+    rid_to_unaln_gaps = get_unaligned_gaps(data=data,brks=peak_positions,t_len=t_len,rid_to_intervals=rid_to_intervals,rid_to_len=rid_to_len)
+    for rid in range(len(data)):
+        print('\t'.join(['{};{}'.format(x[0],x[1]) for x in rid_to_unaln_gaps[rid]]),file=out_file)
     out_file.close()
 
 if __name__ == "__main__":
