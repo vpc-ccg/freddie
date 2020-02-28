@@ -370,16 +370,20 @@ def get_unaligned_gaps(data,brks,t_len,rid_to_intervals,rid_to_len):
                     break
                 eo_idx = seg_idx
                 seg_idx += 1
-            assert eo_idx==-1 or (data[rid][eo_idx]==1 and (eo_idx+1==len(data[rid]) or data[rid][eo_idx+1]!=1))
+            if eo_idx+1==len(data[rid]):
+                continue
+            assert data[rid][eo_idx+1]!=1 and (eo_idx==-1 or data[rid][eo_idx]==1)
             # Find the next so_idx such that data[rid][so_idx]==1 and data[rid][so_idx-1]!=1
             while seg_idx < len(data[rid]):
                 if data[rid][seg_idx] == 1:
                     so_idx = seg_idx
                     break
                 seg_idx += 1
-            assert so_idx==len(data[rid]) or (data[rid][so_idx]==1 and data[rid][so_idx-1]!=1)
+            assert data[rid][so_idx-1]!=1 and (so_idx==len(data[rid]) or data[rid][so_idx]==1)
             gap_ts = brks[eo_idx+1]
             gap_te = brks[so_idx]
+            # if gap_ts == 0 or gap_te==t_len:
+            #     continue
             # print('(eo_idx, so_idx)',(eo_idx, so_idx))
             # print('(gap_ts, gap_te)',(gap_ts, gap_te))
             gap_qs = 0
@@ -399,7 +403,7 @@ def get_unaligned_gaps(data,brks,t_len,rid_to_intervals,rid_to_len):
                 if te >= gap_te:
                     gap_qe = qs - (ts-gap_te)
                     break
-            rid_to_unaln_gaps[rid].append((eo_idx+1,so_idx,max(0,gap_qe-gap_qs)))
+            rid_to_unaln_gaps[rid].append((eo_idx+1,so_idx-1,max(0,gap_qe-gap_qs)))
     return rid_to_unaln_gaps
 
 def main():
@@ -487,14 +491,15 @@ def main():
     data[data > args.high_threshold] = 1
     data[data < args.low_threshold] = 0
     data[(args.high_threshold > data) & (data > args.low_threshold)] = 2
-    data = data.transpose()
+
+    data = data.transpose().astype(np.int8)
     for l in data:
         print(''.join([str(int(x)) for x in l]),file=out_file)
     out_file.close()
     out_file = open('{}.gaps'.format(args.out_prefix), 'w+')
     rid_to_unaln_gaps = get_unaligned_gaps(data=data,brks=peak_positions,t_len=t_len,rid_to_intervals=rid_to_intervals,rid_to_len=rid_to_len)
     for rid in range(len(data)):
-        print('\t'.join(['{};{}'.format(x[0],x[1]) for x in rid_to_unaln_gaps[rid]]),file=out_file)
+        print('\t'.join(['{}-{}-{}'.format(*x) for x in rid_to_unaln_gaps[rid]]),file=out_file)
     out_file.close()
 
 if __name__ == "__main__":

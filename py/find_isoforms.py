@@ -7,107 +7,109 @@ MIN_READS = 5
 MAX_ROUND = 20
 
 def parse_args():
-    def str2bool(v):
-        if isinstance(v, bool):
-           return v
-        if v.lower() in ('yes', 'true', 't', 'y', '1'):
-            return True
-        elif v.lower() in ('no', 'false', 'f', 'n', '0'):
-            return False
-        else:
-            raise argparse.ArgumentTypeError('Boolean value expected.')
+    # def str2bool(v):
+    #     if isinstance(v, bool):
+    #        return v
+    #     if v.lower() in ('yes', 'true', 't', 'y', '1'):
+    #         return True
+    #     elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+    #         return False
+    #     else:
+    #         raise argparse.ArgumentTypeError('Boolean value expected.')
     parser = argparse.ArgumentParser(
         description="Cluster aligned reads into isoforms")
-    parser.add_argument("-d",
-                        "--data-matrix",
+    parser.add_argument("-sd",
+                        "--segments-data",
                         type=str,
                         required=True,
-                        help="Path to DATA file of reads by exons matrix")
-    parser.add_argument("-k",
-                        "--isoform-count",
-                        type=int,
-                        default=3,
-                        help="Number of isoform clusters")
-    parser.add_argument("-et",
-                        "--exons-tsv",
+                        help="Path to DATA file of reads by segments matrix")
+    # parser.add_argument("-k",
+    #                     "--isoform-count",
+    #                     type=int,
+    #                     default=3,
+    #                     help="Number of isoform clusters")
+    parser.add_argument("-st",
+                        "--segments-txt",
                         type=str,
-                        default=None,
-                        help="Path to exons TSV file")
+                        required=True,
+                        help="Path to segments TXT file")
     parser.add_argument("-ug",
                         "--unaligned-gaps",
                         type=str,
-                        default=None,
+                        required=True,
                         help="Path to unligned gap tuples per read")
-    parser.add_argument("-uo",
-                        "--unaligned-offset",
-                        type=int,
-                        default=20,
-                        help="Slack +- value for exons and the unaligned gaps")
-    parser.add_argument("-e",
-                        "--epsilon",
-                        type=float,
-                        default=0.2,
-                        help="Epsilon value for how much can unaligned gaps can cover")
-    parser.add_argument("-irp",
-                        "--incomp-read-pairs",
-                        type=str,
-                        default='',
-                        help="Path to file of read pairs that can not originate from the same isoform")
-    parser.add_argument("-garb",
-                        "--garbage-isoform",
-                        type=str,
-                        nargs='?',
-                        const=True,
-                        default=False,
-                        help="Include in the model a garbage isoform collecting unassigned reads"),
-    parser.add_argument("-names",
-                        "--valid-read-names",
-                        type=str,
-                        required=True,
-                        help="Valid read ids to do ilp"),
-    parser.add_argument("-ptinfo",
-                        "--poly-tail-status",
-                        type=str,
-                        required=True,
-                        help="A file which tells if polyA tail is cut or no, first col is read name second cold is 1 if cut 0 is uncut"),
-    parser.add_argument("-rg",
-                        "--recycle-garbage",
-                        type=str2bool,
-                        nargs='?',
-                        const=True,
-                        default=False,
-                        help="Recycle garbage reads. To have effect -garb needs to be True."),
-    parser.add_argument("-oi",
-                        "--order-isoforms",
-                        type=str2bool,
-                        nargs='?',
-                        const=True,
-                        default=False,
-                        help="Force to label isoforms and order them increasingly")
-    parser.add_argument("-to",
-                        "--timeout",
-                        type=int,
-                        default=15,
-                        help="Gurobi time-out in minutes. Default: 15")
-    parser.add_argument("-t",
-                        "--threads",
-                        type=int,
-                        default=8,
-                        help="Number of threads to use")
-    parser.add_argument("-op",
-                        "--out-prefix",
-                        type=str,
-                        required=True,
-                        help="Output prefix that does not include .EXT part")
+    # parser.add_argument("-uo",
+    #                     "--unaligned-offset",
+    #                     type=int,
+    #                     default=20,
+    #                     help="Slack +- value for exons and the unaligned gaps")
+    # parser.add_argument("-e",
+    #                     "--epsilon",
+    #                     type=float,
+    #                     default=0.2,
+    #                     help="Epsilon value for how much can unaligned gaps can cover")
+    # parser.add_argument("-irp",
+    #                     "--incomp-read-pairs",
+    #                     type=str,
+    #                     default='',
+    #                     help="Path to file of read pairs that can not originate from the same isoform")
+    # parser.add_argument("-garb",
+    #                     "--garbage-isoform",
+    #                     type=str,
+    #                     nargs='?',
+    #                     const=True,
+    #                     default=False,
+    #                     help="Include in the model a garbage isoform collecting unassigned reads"),
+    # parser.add_argument("-names",
+    #                     "--valid-read-names",
+    #                     type=str,
+    #                     required=True,
+    #                     help="Valid read ids to do ilp"),
+    # parser.add_argument("-ptinfo",
+    #                     "--poly-tail-status",
+    #                     type=str,
+    #                     required=True,
+    #                     help="A file which tells if polyA tail is cut or no, first col is read name second cold is 1 if cut 0 is uncut"),
+    # parser.add_argument("-rg",
+    #                     "--recycle-garbage",
+    #                     type=str2bool,
+    #                     nargs='?',
+    #                     const=True,
+    #                     default=False,
+    #                     help="Recycle garbage reads. To have effect -garb needs to be True."),
+    # parser.add_argument("-oi",
+    #                     "--order-isoforms",
+    #                     type=str2bool,
+    #                     nargs='?',
+    #                     const=True,
+    #                     default=False,
+    #                     help="Force to label isoforms and order them increasingly")
+    # parser.add_argument("-to",
+    #                     "--timeout",
+    #                     type=int,
+    #                     default=15,
+    #                     help="Gurobi time-out in minutes. Default: 15")
+    # parser.add_argument("-t",
+    #                     "--threads",
+    #                     type=int,
+    #                     default=8,
+    #                     help="Number of threads to use")
+    # parser.add_argument("-op",
+    #                     "--out-prefix",
+    #                     type=str,
+    #                     required=True,
+    #                     help="Output prefix that does not include .EXT part")
     args = parser.parse_args()
     return(args)
 
-def read_matrix(data_matrix, M):
+def get_segment_data(segments_data, M):
     result = dict()
-    for rid,line in enumerate(open(data_matrix)):
+    for rid,line in enumerate(open(segments_data)):
         line = line.rstrip()
         row  = [int(x) for x in line]
-        assert len(row)==M, 'Each row in data matrix must be equal to M ({})'.format(M)
+        assert len(row)==M, 'NR ({}):  Length if each row in data segment data must be equal to M ({})'.format(rid,M)
+        for x in row:
+            assert x in [0,1,2], 'NR ({}):  {} is not a valid entry in segment data'.format(rid,x)
         if 1 in row:
             result[rid] = row
     return(result)
@@ -125,11 +127,11 @@ def read_incomp_read_pairs(pairs_file, rids):
         result.append(row)
     return(result)
 
-def read_exon_lengths(exons_file):
-    result = [int(r.split('\t')[1])-int(r.split('\t')[0]) for r in open(exons_file).readlines()]
-    for e in result:
-        assert e>0, 'All exons must be positive'
-    return(result)
+def get_segment_lens(segments_txt):
+    break_points = [int(l.rstrip()) for l in open(segments_txt)]
+    for s,e in zip(break_points[:-1],break_points[1:]):
+        assert e>s>=0, 'Something is wrong with segments_txt file'
+    return [e-s for s,e in zip(break_points[:-1],break_points[1:])]
 
 def read_unaligned_gaps(gaps_file,nb_exons,rids):
     result = dict()
@@ -523,17 +525,20 @@ def make_polyAcut_info_lookup_table(names_file,cuts_file):
 def main():
     args = parse_args()
 
-    exon_lens         = read_exon_lengths(exons_file=args.exons_tsv)
-    M = len(exon_lens)
-    matrix            = read_matrix(args.data_matrix, M =M)
+    segment_lens      = get_segment_lens(segments_txt=args.segments_txt)
+    M = len(segment_lens)
+    print(segment_lens)
+    print(M)
+    matrix            = get_segment_data(segments_data=args.segments_data, M=M)
     rids              = sorted(matrix.keys())
     N = len(rids)
+    print(N)
     rid_to_unaln_gaps = read_unaligned_gaps(gaps_file=args.unaligned_gaps, nb_exons=M, rids=matrix.keys())
-    incomp_rids       = list()
-    if args.incomp_read_pairs != '':
-        incomp_rids   = read_incomp_read_pairs(pairs_file=args.incomp_read_pairs, rids=matrix.keys())
-
-    polyA_trimmed = make_polyAcut_info_lookup_table(args.valid_read_names, args.poly_tail_status)
+    # incomp_rids       = list()
+    # if args.incomp_read_pairs != '':
+    #     incomp_rids   = read_incomp_read_pairs(pairs_file=args.incomp_read_pairs, rids=matrix.keys())
+    #
+    # polyA_trimmed = make_polyAcut_info_lookup_table(args.valid_read_names, args.poly_tail_status)
 
     round = -1
     iid_to_isoform     = dict()
