@@ -56,10 +56,10 @@ def read_paf(paf, range_len=15):
         if not rid in read_name_to_id:
             rid_to_intervals[rid] = list()
         if any('oc:c:1' in tag for tag in line[12:]):
-            t_start = max(0, int(line[7]) - 1)
-            t_end = int(line[8]) + 1
-            q_start = max(0, int(line[2]) - 1)
-            q_end = int(line[3]) + 1
+            t_start = int(line[7])
+            t_end   = int(line[8])
+            q_start = int(line[2])
+            q_end   = int(line[3])
             t_interval = (t_start, t_end)
             q_interval = (q_start, q_end)
             rid_to_intervals[rid].append((t_interval, q_interval))
@@ -114,7 +114,8 @@ def plot_isoforms(exons, transcripts, pos_to_rid, rid_to_intervals, matrix, iid_
         # Plot the reads
         eid_to_mistakes = [0 for _ in exons]
         for read_count,rid in enumerate(rids):
-            true_isoforms[rid.split('_')[0]] = true_isoforms.get(rid.split('_')[0], 0) + 1
+            if len(rid.split('_'))>1:
+                true_isoforms[rid.split('_')[0]] = true_isoforms.get(rid.split('_')[0], 0) + 1
             if read_count%50 == 0:
                 print('Processing read {}/{}'.format(read_count, len(rids)))
             h = top-step*read_count
@@ -139,12 +140,13 @@ def plot_isoforms(exons, transcripts, pos_to_rid, rid_to_intervals, matrix, iid_
                     nxt_q_start = exons[-1][1]
                 dist_to_nxt = nxt_q_start - cur_q_end
                 ax0.scatter(x=cur_t_end,   y=h, s=0.25, color=cmap_ins(norm_ins(dist_to_nxt)), zorder=5)
-        true_isoforms = sorted(true_isoforms.items(), key=lambda kv: kv[1], reverse=True)
         # Plot the isoform's exon lines
         for eid,exon in enumerate(exons):
             ax0.vlines(exon, ymin=0, ymax=N, color='gray', linestyle='solid', lw=1, alpha=0.5)
             ax0.text(x=mean(exon), y=N*1.015, s='{}'.format(eid_to_mistakes[eid]))
         step = 0.1
+        true_isoforms = sorted(true_isoforms.items(), key=lambda kv: kv[1], reverse=True)
+        print(true_isoforms)
         for idx,(tid,cnt) in enumerate(true_isoforms):
             h = N*(0.9-idx*step)
 
@@ -170,13 +172,11 @@ def read_isoforms(isoforms):
         iid_to_rids[iid].add(rid)
     return matrix,iid_to_rids,iid_to_isoform
 
-def read_exons(exons_tsv):
-    exons = list()
-    for line in open(exons_tsv):
-        i = line.rstrip().split('\t')[0:2]
-        i = [int(x) for x in i]
-        exons.append(i)
-    return exons
+def get_segment_ints(segments_txt):
+    break_points = [int(l.rstrip()) for l in open(segments_txt)]
+    for s,e in zip(break_points[:-1],break_points[1:]):
+        assert e>s>=0, 'Something is wrong with segments_txt file'
+    return [(s,e) for s,e in zip(break_points[:-1],break_points[1:])]
 
 def read_transcripts(transcripts_tsv):
     transcripts = dict()
@@ -192,7 +192,7 @@ def read_transcripts(transcripts_tsv):
 def main():
     args = parse_args()
 
-    exons                              = read_exons(exons_tsv=args.exons)
+    exons                              = get_segment_ints(segments_txt=args.exons)
     transcripts                        = read_transcripts(transcripts_tsv=args.transcripts)
     pos_to_rid,rid_to_intervals        = read_paf(paf=args.paf)
     matrix, iid_to_rids,iid_to_isoform = read_isoforms(isoforms=args.isoforms)

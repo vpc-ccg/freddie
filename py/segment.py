@@ -490,7 +490,7 @@ def main():
     data = np.array([(coverage[j]-coverage[i])/(peak_positions[j]-peak_positions[i]+1) for i,j in zip(peaks_fina[:-1],peaks_fina[1:])])
     data[data > args.high_threshold] = 1
     data[data < args.low_threshold] = 0
-    data[(args.high_threshold > data) & (data > args.low_threshold)] = 2
+    data[(args.high_threshold > data) & (data > args.low_threshold)] = 0
 
     data = data.transpose().astype(np.int8)
     for l in data:
@@ -500,6 +500,10 @@ def main():
     rid_to_unaln_gaps = get_unaligned_gaps(data=data,brks=peak_positions,t_len=t_len,rid_to_intervals=rid_to_intervals,rid_to_len=rid_to_len)
     for rid in range(len(data)):
         print('\t'.join(['{}-{}-{}'.format(*x) for x in rid_to_unaln_gaps[rid]]),file=out_file)
+    out_file.close()
+
+    out_file = open('{}.names'.format(args.out_prefix), 'w+')
+    print('\n'.join((x[0] for x in sorted(read_name_to_id.items(), key = lambda x: x[1]))),file=out_file)
     out_file.close()
 
 if __name__ == "__main__":
