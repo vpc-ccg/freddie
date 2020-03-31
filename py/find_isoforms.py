@@ -4,7 +4,7 @@ import argparse
 from gurobipy import *
 
 MIN_READS = 0
-MAX_ROUND = 20
+MAX_ROUND = 5
 
 def parse_args():
     # def str2bool(v):
@@ -240,8 +240,8 @@ def run_ILP(
                     break
             if incomp:
                 INCOMP_READ_PAIRS_AUX2.append((i1,i2))
-    log_file.write('# Number of due to not having any common exons: {X}\n'.format(X=len(INCOMP_READ_PAIRS_AUX2)))
-    print('# Number of due to not having any common exons: {X}\n'.format(X=len(INCOMP_READ_PAIRS_AUX2)))
+    log_file.write('# Number of incompatible read pairs due to not having any common exons: {X}\n'.format(X=len(INCOMP_READ_PAIRS_AUX2)))
+    print('# Number of incompatible read pairs due to not having any common exons: {X}\n'.format(X=len(INCOMP_READ_PAIRS_AUX2)))
 
     # Reading the list of provided incompatible pairs
     # INCOMP_READ_PAIRS_AUX3 = list()
@@ -287,24 +287,34 @@ def run_ILP(
         )
 
     # Implied variable: canonical exons presence in isoforms
-    # E2I[j,k]    = 1 if canonical exon j is in isoform k
-    # E2IR[j,k,i] = 1 if read i assigned to isoform k AND exon j covered by read i
+    # E2I[j,k]     = 1 if canonical exon j is in isoform k
+    # E2I_min[j,k] = 1 if canonical exon j is in isoform k and is shared by all reads of that isoform
+    # E2IR[j,k,i]  = 1 if read i assigned to isoform k AND exon j covered by read i
     # Auxiliary variable
-    # E2IR[j,k,i] = R2I[i,k] AND I[i,j]
-    # E2I[j,k]    = max over  all reads i of E2IR[j,k,i]
+    # E2IR[j,k,i]  = R2I[i,k] AND I[i,j]
+    # E2I[j,k]     = max over  all reads i of E2IR[j,k,i]
+    # E2I_min[j,k] = min over  all reads i of E2IR[j,k,i]
     E2I     = {}
     E2I_C1  = {}
+    E2I_min = {}
+    E2I_min_C1  = {}
     E2IR    = {}
     E2IR_C1 = {}
     for j in range(0,M):
         E2I[j]     = {}
         E2I_C1[j]  = {}
+        E2I_min[j]     = {}
+        E2I_min_C1[j]  = {}
         E2IR[j]    = {}
         E2IR_C1[j] = {}
         for k in range(ISOFORM_INDEX_START,K): # We do not assign exons for the garbage isoform if any
             E2I[j][k]     = ILP_ISOFORMS.addVar(
                 vtype = GRB.BINARY,
                 name  = 'E2I[{j}][{k}]'.format(j=j,k=k)
+            )
+            E2I_min[j][k]     = ILP_ISOFORMS.addVar(
+                vtype = GRB.BINARY,
+                name  = 'E2I_min[{j}][{k}]'.format(j=j,k=k)
             )
             E2IR[j][k]    = {}
             E2IR_C1[j][k] = {}
@@ -324,6 +334,12 @@ def run_ILP(
                 vars     = [E2IR[j][k][i] for i in RIDS],
                 constant = 0.0,
                 name     = 'E2I_C1[{j}][{k}]'.format(j=j,k=k)
+            )
+            E2I_min_C1[j][k] = ILP_ISOFORMS.addGenConstrMin(
+                resvar   = E2I_min[j][k],
+                vars     = [E2IR[j][k][i] for i in RIDS],
+                constant = 0.0,
+                name     = 'E2I_min_C1[{j}][{k}]'.format(j=j,k=k)
             )
         if True or garbage_isoform:
             # No exon is assignd to the garbage isoform
@@ -456,7 +472,7 @@ def run_ILP(
                         )
                         GAR_OBJ_C[i][j][k] = ILP_ISOFORMS.addGenConstrAnd(
                             resvar = GAR_OBJ[i][j][k],
-                            vars   = [R2I[i][0],E2I[j][k]],
+                            vars   = [R2I[i][0],E2I_min[j][k]],
                             name   = 'GAR_OBJ_C[{i}][{j}][{k}]'.format(i=i,j=j,k=k)
                         )
                         OBJ_SUM.addTerms(

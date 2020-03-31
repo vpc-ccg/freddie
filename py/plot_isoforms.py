@@ -3,28 +3,36 @@ import argparse
 import matplotlib as mpl
 mpl.use('Agg')
 import matplotlib.pyplot as plt
-from statistics import mean
+import matplotlib.gridspec as gridspec
+import matplotlib.patches as patches
+
+colors = ['#a6cee3','#1f78b4','#b2df8a','#33a02c','#fb9a99','#e31a1c','#fdbf6f','#ff7f00','#cab2d6','#6a3d9a','#ffff99','#b15928',]
+grid_width_ratios = [
+    (2000, 8),
+    (1000, 7),
+    (500, 6),
+    (200, 5),
+    (100, 4),
+    (50, 3),
+    (20, 2),
+    (0, 1)
+]
 
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Cluster aligned reads into isoforms")
-    parser.add_argument("-p",
-                        "--paf",
-                        type=str,
-                        required=True,
-                        help="Path to PAF file of read alignments")
     parser.add_argument("-t",
-                        "--transcripts",
+                        "--transcripts-tsv",
                         type=str,
                         required=True,
                         help="Path to TSV file of transcript intervals")
-    parser.add_argument("-e",
-                        "--exons",
+    parser.add_argument("-s",
+                        "--segments-txt",
                         type=str,
                         required=True,
-                        help="Path to TSV file of canonical exon intervals")
+                        help="Path to TXT file of canonical exons")
     parser.add_argument("-i",
-                        "--isoforms",
+                        "--isoforms_tsv",
                         type=str,
                         required=True,
                         help="Path to TSV file of read isoform assignments")
@@ -36,168 +44,114 @@ def parse_args():
     args = parser.parse_args()
     return args
 
-def read_paf(paf, range_len=15):
-    is_first = True
-    pos_to_rid = list()
-    read_name_to_id = dict()
-    rid_to_intervals = dict()
-    for line in open(paf):
-        line = line.rstrip().split('\t')
-        if is_first:
-            t_len = int(line[6])
-            t_name = line[5]
-            is_first = False
-            pos_to_rid = [set() for _ in range(t_len)]
-        if t_len != int(line[6]) or t_name != line[5]:
-            print("Multiple targets detected in PAF file!", file=stderr)
-            print(line, file=stderr)
-            exit(-1)
-        rid = line[0]
-        if not rid in read_name_to_id:
-            rid_to_intervals[rid] = list()
-        if any('oc:c:1' in tag for tag in line[12:]):
-            t_start = int(line[7])
-            t_end   = int(line[8])
-            q_start = int(line[2])
-            q_end   = int(line[3])
-            t_interval = (t_start, t_end)
-            q_interval = (q_start, q_end)
-            rid_to_intervals[rid].append((t_interval, q_interval))
-    for intervals in rid_to_intervals.values():
-        intervals.sort()
-    for rid,intervals in rid_to_intervals.items():
-        new_intervals = list()
-        for idx,(t_interval,q_interval) in enumerate(intervals):
-            if idx == 0:
-                new_intervals.append((t_interval,q_interval))
-                continue
-            (t_interval_prv,q_interval_prv) = new_intervals[-1]
-            if t_interval[0] - t_interval_prv[1] < range_len and q_interval_prv[0] - q_interval_prv[1] < range_len:
-                new_intervals[-1] = (
-                    (t_interval_prv[0],t_interval[1]),
-                    (q_interval_prv[0],q_interval[1]),
-                )
-            else:
-                new_intervals.append((t_interval,q_interval))
-        rid_to_intervals[rid] = new_intervals
-    for rid,intervals in rid_to_intervals.items():
-        for (t_start, t_end),(_, _) in intervals:
-            for i in range(t_start, t_end):
-                pos_to_rid[i].add(rid)
-    return pos_to_rid,rid_to_intervals
+def get_tinfo(segments_txt, transcripts_tsv):
+    segs = [int(l.strip()) for l in open(segments_txt)]
+    segs = list(zip(segs[:-1],segs[1:]))
+    grid_lens = list()
+    for s,e in segs:
+        for threshold,value in grid_width_ratios:
+            if e-s > threshold:
+                grid_lens.append(value)
+                break
+    assert len(grid_lens)==len(segs)
+    tid_to_segs = dict()
+    for l in open(transcripts_tsv):
+        tid,_,_,intervals,_ = l.rstrip().split('\t')
+        tid_to_segs[tid] = sorted([(int(x.split('-')[0]),int(x.split('-')[1])) for x in intervals.split(',')])
+    tid_to_color = {tid:colors[tidx%len(colors)] for tidx,tid in enumerate(tid_to_segs)}
+    return segs,grid_lens,tid_to_segs,tid_to_color
 
-def plot_isoforms(exons, transcripts, pos_to_rid, rid_to_intervals, matrix, iid_to_isoform, iid_to_rids, out_prefix):
-    L = len(iid_to_isoform)
-    fig, axes = plt.subplots(L, 1, sharex='col', sharey='row', figsize=(30,8*(L)), squeeze=False)
-    cmap_ins = plt.get_cmap('gnuplot2_r')
-    norm_ins = mpl.colors.Normalize(vmin=10, vmax=800)
-    fig.suptitle('L = {} N = {}'.format(L, len(set.union(*pos_to_rid))))
-    for ax0,(iid,rids) in zip(axes,iid_to_rids.items()):
-        print('Plotting isoform {}'.format(iid, len(iid_to_rids)))
-        true_isoforms = dict()
-        isoform = iid_to_isoform[iid]
-        ax0 = ax0[0]
-        N = len(rids)
-        ax0.set_title('L = {} N = {}'.format(iid, N))
-        coverage = [len(pos_rids&rids) for pos_rids in pos_to_rid]
-        ax0.plot(range(len(coverage)), coverage, color='green', zorder=50)
-
-        top    = N*0.95
-        bottom = N*0.05
-        step = (top-bottom)/(N+1)
-        # plot the isoform's exons and introns
-        for eid,in_iso in enumerate(isoform):
-            if in_iso:
-                ax0.plot(exons[eid], [N,N], color='black', alpha=0.8, marker='o')
-            else:
-                ax0.plot(exons[eid], [N,N], color='gray',  alpha=0.2,)
-        # Plot the reads
-        eid_to_mistakes = [0 for _ in exons]
-        for read_count,rid in enumerate(rids):
-            if len(rid.split('_'))>1:
-                true_isoforms[rid.split('_')[0]] = true_isoforms.get(rid.split('_')[0], 0) + 1
-            if read_count%50 == 0:
-                print('Processing read {}/{}'.format(read_count, len(rids)))
-            h = top-step*read_count
-            # plot read mistakes
-            for eid in range(len(exons)):
-                if matrix[rid][eid] == 'X':
-                    eid_to_mistakes[eid]+=1
-                    ax0.scatter(x=mean(exons[eid]), y=h, s=0.5, marker='2', color='red')
-            # Plot full read alignments
-            for idx in range(len(rid_to_intervals[rid])):
-                (cur_t_start,cur_t_end), (cur_q_start,cur_q_end) = rid_to_intervals[rid][idx]
-                ax0.plot([cur_t_start,cur_t_end], [h,h], color='black', lw=0.25, zorder=0, alpha=0.5)
-                if idx - 1 >= 0:
-                    (_,_), (_,lst_q_end)   = rid_to_intervals[rid][idx-1]
-                else:
-                    lst_q_end   = 0
-                dist_to_lst = cur_q_start - lst_q_end
-                ax0.scatter(x=cur_t_start, y=h, s=0.25, color=cmap_ins(norm_ins(dist_to_lst)), zorder=5)
-                if idx + 1 < len(rid_to_intervals[rid]):
-                    (_,_), (nxt_q_start,_) = rid_to_intervals[rid][idx+1]
-                else:
-                    nxt_q_start = exons[-1][1]
-                dist_to_nxt = nxt_q_start - cur_q_end
-                ax0.scatter(x=cur_t_end,   y=h, s=0.25, color=cmap_ins(norm_ins(dist_to_nxt)), zorder=5)
-        # Plot the isoform's exon lines
-        for eid,exon in enumerate(exons):
-            ax0.vlines(exon, ymin=0, ymax=N, color='gray', linestyle='solid', lw=1, alpha=0.5)
-            ax0.text(x=mean(exon), y=N*1.015, s='{}'.format(eid_to_mistakes[eid]))
-        step = 0.1
-        true_isoforms = sorted(true_isoforms.items(), key=lambda kv: kv[1], reverse=True)
-        print(true_isoforms)
-        for idx,(tid,cnt) in enumerate(true_isoforms):
-            h = N*(0.9-idx*step)
-
-            ax0.text(x=10, y=h, s='{} ({})'.format(tid, cnt))
-            for s,e in transcripts[tid]:
-                ax0.hlines(h, xmin=s, xmax=e, color='orange')
-    plt.savefig('{}.pdf'.format(out_prefix))
-
-def read_isoforms(isoforms):
-    iid_to_rids = dict()
-    iid_to_isoform = dict()
-    matrix = dict()
+def get_isoforms(isoforms_tsv):
+    reads = dict()
+    isoforms = dict()
     iid = -1
-    for line in open(isoforms):
+    for line in open(isoforms_tsv):
         line = line.rstrip().split('\t')
-        if line[0][0] == '#':
-            iid                 = line[0][1:]
-            iid_to_rids[iid]    = set()
-            iid_to_isoform[iid] = [x == '1' for x in line[1]]
+        if line[0][0]=='#':
+            iid+=1
+            isoform_name = line[0][1:]
+            isoform_data = [x=='1' for x in line[3]]
+            isoforms[iid] = dict(name=isoform_name, data=isoform_data, rids=list())
             continue
-        rid         = line[1]
-        matrix[rid] = [i.split('(')[0] for i in line[2:]]
-        iid_to_rids[iid].add(rid)
-    return matrix,iid_to_rids,iid_to_isoform
+        rname = line[1]
+        rid = int(line[2])
+        d = [x=='1' for x in line[3]]
+        reads[rid]=dict(iid=iid, name=rname, data=d, tname=rname.split('_')[0])
+        isoforms[iid]['rids'].append(rid)
+    isoforms = [isoforms[x] for x in sorted(isoforms.keys())]
+    return isoforms,reads
 
-def get_segment_ints(segments_txt):
-    break_points = [int(l.rstrip()) for l in open(segments_txt)]
-    for s,e in zip(break_points[:-1],break_points[1:]):
-        assert e>s>=0, 'Something is wrong with segments_txt file'
-    return [(s,e) for s,e in zip(break_points[:-1],break_points[1:])]
+def plot_isoforms(isoform, grid_lens, tid_to_segs, segs, reads, tid_to_color, out_prefix):
+    fig = plt.figure(figsize=(len(grid_lens), 30), constrained_layout=False)
+    gs = gridspec.GridSpec(ncols=len(grid_lens), nrows=2, figure=fig, width_ratios=grid_lens, height_ratios=[1,5], hspace=.1, wspace=0)
+    t_axes = [fig.add_subplot(gs[0,i]) for i in range(len(grid_lens))]
+    r_axes = [fig.add_subplot(gs[1,i]) for i in range(len(grid_lens))]
 
-def read_transcripts(transcripts_tsv):
-    transcripts = dict()
-    for line in open(transcripts_tsv):
-        line = line.rstrip().split('\t')
-        tid = line[0]
-        transcripts[tid] = list()
-        for i in line[3].split(','):
-            s,e = i.split('-')
-            transcripts[tid].append((int(s),int(e)))
-    return transcripts
+    for axes,ylim in [(t_axes,len(tid_to_segs)),(r_axes,len(isoform['rids']))]:
+        for ax,(s,e) in zip(axes,segs):
+            ax.set_ylim(0,ylim)
+            ax.set_xlim(0, 1)
+            ax.set_xticks([0])
+            ax.set_xticklabels([s], rotation=45)
+            if ax.is_first_col():
+                ax.set_yticks(range(0,ylim,max(ylim//20,1)))
+            elif ax.is_last_col():
+                ax.yaxis.tick_right()
+                ax.set_yticks(range(0,ylim,max(ylim//20,1)))
+                ax.set_xticks([0,1])
+                ax.set_xticklabels([s,e], rotation=45)
+            else:
+                ax.set_yticks([])
+
+    rid_to_p = {rid:p for p,(_,rid) in enumerate(sorted([(reads[rid]['name'],rid) for rid in isoform['rids']]))}
+    for aid,ax in enumerate(r_axes):
+        for rid in isoform['rids']:
+            if reads[rid]['data'][aid]==False:
+                continue
+            ax.add_patch(patches.Rectangle((0,rid_to_p[rid]),1,1,color=tid_to_color.get(reads[rid]['tname'],'gray')))
+
+    tid_to_p = {tid:p for p,tid in enumerate(tid_to_segs.keys())}
+    for tid,intervals in tid_to_segs.items():
+        for s,e in intervals:
+            t_aid = -1
+            x_0 = -1
+            x_1 = -1
+            for idx,(seg_s,seg_e) in enumerate(segs):
+                if not (s <= seg_e and e >= seg_s):
+                    continue
+                t_aid = idx
+                seg_l = seg_e-seg_s
+                if seg_s < s:
+                    x_0 = (s-seg_s)/seg_l
+                else:
+                    x_0 = 0.0
+                if seg_e < e:
+                    x_1 = 1.0
+                else:
+                    x_1 = (e-seg_s)/seg_l
+                t_axes[t_aid].add_patch(patches.Rectangle(xy=(x_0,tid_to_p[tid]),width=x_1,height=1,color=tid_to_color.get(tid,'gray')))
+    plt.savefig('{}.svg'.format(out_prefix),bbox_inches='tight')
 
 def main():
     args = parse_args()
-
-    exons                              = get_segment_ints(segments_txt=args.exons)
-    transcripts                        = read_transcripts(transcripts_tsv=args.transcripts)
-    pos_to_rid,rid_to_intervals        = read_paf(paf=args.paf)
-    matrix, iid_to_rids,iid_to_isoform = read_isoforms(isoforms=args.isoforms)
-
-    plot_isoforms(exons=exons, transcripts=transcripts, pos_to_rid=pos_to_rid,rid_to_intervals=rid_to_intervals, iid_to_isoform=iid_to_isoform, matrix=matrix, iid_to_rids=iid_to_rids, out_prefix=args.out_prefix)
+    segs,grid_lens,tid_to_segs,tid_to_color=get_tinfo(
+        segments_txt=args.segments_txt,
+        transcripts_tsv=args.transcripts_tsv
+    )
+    isoforms,reads=get_isoforms(
+        isoforms_tsv=args.isoforms_tsv
+    )
+    for iid,isoform in enumerate(isoforms):
+        print('Plotting isoform {}...'.format(iid))
+        plot_isoforms(
+            isoform=isoform,
+            grid_lens=grid_lens,
+            tid_to_segs=tid_to_segs,
+            segs=segs,
+            reads=reads,
+            tid_to_color=tid_to_color,
+            out_prefix='{}.{}'.format(args.out_prefix,iid),
+        )
 
 if __name__ == "__main__":
     main()
