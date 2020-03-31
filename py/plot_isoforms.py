@@ -58,7 +58,7 @@ def get_tinfo(segments_txt, transcripts_tsv):
     for l in open(transcripts_tsv):
         tid,_,_,intervals,_ = l.rstrip().split('\t')
         tid_to_segs[tid] = sorted([(int(x.split('-')[0]),int(x.split('-')[1])) for x in intervals.split(',')])
-    tid_to_color = {tid:colors[tidx%len(colors)] for tidx,tid in enumerate(tid_to_segs)}
+    tid_to_color = {tid:colors[tidx%len(colors)] for tidx,tid in enumerate(sorted(tid_to_segs.keys()))}
     return segs,grid_lens,tid_to_segs,tid_to_color
 
 def get_isoforms(isoforms_tsv):
@@ -110,7 +110,7 @@ def plot_isoforms(isoform, grid_lens, tid_to_segs, segs, reads, tid_to_color, ou
                 continue
             ax.add_patch(patches.Rectangle((0,rid_to_p[rid]),1,1,color=tid_to_color.get(reads[rid]['tname'],'gray')))
 
-    tid_to_p = {tid:p for p,tid in enumerate(tid_to_segs.keys())}
+    tid_to_p = {tid:p for p,tid in enumerate(sorted(tid_to_segs.keys()))}
     for tid,intervals in tid_to_segs.items():
         for s,e in intervals:
             t_aid = -1
