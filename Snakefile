@@ -24,20 +24,23 @@ gene_data=[
 
 rule all:
     input:
-        expand('{}/{{sample}}.deSALT.sam'.format(mapped_d), sample=config['samples']),
-        expand('{}/{{sample}}.deSALT.paf'.format(mapped_d), sample=config['samples']),
-        expand('{}/{{gene}}/{{sample}}/{{data_file}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], data_file=gene_data),
-        expand('{}/{{gene}}/{{sample}}/reads.segments.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['txt', 'pdf', 'data', 'gaps']),
-        # expand('{}/{{gene}}/{{sample}}/reads.isoforms.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['tsv']),
-        # expand('{}/{{gene}}/{{sample}}/reads.iterative_canonical_exons.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['data', 'tsv', 'zeros_unaligned.tsv']),
-        # expand('{}/{{gene}}/{{sample}}/reads.isoforms_plots.{{extension}}'.format(genes_d),   gene=config['genes'], sample=config['samples'], extension=['pdf']),
+        # expand('{}/{{sample}}.deSALT.sam'.format(mapped_d), sample=config['samples']),
+        # expand('{}/{{sample}}.deSALT.paf'.format(mapped_d), sample=config['samples']),
+        # expand('{}/{{gene}}/{{sample}}/{{data_file}}'.format(genes_d),
+        #     gene=config['genes'], sample=config['samples'], data_file=gene_data),
+        expand('{}/{{gene}}/{{sample}}/reads.segments.{{extension}}'.format(genes_d),
+            gene=config['genes'], sample=config['samples'], extension=['txt', 'pdf', 'data', 'gaps', 'names']),
+        expand('{}/{{gene}}/{{sample}}/reads.isoforms.{{extension}}'.format(genes_d),
+            gene=config['genes'], sample=config['samples'], extension=['tsv']),
+        expand('{}/{{gene}}/{{sample}}/reads.isoforms.plots.pdf'.format(genes_d),
+            gene=config['genes'], sample=config['samples']),
 
 rule deSALT:
     input:
         index = config['references']['dna_desalt'],
         reads = lambda wildcards: config['samples'][wildcards.sample],
     output:
-        sam = '{}/{{sample}}.deSALT.sam'.format(mapped_d),
+        sam = protected('{}/{{sample}}.deSALT.sam'.format(mapped_d)),
     params:
         temp = '{}/{{sample}}.deSALT.temp.'.format(mapped_d),
     conda:
@@ -77,45 +80,42 @@ rule gene_data:
         '  --fastqs {input.reads} --gene {wildcards.gene} --paf {input.paf}'
         '  --padding {params.padding} --output {params.out_dir}'
 
-rule process_polyA:
-    input:
-        reads  = '{}/{{gene}}/{{sample}}/{{read_type}}.fasta'.format(genes_d),
-        script = config['exec']['polyA'],
-    output:
-        report  = '{}/{{gene}}/{{sample}}/{{read_type}}.polyA.tsv'.format(genes_d),
-    conda:
-        'freddie.env'
-    shell:
-        'python {input.script} {input.reads} {output.report}'
-
-rule trim_polyA:
-    input:
-        report  = '{}/{{gene}}/{{sample}}/{{read_type}}.polyA.tsv'.format(genes_d),
-        script = config['exec']['trim'],
-    output:
-        reads  = '{}/{{gene}}/{{sample}}/{{read_type}}.polyA.trimmed.fasta'.format(genes_d),
-        report  = '{}/{{gene}}/{{sample}}/{{read_type}}.polyA.trimmed.tsv'.format(genes_d),
-    params:
-        min_score = 20
-    conda:
-        'freddie.env'
-    shell:
-        'cat {input.report} | python {input.script} {output.report} {params.min_score} > {output.reads}'
+# rule process_polyA:
+#     input:
+#         reads  = '{}/{{gene}}/{{sample}}/reads.fasta'.format(genes_d),
+#         script = config['exec']['polyA'],
+#     output:
+#         report  = '{}/{{gene}}/{{sample}}/reads.polyA.tsv'.format(genes_d),
+#     conda:
+#         'freddie.env'
+#     shell:
+#         'python {input.script} {input.reads} {output.report}'
+#
+# rule trim_polyA:
+#     input:
+#         report  = '{}/{{gene}}/{{sample}}/reads.polyA.tsv'.format(genes_d),
+#         script = config['exec']['trim'],
+#     output:
+#         reads  = '{}/{{gene}}/{{sample}}/reads.polyA.trimmed.fasta'.format(genes_d),
+#         report  = '{}/{{gene}}/{{sample}}/reads.polyA.trimmed.tsv'.format(genes_d),
+#     params:
+#         min_score = 20
+#     conda:
+#         'freddie.env'
+#     shell:
+#         'cat {input.report} | python {input.script} {output.report} {params.min_score} > {output.reads}'
 
 rule find_segments:
     input:
         transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
-        paf             = '{}/{{gene}}/{{sample}}/{{read_type}}.paf'.format(genes_d),
+        paf             = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
         script          = config['exec']['segment'],
     output:
-        pdf = '{}/{{gene}}/{{sample}}/{{read_type}}.segments.pdf'.format(genes_d),
-        txt = '{}/{{gene}}/{{sample}}/{{read_type}}.segments.txt'.format(genes_d),
-        data = '{}/{{gene}}/{{sample}}/{{read_type}}.segments.data'.format(genes_d),
-        gaps = '{}/{{gene}}/{{sample}}/{{read_type}}.segments.gaps'.format(genes_d),
+        [protected('{}/{{gene}}/{{sample}}/reads.segments.{}'.format(genes_d,ext)) for ext in ['pdf','txt','data','gaps','names']]
     threads:
         8
     params:
-        out_prefix='{}/{{gene}}/{{sample}}/{{read_type}}.segments'.format(genes_d),
+        out_prefix='{}/{{gene}}/{{sample}}/reads.segments'.format(genes_d),
     conda:
         'freddie.env'
     shell:
@@ -123,60 +123,39 @@ rule find_segments:
 
 rule find_isoforms:
     input:
-        script          = config['exec']['find_isoforms'],
-        matrix          = '{}/{{gene}}/{{sample}}/{{read_type}}.iterative_canonical_exons.data'.format(genes_d),
-        exons           = '{}/{{gene}}/{{sample}}/{{read_type}}.iterative_canonical_exons.tsv'.format(genes_d),
-        unaligned_gaps  = '{}/{{gene}}/{{sample}}/{{read_type}}.iterative_canonical_exons.tsv'.format(genes_d),
-        zeros_unaligned = '{}/{{gene}}/{{sample}}/{{read_type}}.iterative_canonical_exons.zeros_unaligned.tsv'.format(genes_d),
-        read_names      = '{}/{{gene}}/{{sample}}/{{read_type}}.iterative_canonical_exons.read_names.txt'.format(genes_d),
-        polyA_report    = '{}/{{gene}}/{{sample}}/{{read_type}}.polyA.trimmed.tsv'.format(genes_d),
+        script  = config['exec']['find_isoforms'],
+        segs    = '{}/{{gene}}/{{sample}}/reads.segments.txt'.format(genes_d),
+        data    = '{}/{{gene}}/{{sample}}/reads.segments.data'.format(genes_d),
+        gaps    = '{}/{{gene}}/{{sample}}/reads.segments.gaps'.format(genes_d),
+        names   = '{}/{{gene}}/{{sample}}/reads.segments.names'.format(genes_d),
     output:
-        isoforms        = '{}/{{gene}}/{{sample}}/{{read_type}}.isoforms.tsv'.format(genes_d),
+        isoforms = protected('{}/{{gene}}/{{sample}}/reads.isoforms.tsv'.format(genes_d)),
     params:
-        out_prefix      = '{}/{{gene}}/{{sample}}/{{read_type}}.isoforms'.format(genes_d),
-        k               = 2,
-        e               = 0.2,
-        order_isoforms  = 'True',
-        garbage_isoform = 'True',
-        recycle_garbage = 'True',
-        timeout         = config['gurobi']['timeout'],
-        license         = config['gurobi']['license'],
+        out_prefix = '{}/{{gene}}/{{sample}}/reads.isoforms'.format(genes_d),
+        epsilon    = 0.2,
+        timeout    = config['gurobi']['timeout'],
+        license    = config['gurobi']['license'],
     threads:
         32
     conda:
         'freddie.env'
     shell:
         'export GRB_LICENSE_FILE={params.license}; '
-        '{input.script} -d {input.matrix} -et {input.exons} '
-        ' -names {input.read_names} -ptinfo {input.polyA_report} '
-        ' -k {params.k} --garbage-isoform {params.garbage_isoform} --recycle-garbage {params.recycle_garbage} '
-        ' -oi {params.order_isoforms} -e {params.e} -ug {input.zeros_unaligned}'
-        ' -t {threads} -to {params.timeout} -op {params.out_prefix}'
-
-rule score_clustering:
-    input:
-        script   = config['exec']['rand_index'],
-        isoforms = '{}/{{gene}}/{{sample}}/{{read_type}}.isoforms.tsv'.format(genes_d),
-        reads    = '{}/{{gene}}/{{sample}}/{{read_type}}.fasta'.format(genes_d),
-    output:
-        accuracy = '{}/{{gene}}/{{sample}}/{{read_type}}.rand'.format(genes_d),
-    conda:
-        'freddie.env'
-    shell:
-        'python {input.script} -r {input.reads} -i {input.isoforms} -o {output.accuracy}'
+        '{input.script} -st {input.segs} -ug {input.gaps} -names {input.names} '
+        '               -e  {params.epsilon} -t {threads} -to {params.timeout} '
+        '               -op {params.out_prefix}'
 
 rule plot_isoforms:
     input:
-        paf             = '{}/{{gene}}/{{sample}}/{{read_type}}.paf'.format(genes_d),
-        isoforms        = '{}/{{gene}}/{{sample}}/{{read_type}}.isoforms.tsv'.format(genes_d),
-        exons           = '{}/{{gene}}/{{sample}}/{{read_type}}.iterative_canonical_exons.tsv'.format(genes_d),
-        transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
-        script          = config['exec']['plot_isoforms'],
+        script      = config['exec']['plot_isoforms'],
+        transcripts = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
+        segs        = '{}/{{gene}}/{{sample}}/reads.segments.txt'.format(genes_d),
+        isoforms    = '{}/{{gene}}/{{sample}}/reads.isoforms.tsv'.format(genes_d),
     output:
-        isoform_plot = '{}/{{gene}}/{{sample}}/{{read_type}}.isoforms_plots.pdf'.format(genes_d),
+        isoform_pdf = '{}/{{gene}}/{{sample}}/reads.isoforms.plots.pdf'.format(genes_d),
     params:
-        out_prefix='{}/{{gene}}/{{sample}}/{{read_type}}.isoforms_plots'.format(genes_d),
+        out_prefix='{}/{{gene}}/{{sample}}/reads.isoforms.plots'.format(genes_d),
     conda:
         'freddie.env'
     shell:
-        '{input.script} -p {input.paf} -i {input.isoforms} -e {input.exons} -t {input.transcripts_tsv} -op {params.out_prefix}'
+        '{input.script} -t {input.transcripts} -s {input.segs} -i {input.isoforms} -op {params.out_prefix}'

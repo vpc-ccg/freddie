@@ -1,12 +1,27 @@
 #!/usr/bin/env python3
+import os
 import argparse
 import matplotlib as mpl
 mpl.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import matplotlib.patches as patches
+from PyPDF2 import PdfFileMerger, PdfFileReader
 
-colors = ['#a6cee3','#1f78b4','#b2df8a','#33a02c','#fb9a99','#e31a1c','#fdbf6f','#ff7f00','#cab2d6','#6a3d9a','#ffff99','#b15928',]
+colors = [
+    '#a6cee3',
+    '#1f78b4',
+    '#b2df8a',
+    '#33a02c',
+    '#fb9a99',
+    '#e31a1c',
+    '#fdbf6f',
+    '#ff7f00',
+    '#cab2d6',
+    '#6a3d9a',
+    '#ffff99',
+    '#b15928',
+]
 grid_width_ratios = [
     (2000, 8),
     (1000, 7),
@@ -130,7 +145,8 @@ def plot_isoforms(isoform, grid_lens, tid_to_segs, segs, reads, tid_to_color, ou
                 else:
                     x_1 = (e-seg_s)/seg_l
                 t_axes[t_aid].add_patch(patches.Rectangle(xy=(x_0,tid_to_p[tid]),width=x_1,height=1,color=tid_to_color.get(tid,'gray')))
-    plt.savefig('{}.svg'.format(out_prefix),bbox_inches='tight')
+    # plt.savefig('{}.svg'.format(out_prefix),bbox_inches='tight')
+    plt.savefig('{}.pdf'.format(out_prefix),bbox_inches='tight')
 
 def main():
     args = parse_args()
@@ -141,6 +157,7 @@ def main():
     isoforms,reads=get_isoforms(
         isoforms_tsv=args.isoforms_tsv
     )
+
     for iid,isoform in enumerate(isoforms):
         print('Plotting isoform {}...'.format(iid))
         plot_isoforms(
@@ -152,6 +169,13 @@ def main():
             tid_to_color=tid_to_color,
             out_prefix='{}.{}'.format(args.out_prefix,iid),
         )
+
+    mergedObject = PdfFileMerger()
+    for iid in range(len(isoforms)):
+        mergedObject.append(PdfFileReader('{}.{}.pdf'.format(args.out_prefix,iid), 'rb'))
+    mergedObject.write('{}.pdf'.format(args.out_prefix))
+    for iid in range(len(isoforms)):
+        os.remove('{}.{}.pdf'.format(args.out_prefix,iid))
 
 if __name__ == "__main__":
     main()
