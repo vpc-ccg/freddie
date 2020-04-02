@@ -18,6 +18,7 @@ def parse_args():
     #         raise argparse.ArgumentTypeError('Boolean value expected.')
     parser = argparse.ArgumentParser(
         description="Cluster aligned reads into isoforms")
+    recycle_models = ['constant', 'exons', 'introns', 'relative']
     parser.add_argument("-sd",
                         "--segments-data",
                         type=str,
@@ -33,6 +34,11 @@ def parse_args():
                         type=str,
                         required=True,
                         help="Path to segments TXT file")
+    parser.add_argument("-rm",
+                        "--recycle-model",
+                        type=str,
+                        required=True,
+                        help="Model type: {}".format(', '.join(recycle_models)))
     parser.add_argument("-ug",
                         "--unaligned-gaps",
                         type=str,
@@ -100,6 +106,7 @@ def parse_args():
                         required=True,
                         help="Output prefix that does not include .EXT part")
     args = parser.parse_args()
+    assert args.recycle_model in recycle_models
     return(args)
 
 def get_segment_data(segments_data, M):
@@ -161,7 +168,7 @@ def find_segment_read(M,i):
             max_i = j
     return((min_i,max_i))
 
-def garbage_cost(C):
+def garbage_cost_introns(C):
     # Sum of 1, i.e. exons that could be corrected, minus 0.5 to make sure that assigning anyway
     # to an isoform with maximum correction score is not at least as good as assigning to the garbage isoform
     return(max(sum(C.values())-0.5,1))
@@ -174,6 +181,7 @@ def run_ILP(
     MATRIX,
     RIDS,
     SEG_L,
+    RE_MOD,
     GAP_L,
     K,
     # polyA_trimmed,
@@ -260,7 +268,12 @@ def run_ILP(
         GARBAGE_COST = {}
         ISOFORM_INDEX_START = 1 # The garbage isoform is isoform 0
         for i in RIDS:
-            GARBAGE_COST[i] = garbage_cost_exons(I[i])
+            if RE_MOD == 'exons':
+                GARBAGE_COST[i] = garbage_cost_exons(I=I[i])
+            elif RE_MOD == 'introns':
+                GARBAGE_COST[i] = garbage_cost_introns(C=C[i])
+            elif RE_MOD == 'constant':
+                GARBAGE_COST[i] = 1
     else:
         ISOFORM_INDEX_START = 0
 
@@ -455,49 +468,51 @@ def run_ILP(
     GAR_OBJ_C = {}
     if True or garbage_isoform:
         for i in RIDS:
-            # OBJ_SUM.addTerms(
-            #     coeffs = 1.0,
-            #     vars   = R2I[i][0]
-            # )
-            GAR_OBJ[i]   = {}
-            GAR_OBJ_C[i] = {}
-            for j in range(0,M):
-                GAR_OBJ[i][j]   = {}
-                GAR_OBJ_C[i][j] = {}
-                for k in range(ISOFORM_INDEX_START,K):
-                    if I[i][j] == 1:
-                        GAR_OBJ[i][j][k]    = ILP_ISOFORMS.addVar(
-                            vtype = GRB.BINARY,
-                            name  = 'GAR_OBJ[{i}][{j}][{k}]'.format(i=i,j=j,k=k)
-                        )
-                        GAR_OBJ_C[i][j][k] = ILP_ISOFORMS.addGenConstrAnd(
-                            resvar = GAR_OBJ[i][j][k],
-                            vars   = [R2I[i][0],E2I_min[j][k]],
-                            name   = 'GAR_OBJ_C[{i}][{j}][{k}]'.format(i=i,j=j,k=k)
-                        )
-                        OBJ_SUM.addTerms(
-                            coeffs = 1.0,
-                            vars   = GAR_OBJ[i][j][k]
-                        )
-                    elif I[i][j] == 0 and C[i][j] == 1:
-                        pass
-                        # GAR_OBJ[i][j][k]    = ILP_ISOFORMS.addVar(
-                        #     vtype = GRB.BINARY,
-                        #     name  = 'GAR_OBJ[{i}][{j}][{k}]'.format(i=i,j=j,k=k)
-                        # )
-                        # GAR_OBJ_C[i][j][k] = ILP_ISOFORMS.addGenConstrAnd(
-                        #     resvar = GAR_OBJ[i][j][k],
-                        #     vars   = [R2I[i][0],E2I[j][k]],
-                        #     name   = 'GAR_OBJ_C[{i}][{j}][{k}]'.format(i=i,j=j,k=k)
-                        # )
-                        # OBJ_SUM.addTerms(
-                        #     coeffs = 1.0,
-                        #     vars   = R2I[i][0]
-                        # )
-                        # OBJ_SUM.addTerms(
-                        #     coeffs = -1.0,
-                        #     vars   = GAR_OBJ[i][j][k]
-                        # )
+            if RE_MOD in ['constant', 'exons', 'introns']:
+                OBJ_SUM.addTerms(
+                    coeffs = 1.0*GARBAGE_COST[i],
+                    vars   = R2I[i][0]
+                )
+            elif RE_MOD == 'relative':
+                GAR_OBJ[i]   = {}
+                GAR_OBJ_C[i] = {}
+                for j in range(0,M):
+                    GAR_OBJ[i][j]   = {}
+                    GAR_OBJ_C[i][j] = {}
+                    for k in range(ISOFORM_INDEX_START,K):
+                        if I[i][j] == 1:
+                            GAR_OBJ[i][j][k]    = ILP_ISOFORMS.addVar(
+                                vtype = GRB.BINARY,
+                                name  = 'GAR_OBJ[{i}][{j}][{k}]'.format(i=i,j=j,k=k)
+                            )
+                            GAR_OBJ_C[i][j][k] = ILP_ISOFORMS.addGenConstrAnd(
+                                resvar = GAR_OBJ[i][j][k],
+                                vars   = [R2I[i][0],E2I_min[j][k]],
+                                name   = 'GAR_OBJ_C[{i}][{j}][{k}]'.format(i=i,j=j,k=k)
+                            )
+                            OBJ_SUM.addTerms(
+                                coeffs = 1.0,
+                                vars   = GAR_OBJ[i][j][k]
+                            )
+                        elif I[i][j] == 0 and C[i][j] == 1:
+                            pass
+                            # GAR_OBJ[i][j][k]    = ILP_ISOFORMS.addVar(
+                            #     vtype = GRB.BINARY,
+                            #     name  = 'GAR_OBJ[{i}][{j}][{k}]'.format(i=i,j=j,k=k)
+                            # )
+                            # GAR_OBJ_C[i][j][k] = ILP_ISOFORMS.addGenConstrAnd(
+                            #     resvar = GAR_OBJ[i][j][k],
+                            #     vars   = [R2I[i][0],E2I[j][k]],
+                            #     name   = 'GAR_OBJ_C[{i}][{j}][{k}]'.format(i=i,j=j,k=k)
+                            # )
+                            # OBJ_SUM.addTerms(
+                            #     coeffs = 1.0,
+                            #     vars   = R2I[i][0]
+                            # )
+                            # OBJ_SUM.addTerms(
+                            #     coeffs = -1.0,
+                            #     vars   = GAR_OBJ[i][j][k]
+                            # )
 
     ILP_ISOFORMS.setObjective(
         expr  = OBJ_SUM,
@@ -648,8 +663,9 @@ def main():
             RIDS            = rids,
             MATRIX          = matrix,
             SEG_L           = segment_lens,
-            GAP_L           = rid_to_unaln_gaps,
             K               = 2,
+            RE_MOD          = args.recycle_model,
+            GAP_L           = rid_to_unaln_gaps,
             EPSILON         = args.epsilon,
             OFFSET          = args.unaligned_offset,
             # INCOMP_RIDS     = args.incomp_read_pairs,

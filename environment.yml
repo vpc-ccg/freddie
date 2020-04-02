@@ -21,3 +21,4 @@ dependencies:
   - biopython
   - gurobi=8.1.1
   - desalt=1.5.2
+  - pypdf2=1.26.0

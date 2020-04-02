@@ -30,10 +30,10 @@ rule all:
         #     gene=config['genes'], sample=config['samples'], data_file=gene_data),
         expand('{}/{{gene}}/{{sample}}/reads.segments.{{extension}}'.format(genes_d),
             gene=config['genes'], sample=config['samples'], extension=['txt', 'pdf', 'data', 'gaps', 'names']),
-        expand('{}/{{gene}}/{{sample}}/reads.isoforms.{{extension}}'.format(genes_d),
-            gene=config['genes'], sample=config['samples'], extension=['tsv']),
-        expand('{}/{{gene}}/{{sample}}/reads.isoforms.plots.pdf'.format(genes_d),
-            gene=config['genes'], sample=config['samples']),
+        expand('{}/{{gene}}/{{sample}}/reads.isoforms.{{recycle_model}}.{{extension}}'.format(genes_d),
+            gene=config['genes'], sample=config['samples'], recycle_model=config['gurobi']['recycle_models'], extension=['tsv']),
+        expand('{}/{{gene}}/{{sample}}/reads.isoforms.{{recycle_model}}.plots.pdf'.format(genes_d),
+            gene=config['genes'], sample=config['samples'], recycle_model=config['gurobi']['recycle_models'],),
 
 rule deSALT:
     input:
@@ -129,9 +129,9 @@ rule find_isoforms:
         gaps    = '{}/{{gene}}/{{sample}}/reads.segments.gaps'.format(genes_d),
         names   = '{}/{{gene}}/{{sample}}/reads.segments.names'.format(genes_d),
     output:
-        isoforms = protected('{}/{{gene}}/{{sample}}/reads.isoforms.tsv'.format(genes_d)),
+        isoforms = protected('{}/{{gene}}/{{sample}}/reads.isoforms.{{recycle_model}}.tsv'.format(genes_d)),
     params:
-        out_prefix = '{}/{{gene}}/{{sample}}/reads.isoforms'.format(genes_d),
+        out_prefix = '{}/{{gene}}/{{sample}}/reads.isoforms.{{recycle_model}}'.format(genes_d),
         epsilon    = 0.2,
         timeout    = config['gurobi']['timeout'],
         license    = config['gurobi']['license'],
@@ -141,20 +141,27 @@ rule find_isoforms:
         'freddie.env'
     shell:
         'export GRB_LICENSE_FILE={params.license}; '
-        '{input.script} -st {input.segs} -ug {input.gaps} -names {input.names} '
-        '               -e  {params.epsilon} -t {threads} -to {params.timeout} '
-        '               -op {params.out_prefix}'
+        '{input.script}'
+        ' -rm    {wildcards.recycle_model} '
+        ' -st    {input.segs} '
+        ' -sd    {input.data} '
+        ' -ug    {input.gaps}'
+        ' -e     {params.epsilon} '
+        ' -names {input.names} '
+        ' -t     {threads}'
+        ' -to    {params.timeout} '
+        ' -op    {params.out_prefix}'
 
 rule plot_isoforms:
     input:
         script      = config['exec']['plot_isoforms'],
         transcripts = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
         segs        = '{}/{{gene}}/{{sample}}/reads.segments.txt'.format(genes_d),
-        isoforms    = '{}/{{gene}}/{{sample}}/reads.isoforms.tsv'.format(genes_d),
+        isoforms    = '{}/{{gene}}/{{sample}}/reads.isoforms.{{recycle_model}}.tsv'.format(genes_d),
     output:
-        isoform_pdf = '{}/{{gene}}/{{sample}}/reads.isoforms.plots.pdf'.format(genes_d),
+        isoform_pdf = protected('{}/{{gene}}/{{sample}}/reads.isoforms.{{recycle_model}}.plots.pdf'.format(genes_d)),
     params:
-        out_prefix='{}/{{gene}}/{{sample}}/reads.isoforms.plots'.format(genes_d),
+        out_prefix  = '{}/{{gene}}/{{sample}}/reads.isoforms.{{recycle_model}}.plots'.format(genes_d),
     conda:
         'freddie.env'
     shell:
