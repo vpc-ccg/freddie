@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import matplotlib.patches as patches
 from PyPDF2 import PdfFileMerger, PdfFileReader
-from dateutil import parser
+import dateutil
 
 colors = [
     '#a6cee3',
@@ -141,7 +141,7 @@ def read_fastq(fastq):
             if x[0] in info:
                 info[x[0]] = x[1]
         info['ch'] = int(info['ch'])
-        info['start_time'] = parser.parse(info['start_time']).timestamp()
+        info['start_time'] = dateutil.parser.parse(info['start_time']).timestamp()
         rname_to_info[rname]=info
     return rname_to_info
 
@@ -365,6 +365,7 @@ def main():
     isoforms,reads=get_isoforms(
         isoforms_tsv=args.isoforms_tsv
     )
+    # ch_to_rids = dict()
     for rid,read in reads.items():
         rname = read['name']
         assert rname in rname_to_info
@@ -375,8 +376,33 @@ def main():
         reads[rid]['scs'] = rname_to_sc[rname]['scs']
         reads[rid]['sce'] = rname_to_sc[rname]['sce']
         reads[rid]['strand'] = rname_to_sc[rname]['strand']
-    # for read in reads.values():
-    #     print(read)
+        reads[rid]['length'] = rname_to_sc[rname]['length']
+        # if not read['ch'] in ch_to_rids:
+        #     ch_to_rids[read['ch']] = set()
+        # ch_to_rids[read['ch']].add(rid)
+        read['rid']=rid
+        try:
+            read['fexon'] = read['data'].index(True)
+            read['lexon']  = len(read['data'])-1-read['data'][::-1].index(True)
+        except ValueError:
+            read['fexon']=-1
+            read['lexon']=-1
+    #
+    # time_sorted_reads = sorted((read for read in reads.values() if any(read['data'])), key=itemgetter('start_time'))
+    # last_time = time_sorted_reads[0]['start_time']
+    # last_fexon = time_sorted_reads[0]['fexon']
+    # slack_time = time_sorted_reads[0]['length']/50
+    # print('ch','strand','fexon', 'lexon', 'delta')
+    # for read in time_sorted_reads:
+    #     delta = read['start_time']-last_time
+    #     if delta-slack_time < 1000 and last_fexon > read['lexon']:
+    #         print(read['ch'],read['strand'],read['fexon'], read['lexon'], delta-slack_time, '<------')
+    #     else:
+    #         print(read['ch'],read['strand'],read['fexon'], read['lexon'], delta-slack_time)
+    #     last_time  = read['start_time']
+    #     last_fexon = read['fexon']
+    #     slack_time = 0#read['length']
+    # exit()
     for iid,isoform in enumerate(isoforms):
         print('Plotting isoform {}...'.format(iid))
         plot_isoforms(
