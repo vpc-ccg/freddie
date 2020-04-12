@@ -19,6 +19,16 @@
         "mem" : "32GB",
         "name" : "gene_data",
     },
+    "find_segments" :
+    {
+        "mem" : "32GB",
+        "name" : "find_segments",
+    },
+    "plot_isoforms" :
+    {
+        "mem" : "32GB",
+        "name" : "plot_isoforms",
+    },
     "find_isoforms" :
     {
         "c" : 32,
