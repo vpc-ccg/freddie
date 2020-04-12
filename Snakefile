@@ -155,6 +155,8 @@ rule find_isoforms:
 rule plot_isoforms:
     input:
         script      = config['exec']['plot_isoforms'],
+        reads       = '{}/{{gene}}/{{sample}}/reads.fastq'.format(genes_d),
+        paf         = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
         transcripts = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
         segs        = '{}/{{gene}}/{{sample}}/reads.segments.txt'.format(genes_d),
         isoforms    = '{}/{{gene}}/{{sample}}/reads.isoforms.{{recycle_model}}.tsv'.format(genes_d),
@@ -165,4 +167,4 @@ rule plot_isoforms:
     conda:
         'freddie.env'
     shell:
-        '{input.script} -t {input.transcripts} -s {input.segs} -i {input.isoforms} -op {params.out_prefix}'
+        '{input.script} -q {input.reads} -p {input.paf} -t {input.transcripts} -s {input.segs} -i {input.isoforms} -op {params.out_prefix}'
