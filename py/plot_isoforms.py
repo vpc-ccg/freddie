@@ -265,10 +265,10 @@ def plot_isoforms(isoform, grid_lens, tid_to_segs, segs, reads, tid_to_color, ou
                 if not any(isoform_reads[r2]['data']):
                     continue
                 # if not any(d1 and d2 for (d1,d2) in zip(isoform_reads[r1]['data'],isoform_reads[r2]['data'])):
-                if isoform_reads[r1]['data'].index(True) > isoform_reads[r2]['data'][::-1].index(True):
-                    isoform_reads[r1]['color_idx']+=1
-                    isoform_reads[r2]['color_idx']+=1
-                    print(ch,r1,r2,isoform_reads[r1]['data'].index(True),isoform_reads[r2]['data'][::-1].index(True))
+                # if isoform_reads[r1]['data'].index(True) > isoform_reads[r2]['data'][::-1].index(True):
+                #     isoform_reads[r1]['color_idx']+=1
+                #     isoform_reads[r2]['color_idx']+=1
+                #     print(ch,r1,r2,isoform_reads[r1]['data'].index(True),isoform_reads[r2]['data'][::-1].index(True))
     # for read in isoform_reads:
     #     ch_count[read['ch']]+=1
     # for read in isoform_reads:
@@ -304,10 +304,11 @@ def plot_isoforms(isoform, grid_lens, tid_to_segs, segs, reads, tid_to_color, ou
         if read['tname'] in tid_to_color:
             color = tid_to_color[read['tname']]
         else:
-            if read['color_idx']<len(colors_ch):
-                color = colors_ch[read['color_idx']]
-            else:
-                color = colors_ch[-1]
+            color = 'gray'
+            # if read['color_idx']<len(colors_ch):
+            #     color = colors_ch[read['color_idx']]
+            # else:
+            #     color = colors_ch[-1]
         scs_ax.add_patch(patches.Rectangle(
             xy     = (0,p),
             width  = read['scs'],
