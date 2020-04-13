@@ -38,6 +38,7 @@ def output_paf_from_sam(sam, paf):
             continue
         if line[3] == '*':
             continue
+        assert sum([len(x[0]+x[1]) for x in re.findall(r'(\d+)([M|I|D|N|S|H|P|=|X]{1})', line[5])])==len(line[5])
         cigar = [(int(x[0]),x[1]) for x in re.findall(r'(\d+)([M|I|D|N|S|H|P|=|X]{1})', line[5])]
         if len(cigar) == 0:
             continue
@@ -49,6 +50,7 @@ def output_paf_from_sam(sam, paf):
         for c,t in cigar:
             if t in ['I','S','M','=','X']:
                 qlen+=c
+        assert qlen==len(line[9])==len(line[10])
         qend = qlen
         if cigar[-1][1] in ['S']:
             qend -= cigar[-1][0]
