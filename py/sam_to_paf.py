@@ -54,6 +54,7 @@ def output_paf_from_sam(sam, paf):
         qend = qlen
         if cigar[-1][1] in ['S']:
             qend -= cigar[-1][0]
+        assert qend>qstart
         if flag & 16:
             strand = '-'
         else:
@@ -75,7 +76,8 @@ def output_paf_from_sam(sam, paf):
         intervals = list()
         interval_cigar = list()
         for c,t in cigar:
-            interval_cigar.append('{}{}'.format(c,t))
+            if t in ['D','I','X', '=', 'M']:
+                interval_cigar.append('{}{}'.format(c,t))
             if t in ['D']:
                 tend_c+=c
             if t in ['I']:
@@ -89,7 +91,7 @@ def output_paf_from_sam(sam, paf):
                     qend_c,
                     tstart_c,
                     tend_c,
-                    ''.join(interval_cigar[:-1])
+                    ''.join(interval_cigar)
                 ))
                 interval_cigar = list()
                 tend_c+=c
