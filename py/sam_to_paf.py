@@ -36,9 +36,9 @@ def output_paf_from_sam(sam, paf):
         flag = int(line[1])
         if not flag < 256:
             continue
-        if line[3] == '*':
+        if line[2] == '*':
             continue
-        assert sum([len(x[0]+x[1]) for x in re.findall(r'(\d+)([M|I|D|N|S|H|P|=|X]{1})', line[5])])==len(line[5])
+        assert sum([len(x[0]+x[1]) for x in re.findall(r'(\d+)([M|I|D|N|S|H|P|=|X]{1})', line[5])])==len(line[5]),'Something wrong with line:\n{}'.format('\n'.join(line))
         cigar = [(int(x[0]),x[1]) for x in re.findall(r'(\d+)([M|I|D|N|S|H|P|=|X]{1})', line[5])]
         if len(cigar) == 0:
             continue
