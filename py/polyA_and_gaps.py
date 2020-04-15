@@ -150,6 +150,31 @@ def get_interval_end(start, end, read):
         return q_pos
     assert False
 
+def find_longest_poly(seq, match_score=1, mismatch_score=-1, char='A'):
+	scores = [ 0 ]
+	starts = [ -1 ]	# keeps one index before start
+	i = 0
+	for ch in seq:
+		to_be_added = match_score if (ch == char) else mismatch_score
+		new_score = scores[-1] + to_be_added
+		new_start = starts[-1]
+		if new_score <= 0:
+			new_score = 0
+			new_start = i
+		scores.append(new_score)
+		starts.append(new_start)
+		i += 1
+	max_ind = 0
+	for i in range(len(scores)):
+		if (scores[i] > scores[max_ind]) or (scores[i] == scores[max_ind] and starts[i] > starts[max_ind]):
+			max_ind = i
+	# [start, end)
+	start = starts[max_ind] + 1
+	end = max_ind
+	score = scores[max_ind]
+	return start, end, score
+
+
 def get_unaligned_gaps(reads, segs, tlen):
     for read in reads:
         read['gaps']=set()
@@ -165,6 +190,15 @@ def get_unaligned_gaps(reads, segs, tlen):
             intervals.append((f_seg_idx,l_seg_idx))
         assert len(intervals)>0, read['data']
 
+        (f_seg_idx,l_seg_idx) = intervals[0]
+        start = segs[f_seg_idx][0]
+        end   = segs[l_seg_idx][1]
+        q_ssc_pos = get_interval_start(start=start, end=end, read=read)
+        for ''
+        start, end, score = find_longest_poly(read['seq'][0:q_ssc_pos], char='A')
+        print(read['strand'],score,read['seq'][start:end], '<-----------' if end-start>10 and read['seq'][start:end].count('A')/(end-start)>0.85 else '')
+        start, end, score = find_longest_poly(read['seq'][0:q_ssc_pos], char='T')
+        print(read['strand'],score,read['seq'][start:end], '<-----------' if end-start>10 and read['seq'][start:end].count('T')/(end-start)>0.85 else '')
         for i1,i2 in zip(intervals[:-1],intervals[1:]):
             (i1_f_seg_idx,i1_l_seg_idx) = i1
             i1_start = segs[i1_f_seg_idx][0]
