@@ -1,5 +1,20 @@
 #!/usr/bin/env python3
 import argparse
+import re
+from itertools import groupby
+
+rev_comp = dict(
+    A='T',
+    C='G',
+    G='C',
+    T='A'
+)
+dna_id = dict(
+    A='A',
+    C='C',
+    G='G',
+    T='T'
+)
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -39,114 +54,143 @@ def parse_args():
 
 def read_paf(paf, range_len=0):
     is_first = True
-    pos_to_rid = list()
+    reads = list()
     read_name_to_id = dict()
-    rid_to_intervals = dict()
-    rid_to_len = dict()
     for line in open(paf):
         line = line.rstrip().split('\t')
         if is_first:
             t_len = int(line[6])
             t_name = line[5]
             is_first = False
-            pos_to_rid = [set() for _ in range(t_len)]
-        if t_len != int(line[6]) or t_name != line[5]:
-            print("Multiple targets detected in PAF file!", file=stderr)
-            print(line, file=stderr)
-            exit(-1)
+        assert t_len == int(line[6]) and t_name == line[5], 'Multiple targets detected in PAF file!\n{}'.format(line)
+        if not any('oc:c:1' in tag for tag in line[12:]):
+            continue
         name = line[0]
         if not name in read_name_to_id:
-            rid = len(read_name_to_id)
-            read_name_to_id[name] = rid
-            rid_to_intervals[rid] = list()
-            rid_to_len[rid] = int(line[1])
+            read_name_to_id[name] = len(reads)
+            reads.append(dict(
+                name=name,
+                intervals=list(),
+                length=int(line[1]),
+                strand=line[4],
+            ))
         rid = read_name_to_id[name]
-        if any('oc:c:1' in tag for tag in line[12:]):
-            t_start = int(line[7])
-            t_end   = int(line[8])
-            q_start = int(line[2])
-            q_end   = int(line[3])
-            t_interval = (t_start, t_end)
-            q_interval = (q_start, q_end)
-            rid_to_intervals[rid].append((t_interval, q_interval))
-            assert rid_to_len[rid] == int(line[1])
-    for intervals in rid_to_intervals.values():
-        intervals.sort()
-    for rid,intervals in rid_to_intervals.items():
-        new_intervals = list()
-        for idx,(t_interval,q_interval) in enumerate(intervals):
-            if idx == 0:
-                new_intervals.append((t_interval,q_interval))
-                continue
-            (t_interval_prv,q_interval_prv) = new_intervals[-1]
-            if t_interval[0] - t_interval_prv[1] < range_len and q_interval_prv[0] - q_interval_prv[1] < range_len:
-                new_intervals[-1] = (
-                    (t_interval_prv[0],t_interval[1]),
-                    (q_interval_prv[0],q_interval[1]),
-                )
-            else:
-                new_intervals.append((t_interval,q_interval))
-        rid_to_intervals[rid] = new_intervals
-    for rid,intervals in rid_to_intervals.items():
-        for (t_start, t_end),(_, _) in intervals:
-            for i in range(t_start, t_end):
-                pos_to_rid[i].add(rid)
-    return pos_to_rid,rid_to_len,rid_to_intervals,read_name_to_id,t_len
+        assert reads[rid]['length'] == int(line[1])
+        assert reads[rid]['strand'] == line[4]
+        cigar = None
+        for tag in line[12:]:
+            if tag[:len('cg:Z:')]=='cg:Z:':
+                assert cigar == None
+                cigar = [(int(x[0]),x[1]) for x in re.findall(r'(\d+)([M|I|D|N|S|H|P|=|X]{1})', tag[len('cg:Z:'):])]
+                assert sum([len(str(x[0])+x[1]) for x in cigar])==len(tag[len('cg:Z:'):]),'Something wrong with line:\n{}'.format(line)
+        assert not cigar == None, 'PAF record has no cigar:\n{}'.format(line)
+        t_start = int(line[7])
+        t_end   = int(line[8])
+        q_start = int(line[2])
+        q_end   = int(line[3])
+        assert 0 <= t_start < t_end <= t_len
+        assert 0 <= q_start < q_end <= reads[rid]['length'], '{}<{}<{}:\n{}'.format(q_start,q_end,reads[rid]['length'],line)
+        if reads[rid]['strand']=='-':
+            q_end,q_start = reads[rid]['length']-q_start-1,reads[rid]['length']-q_end-1
+        t_interval = (t_start, t_end)
+        q_interval = (q_start, q_end)
+        reads[rid]['intervals'].append(((t_interval, q_interval), cigar))
+    for read in reads:
+        read['intervals'].sort()
+        for ((ti_1,qi_1),_),((ti_2,qi_2),_) in zip(read['intervals'][:-1],read['intervals'][1:]):
+            assert ti_1[1]<=ti_2[0]
+            assert qi_1[1]<=qi_2[0]
+    return reads,read_name_to_id,t_len
 
-def get_unaligned_gaps(data,brks,t_len,rid_to_intervals,rid_to_len):
-    rid_to_unaln_gaps = dict()
-    for rid,intervals in rid_to_intervals.items():
-        rid_to_unaln_gaps[rid]=list()
-        int_idx = 0
-        seg_idx = 0
-        # print('---',rid, rid_to_len[rid])
-        # print(''.join((str(x)for x in data[rid])))
-        # print('-'.join((str(x)for x in intervals)))
-        # print('...')
-        while seg_idx < len(data[rid]):
-            eo_idx = -1
-            so_idx = len(data[rid])
-            # Find the next eo_idx such that data[rid][eo_idx]==1 and data[rid][eo_idx+1]!=1
-            while seg_idx < len(data[rid]):
-                if data[rid][seg_idx] != 1:
-                    break
-                eo_idx = seg_idx
-                seg_idx += 1
-            if eo_idx+1==len(data[rid]):
+def forward_thread_cigar(cigar, t_goal, t_pos, q_pos):
+    assert t_pos<=t_goal
+    cig_idx = 0
+    while t_pos < t_goal:
+        c,t = cigar[cig_idx]
+        # print(t_goal-t_pos, c,t)
+        c = min(c, t_goal-t_pos)
+        if t in ['M','X','=']:
+            t_pos += c
+            q_pos += c
+        if t in ['D']:
+            t_pos += c
+        if t in ['I']:
+            q_pos += c
+        cig_idx+=1
+    return q_pos
+
+
+def get_interval_start(start, end, read):
+    for ((t_start, t_end),(q_start, q_end)),cigar in read['intervals']:
+        if t_end < start or t_start>end:
+            continue
+        # print((t_start, t_end),(q_start, q_end),'|',read['length'])
+        if start < t_start:
+            q_pos=q_start
+            slack=t_start-start
+        else:
+            q_pos = forward_thread_cigar(cigar=cigar, t_goal=start, t_pos=t_start, q_pos=q_start)
+            slack = 0
+        assert q_pos<q_end, (q_pos,q_end)
+        return q_pos
+    assert False
+
+def get_interval_end(start, end, read):
+    for ((t_start, t_end),(q_start, q_end)),cigar in reversed(read['intervals']):
+        if t_start > end or t_end<start:
+            continue
+        # print((t_start, t_end),(q_start, q_end),'|',read['length'])
+        if t_end<end:
+            q_pos=q_start
+            slack=end-t_end
+        else:
+            q_pos = forward_thread_cigar(cigar=cigar, t_goal=end-1, t_pos=t_start, q_pos=q_start)
+            slack = 0
+        assert q_pos<q_end, (q_pos,q_end)
+        return q_pos
+    assert False
+
+def get_unaligned_gaps(reads, segs, tlen):
+    for read in reads:
+        read['gaps']=set()
+        if not 1 in read['data']:
+            continue
+        intervals = list()
+        for d,group in groupby(enumerate(read['data']), lambda x: x[1]):
+            if d != 1:
                 continue
-            assert data[rid][eo_idx+1]!=1 and (eo_idx==-1 or data[rid][eo_idx]==1)
-            # Find the next so_idx such that data[rid][so_idx]==1 and data[rid][so_idx-1]!=1
-            while seg_idx < len(data[rid]):
-                if data[rid][seg_idx] == 1:
-                    so_idx = seg_idx
-                    break
-                seg_idx += 1
-            assert data[rid][so_idx-1]!=1 and (so_idx==len(data[rid]) or data[rid][so_idx]==1)
-            gap_ts = brks[eo_idx+1]
-            gap_te = brks[so_idx]
-            # if gap_ts == 0 or gap_te==t_len:
-            #     continue
-            # print('(eo_idx, so_idx)',(eo_idx, so_idx))
-            # print('(gap_ts, gap_te)',(gap_ts, gap_te))
-            gap_qs = 0
-            gap_qe = rid_to_len[rid]
-            for i in range(int_idx,len(intervals)):
-                ((ts,te),(qs,qe)) = intervals[i]
-                # print('gqs:',i,intervals[i])
-                if ts < gap_ts:
-                    gap_qs = qe + (gap_ts-te)
-                    int_idx=i
-                if ts >= gap_ts:
-                    break
-            for i in range(int_idx,len(intervals)):
-                ((ts,te),(qs,qe)) = intervals[i]
-                int_idx=i
-                # print('gqe:',i,intervals[i])
-                if te >= gap_te:
-                    gap_qe = qs - (ts-gap_te)
-                    break
-            rid_to_unaln_gaps[rid].append((eo_idx+1,so_idx-1,max(0,gap_qe-gap_qs)))
-    return rid_to_unaln_gaps
+            group = list(group)
+            f_seg_idx = group[0][0]
+            l_seg_idx = group[-1][0]
+            intervals.append((f_seg_idx,l_seg_idx))
+        assert len(intervals)>0, read['data']
+
+        for i1,i2 in zip(intervals[:-1],intervals[1:]):
+            (i1_f_seg_idx,i1_l_seg_idx) = i1
+            i1_start = segs[i1_f_seg_idx][0]
+            i1_end   = segs[i1_l_seg_idx][1]
+            q_gap_start = get_interval_end(start=i1_start, end=i1_end, read=read)
+            (i2_f_seg_idx,i2_l_seg_idx) = i2
+            i2_start = segs[i2_f_seg_idx][0]
+            i2_end   = segs[i2_l_seg_idx][1]
+            q_gap_end = get_interval_start(start=i2_start, end=i2_end, read=read)
+            q_gap_size = q_gap_end-q_gap_start
+            assert q_gap_size>0
+            assert i1_l_seg_idx<i2_f_seg_idx
+            read['gaps'].add((i1_l_seg_idx,i2_f_seg_idx,q_gap_size))
+def get_read_seqs(reads, read_name_to_id, fastq):
+    for idx,line in enumerate(open(fastq)):
+        if idx%4==0:
+            rid = read_name_to_id[line.rstrip().split()[0][1:]]
+        if idx%4==1:
+            reads[rid]['seq'] = line.rstrip()
+    for read in reads:
+        seq=read['seq']
+        assert len(seq)==read['length'], (read['name'],len(seq),seq,read['length'])
+        if read['strand']=='+':
+            read['seq']=''.join(dna_id.get(x,'N') for x in seq.upper())
+        else:
+            read['seq']=''.join(rev_comp.get(x,'N') for x in reversed(seq.upper()))
 
 def main():
     args = parse_args()
@@ -155,13 +199,15 @@ def main():
     segs = [(s,e) for s,e in zip(segs[:-1],segs[1:])]
     for s,e in segs:
         assert s<e
-    pos_to_rid,rid_to_len,rid_to_intervals,read_name_to_id,t_len = read_paf(args.paf)
+    reads,read_name_to_id,tlen = read_paf(args.paf)
     for name,rid in {name.rstrip():rid for (rid,name) in enumerate(open(args.names))}.items():
         assert read_name_to_id[name]==rid
-    rid_to_data = [[x for x in d.rstrip()] for d in open(args.data)]
-    assert len(rid_to_data)==len(read_name_to_id)==len(rid_to_len)==len(rid_to_intervals)
-    for d in rid_to_data:
-        assert len(d)==len(segs)
+        assert reads[rid]['name']==name
+    for rid,d in enumerate(open(args.data)):
+        reads[rid]['data']=[int(x) for x in d.rstrip()]
+        assert len(reads[rid]['data'])==len(segs)
+    get_read_seqs(reads=reads, read_name_to_id=read_name_to_id, fastq=args.fastq)
+    get_unaligned_gaps(reads=reads, segs=segs, tlen=tlen)
 
     # out_file = open('{}.gaps'.format(args.out_prefix), 'w+')
     # rid_to_unaln_gaps = get_unaligned_gaps(data=data,brks=peak_positions,t_len=t_len,rid_to_intervals=rid_to_intervals,rid_to_len=rid_to_len)
