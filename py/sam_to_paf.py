@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import re
+from itertools import zip_longest
 
 cigar_re = re.compile(r'(\d+)([M|I|D|N|S|H|P|=|X]{1})')
 def parse_args():
@@ -39,8 +40,8 @@ def output_paf_from_sam(sam, paf):
             continue
         if line[2] == '*':
             continue
-        assert sum([len(x[0]+x[1]) for x in cigar_re(line[5])])==len(line[5]),'Something wrong with line:\n{}'.format('\n'.join(line))
-        cigar = [(int(x[0]),x[1]) for x in cigar_re(line[5])]
+        assert sum([len(x[0]+x[1]) for x in cigar_re.findall(line[5])])==len(line[5]),'Something wrong with line:\n{}'.format('\n'.join(line))
+        cigar = [(int(x[0]),x[1]) for x in cigar_re.findall(line[5])]
         if len(cigar) == 0:
             continue
         qname = line[0]
@@ -76,10 +77,6 @@ def output_paf_from_sam(sam, paf):
                 fixed_cigar[-1]=(c+last_c,'N')
                 continue
             fixed_cigar.append((c,t))
-        if len(cigar)!=len(fixed_cigar):
-            print(cigar)
-            print(fixed_cigar)
-            exit()
         cigar = fixed_cigar
         for c,t in cigar:
             if t in ['D','M','=','X']:
