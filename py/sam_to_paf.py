@@ -2,6 +2,7 @@
 import argparse
 import re
 
+cigar_re = re.compile(r'(\d+)([M|I|D|N|S|H|P|=|X]{1})')
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Output PAF from SAM")
@@ -38,8 +39,8 @@ def output_paf_from_sam(sam, paf):
             continue
         if line[2] == '*':
             continue
-        assert sum([len(x[0]+x[1]) for x in re.findall(r'(\d+)([M|I|D|N|S|H|P|=|X]{1})', line[5])])==len(line[5]),'Something wrong with line:\n{}'.format('\n'.join(line))
-        cigar = [(int(x[0]),x[1]) for x in re.findall(r'(\d+)([M|I|D|N|S|H|P|=|X]{1})', line[5])]
+        assert sum([len(x[0]+x[1]) for x in cigar_re(line[5])])==len(line[5]),'Something wrong with line:\n{}'.format('\n'.join(line))
+        cigar = [(int(x[0]),x[1]) for x in cigar_re(line[5])]
         if len(cigar) == 0:
             continue
         qname = line[0]
@@ -63,11 +64,26 @@ def output_paf_from_sam(sam, paf):
         tlen = lengths[tname]
         tstart = int(line[3])-1
         tend = tstart + 1
+
+        fixed_cigar = list()
+        fixed_cigar.append(cigar[0])
+        for c,t in cigar[1:]:
+            last_c,last_t = fixed_cigar[-1]
+            if t==last_t:
+                fixed_cigar[-1]=(last_c+c,t)
+                continue
+            if t in ['D','N'] and last_t in ['D','N']:
+                fixed_cigar[-1]=(c+last_c,'N')
+                continue
+            fixed_cigar.append((c,t))
+        if len(cigar)!=len(fixed_cigar):
+            print(cigar)
+            print(fixed_cigar)
+            exit()
+        cigar = fixed_cigar
         for c,t in cigar:
             if t in ['D','M','=','X']:
                 tend+=c
-        r_matches = 0
-
         qstart_c = qstart
         qend_c   = qstart
         tstart_c = tstart
