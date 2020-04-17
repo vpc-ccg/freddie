@@ -118,9 +118,7 @@ def output_paf_from_sam(sam, paf):
                 tend_c,
                 ''.join(interval_cigar)
             ))
-        print(qlen)
         for qstart_c,qend_c,tstart_c,tend_c,interval_cigar in intervals:
-            print(qstart_c,qend_c,tstart_c,tend_c,)
             if strand == '-':
                 qstart_c = qlen - qstart_c
                 qend_c   = qlen - qend_c
