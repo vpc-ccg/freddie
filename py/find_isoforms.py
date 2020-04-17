@@ -4,7 +4,7 @@ import argparse
 from gurobipy import *
 
 MIN_READS = 0
-MAX_ROUND = 5
+MAX_ROUND = 20
 
 def parse_args():
     # def str2bool(v):
