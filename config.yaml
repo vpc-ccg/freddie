@@ -1,8 +1,8 @@
 outpath:
-    freddie-out
+    /groups/hachgrp/projects/dev-long-iso/analysis/freddie-dev
 
 gurobi:
-    license: extern/gurobi.lic
+    license: /groups/share/modules/gurobi811/linux64/license/gurobi.lic
     timeout: 30
     recycle_models:
         - constant
