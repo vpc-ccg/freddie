@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import re
-from itertools import groupby
+from itertools import groupby,chain
 
 rev_comp = dict(
     A='T',
@@ -91,7 +91,7 @@ def read_paf(paf, range_len=0):
         assert 0 <= t_start < t_end <= t_len
         assert 0 <= q_start < q_end <= reads[rid]['length'], '{}<{}<{}:\n{}'.format(q_start,q_end,reads[rid]['length'],line)
         if reads[rid]['strand']=='-':
-            q_end,q_start = reads[rid]['length']-q_start-1,reads[rid]['length']-q_end-1
+            q_end,q_start = reads[rid]['length']-q_start,reads[rid]['length']-q_end
         t_interval = (t_start, t_end)
         q_interval = (q_start, q_end)
         reads[rid]['intervals'].append(((t_interval, q_interval), cigar))
@@ -117,12 +117,12 @@ def forward_thread_cigar(cigar, t_goal, t_pos, q_pos):
         if t in ['I']:
             q_pos += c
         cig_idx+=1
+    assert t_pos==t_goal
     return q_pos
 
-
-def get_interval_start(start, end, read):
+def get_interval_start(start, read):
     for ((t_start, t_end),(q_start, q_end)),cigar in read['intervals']:
-        if t_end < start or t_start>end:
+        if t_end < start:
             continue
         # print((t_start, t_end),(q_start, q_end),'|',read['length'])
         if start < t_start:
@@ -131,48 +131,41 @@ def get_interval_start(start, end, read):
         else:
             q_pos = forward_thread_cigar(cigar=cigar, t_goal=start, t_pos=t_start, q_pos=q_start)
             slack = 0
-        assert q_pos<q_end, (q_pos,q_end)
+        assert 0<=q_pos<=q_end, (q_start,q_pos,q_end)
         return q_pos
     assert False
 
-def get_interval_end(start, end, read):
+def get_interval_end(end, read):
     for ((t_start, t_end),(q_start, q_end)),cigar in reversed(read['intervals']):
-        if t_start > end or t_end<start:
+        if t_start > end:
             continue
         # print((t_start, t_end),(q_start, q_end),'|',read['length'])
         if t_end<end:
-            q_pos=q_start
+            q_pos=q_end
             slack=end-t_end
         else:
             q_pos = forward_thread_cigar(cigar=cigar, t_goal=end-1, t_pos=t_start, q_pos=q_start)
             slack = 0
-        assert q_pos<q_end, (q_pos,q_end)
+        assert 0<=q_pos<=q_end, (q_start,q_pos,q_end)
         return q_pos
     assert False
 
-def find_longest_poly(seq, match_score=1, mismatch_score=-1, char='A'):
-	scores = [ 0 ]
-	starts = [ -1 ]	# keeps one index before start
-	i = 0
-	for ch in seq:
-		to_be_added = match_score if (ch == char) else mismatch_score
-		new_score = scores[-1] + to_be_added
-		new_start = starts[-1]
-		if new_score <= 0:
-			new_score = 0
-			new_start = i
-		scores.append(new_score)
-		starts.append(new_start)
-		i += 1
-	max_ind = 0
-	for i in range(len(scores)):
-		if (scores[i] > scores[max_ind]) or (scores[i] == scores[max_ind] and starts[i] > starts[max_ind]):
-			max_ind = i
-	# [start, end)
-	start = starts[max_ind] + 1
-	end = max_ind
-	score = scores[max_ind]
-	return start, end, score
+def find_longest_poly(seq, match_score=1, mismatch_score=-2, char='A'):
+    if len(seq)==0:
+        return
+    if seq[0]==char:
+        scores=[match_score]
+    else:
+        scores=[0]
+    for m in (match_score if c==char else mismatch_score for c in seq[1:]):
+        scores.append(max(0,scores[-1]+m))
+    for k,g in groupby(enumerate(scores),lambda x:x[1]>0):
+        if not k:
+            continue
+        i,s = list(zip(*g))
+        max_s,max_i=max(zip(s,i))
+        l = max_i+1-i[0]
+        yield i[0], l, seq[i[0]:i[0]+l].count(char)/l
 
 
 def get_unaligned_gaps(reads, segs, tlen):
@@ -190,28 +183,70 @@ def get_unaligned_gaps(reads, segs, tlen):
             intervals.append((f_seg_idx,l_seg_idx))
         assert len(intervals)>0, read['data']
 
-        (f_seg_idx,l_seg_idx) = intervals[0]
+        (f_seg_idx,_) = intervals[0]
         start = segs[f_seg_idx][0]
+        q_ssc_pos = get_interval_start(start=start, read=read)
+        (_,l_seg_idx) = intervals[-1]
         end   = segs[l_seg_idx][1]
-        q_ssc_pos = get_interval_start(start=start, end=end, read=read)
-        for ''
-        start, end, score = find_longest_poly(read['seq'][0:q_ssc_pos], char='A')
-        print(read['strand'],score,read['seq'][start:end], '<-----------' if end-start>10 and read['seq'][start:end].count('A')/(end-start)>0.85 else '')
-        start, end, score = find_longest_poly(read['seq'][0:q_ssc_pos], char='T')
-        print(read['strand'],score,read['seq'][start:end], '<-----------' if end-start>10 and read['seq'][start:end].count('T')/(end-start)>0.85 else '')
+        q_esc_pos = get_interval_end(end=end, read=read)
+        assert 0<=q_ssc_pos<q_esc_pos<=read['length'], (q_ssc_pos,q_esc_pos,read['length'])
+        s_polys = list()
+        for char in ['A','T']:
+            for i,l,p in find_longest_poly(read['seq'][0:q_ssc_pos], char=char):
+                if l < 20 or p < 0.85:
+                    continue
+                assert 0<=i<q_ssc_pos,(i,q_ssc_pos,read['length'])
+                s_polys.append((i,l,p,char))
+        if len(s_polys)>0:
+            i,l,p,char = max(s_polys, key=lambda x: x[2])
+            poly_to_gene_gap_size = q_ssc_pos-i-l
+            assert 0<=poly_to_gene_gap_size<q_ssc_pos
+            read['gaps'].add(
+                'S{}_{}:{}'.format(char,l,poly_to_gene_gap_size)
+            )
+            read['gaps'].add(
+                'SSC:{}'.format(i)
+            )
+        else:
+            read['gaps'].add(
+                'SSC:{}'.format(q_ssc_pos)
+            )
+        e_polys = list()
+        for char in ['A','T']:
+            for i,l,p in find_longest_poly(read['seq'][q_esc_pos:], char=char):
+                if l < 20 or p < 0.85:
+                    continue
+                assert 0<=i<read['length']-q_esc_pos,(i,q_esc_pos,read['length'])
+                e_polys.append((i,l,p,char))
+        if len(e_polys)>0:
+            i,l,p,char = max(e_polys, key=lambda x: x[2])
+            poly_to_gene_gap_size = i
+            assert 0<=poly_to_gene_gap_size<read['length']-q_esc_pos, (q_esc_pos,i,l,p,read['length'],poly_to_gene_gap_size)
+            read['gaps'].add(
+                'E{}_{}:{}'.format(char,l,poly_to_gene_gap_size)
+            )
+            read['gaps'].add(
+                'ESC:{}'.format(read['length']-q_esc_pos-poly_to_gene_gap_size)
+            )
+            assert read['length']-q_esc_pos-poly_to_gene_gap_size>0
+        else:
+            read['gaps'].add(
+                'ESC:{}'.format(read['length']-q_esc_pos)
+            )
         for i1,i2 in zip(intervals[:-1],intervals[1:]):
-            (i1_f_seg_idx,i1_l_seg_idx) = i1
-            i1_start = segs[i1_f_seg_idx][0]
-            i1_end   = segs[i1_l_seg_idx][1]
-            q_gap_start = get_interval_end(start=i1_start, end=i1_end, read=read)
-            (i2_f_seg_idx,i2_l_seg_idx) = i2
-            i2_start = segs[i2_f_seg_idx][0]
-            i2_end   = segs[i2_l_seg_idx][1]
-            q_gap_end = get_interval_start(start=i2_start, end=i2_end, read=read)
+            (_,i1_l_seg_idx) = i1
+            i1_end           = segs[i1_l_seg_idx][1]
+            q_gap_start      = get_interval_end(end=i1_end, read=read)
+            (i2_f_seg_idx,_) = i2
+            i2_start         = segs[i2_f_seg_idx][0]
+            q_gap_end        = get_interval_start(start=i2_start, read=read)
             q_gap_size = q_gap_end-q_gap_start
-            assert q_gap_size>0
+            assert 0<q_gap_start<=q_gap_end<read['length'],(q_gap_start,q_gap_end,read['length'])
             assert i1_l_seg_idx<i2_f_seg_idx
-            read['gaps'].add((i1_l_seg_idx,i2_f_seg_idx,q_gap_size))
+            read['gaps'].add(
+                '{}-{}:{}'.format(i1_l_seg_idx,i2_f_seg_idx,q_gap_size),
+            )
+
 def get_read_seqs(reads, read_name_to_id, fastq):
     for idx,line in enumerate(open(fastq)):
         if idx%4==0:
@@ -243,11 +278,10 @@ def main():
     get_read_seqs(reads=reads, read_name_to_id=read_name_to_id, fastq=args.fastq)
     get_unaligned_gaps(reads=reads, segs=segs, tlen=tlen)
 
-    # out_file = open('{}.gaps'.format(args.out_prefix), 'w+')
-    # rid_to_unaln_gaps = get_unaligned_gaps(data=data,brks=peak_positions,t_len=t_len,rid_to_intervals=rid_to_intervals,rid_to_len=rid_to_len)
-    # for rid in range(len(data)):
-    #     print('\t'.join(['{}-{}-{}'.format(*x) for x in rid_to_unaln_gaps[rid]]),file=out_file)
-    # out_file.close()
+    out_file = open('{}.txt'.format(args.out_prefix), 'w+')
+    for read in reads:
+        print('\t'.join(sorted(read['gaps'])), file=out_file)
+    out_file.close()
 
 if __name__ == "__main__":
     main()
