@@ -104,13 +104,14 @@ rule polyA_and_gaps:
         segs   = '{}/{{gene}}/{{sample}}/reads.segments.txt'.format(genes_d),
         names  = '{}/{{gene}}/{{sample}}/reads.segments.names'.format(genes_d),
         data   = '{}/{{gene}}/{{sample}}/reads.segments.data'.format(genes_d),
+        reads  = '{}/{{gene}}/{{sample}}/reads.fastq'.format(genes_d),
         script = config['exec']['polyA_and_gaps'],
     output:
         '{}/{{gene}}/{{sample}}/reads.gaps.txt'.format(genes_d),
     conda:
         'freddie.env'
     shell:
-        '{input.script} -p {input.paf} -s {input.segs} -n {input.names} -d {input.data} -o {output}'
+        '{input.script} -p {input.paf} -q {input.reads} -s {input.segs} -n {input.names} -d {input.data} -o {output}'
 
 rule find_isoforms:
     input:
