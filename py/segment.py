@@ -351,61 +351,6 @@ def get_coverage(peaks, pos_to_rid):
         C[i] += C[i-1]
     return C
 
-def get_unaligned_gaps(data,brks,t_len,rid_to_intervals,rid_to_len):
-    rid_to_unaln_gaps = dict()
-    for rid,intervals in rid_to_intervals.items():
-        rid_to_unaln_gaps[rid]=list()
-        int_idx = 0
-        seg_idx = 0
-        # print('---',rid, rid_to_len[rid])
-        # print(''.join((str(x)for x in data[rid])))
-        # print('-'.join((str(x)for x in intervals)))
-        # print('...')
-        while seg_idx < len(data[rid]):
-            eo_idx = -1
-            so_idx = len(data[rid])
-            # Find the next eo_idx such that data[rid][eo_idx]==1 and data[rid][eo_idx+1]!=1
-            while seg_idx < len(data[rid]):
-                if data[rid][seg_idx] != 1:
-                    break
-                eo_idx = seg_idx
-                seg_idx += 1
-            if eo_idx+1==len(data[rid]):
-                continue
-            assert data[rid][eo_idx+1]!=1 and (eo_idx==-1 or data[rid][eo_idx]==1)
-            # Find the next so_idx such that data[rid][so_idx]==1 and data[rid][so_idx-1]!=1
-            while seg_idx < len(data[rid]):
-                if data[rid][seg_idx] == 1:
-                    so_idx = seg_idx
-                    break
-                seg_idx += 1
-            assert data[rid][so_idx-1]!=1 and (so_idx==len(data[rid]) or data[rid][so_idx]==1)
-            gap_ts = brks[eo_idx+1]
-            gap_te = brks[so_idx]
-            # if gap_ts == 0 or gap_te==t_len:
-            #     continue
-            # print('(eo_idx, so_idx)',(eo_idx, so_idx))
-            # print('(gap_ts, gap_te)',(gap_ts, gap_te))
-            gap_qs = 0
-            gap_qe = rid_to_len[rid]
-            for i in range(int_idx,len(intervals)):
-                ((ts,te),(qs,qe)) = intervals[i]
-                # print('gqs:',i,intervals[i])
-                if ts < gap_ts:
-                    gap_qs = qe + (gap_ts-te)
-                    int_idx=i
-                if ts >= gap_ts:
-                    break
-            for i in range(int_idx,len(intervals)):
-                ((ts,te),(qs,qe)) = intervals[i]
-                int_idx=i
-                # print('gqe:',i,intervals[i])
-                if te >= gap_te:
-                    gap_qe = qs - (ts-gap_te)
-                    break
-            rid_to_unaln_gaps[rid].append((eo_idx+1,so_idx-1,max(0,gap_qe-gap_qs)))
-    return rid_to_unaln_gaps
-
 def main():
     args = parse_args()
     assert(args.max_peak_cnt_per_segment>0)
@@ -495,11 +440,6 @@ def main():
     data = data.transpose().astype(np.int8)
     for l in data:
         print(''.join([str(int(x)) for x in l]),file=out_file)
-    out_file.close()
-    out_file = open('{}.gaps'.format(args.out_prefix), 'w+')
-    rid_to_unaln_gaps = get_unaligned_gaps(data=data,brks=peak_positions,t_len=t_len,rid_to_intervals=rid_to_intervals,rid_to_len=rid_to_len)
-    for rid in range(len(data)):
-        print('\t'.join(['{}-{}-{}'.format(*x) for x in rid_to_unaln_gaps[rid]]),file=out_file)
     out_file.close()
 
     out_file = open('{}.names'.format(args.out_prefix), 'w+')
