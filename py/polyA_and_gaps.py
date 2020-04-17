@@ -44,11 +44,11 @@ def parse_args():
                         type=str,
                         required=True,
                         help="Path to names TXT file")
-    parser.add_argument("-op",
-                        "--out-prefix",
+    parser.add_argument("-o",
+                        "--output",
                         type=str,
                         required=True,
-                        help="Output prefix that does not include .TXT part")
+                        help="Output file for gaps information")
     args = parser.parse_args()
     return args
 
@@ -278,7 +278,7 @@ def main():
     get_read_seqs(reads=reads, read_name_to_id=read_name_to_id, fastq=args.fastq)
     get_unaligned_gaps(reads=reads, segs=segs, tlen=tlen)
 
-    out_file = open('{}.txt'.format(args.out_prefix), 'w+')
+    out_file = open(args.output, 'w+')
     for read in reads:
         print('\t'.join(sorted(read['gaps'])), file=out_file)
     out_file.close()

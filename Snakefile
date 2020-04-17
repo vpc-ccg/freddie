@@ -29,11 +29,13 @@ rule all:
         # expand('{}/{{gene}}/{{sample}}/{{data_file}}'.format(genes_d),
         #     gene=config['genes'], sample=config['samples'], data_file=gene_data),
         expand('{}/{{gene}}/{{sample}}/reads.segments.{{extension}}'.format(genes_d),
-            gene=config['genes'], sample=config['samples'], extension=['txt', 'pdf', 'data', 'gaps', 'names']),
-        expand('{}/{{gene}}/{{sample}}/reads.isoforms.{{recycle_model}}.{{extension}}'.format(genes_d),
-            gene=config['genes'], sample=config['samples'], recycle_model=config['gurobi']['recycle_models'], extension=['tsv']),
-        expand('{}/{{gene}}/{{sample}}/reads.isoforms.{{recycle_model}}.plots.pdf'.format(genes_d),
-            gene=config['genes'], sample=config['samples'], recycle_model=config['gurobi']['recycle_models'],),
+            gene=config['genes'], sample=config['samples'], extension=['txt', 'pdf', 'data', 'names']),
+        expand('{}/{{gene}}/{{sample}}/reads.gaps.txt'.format(genes_d),
+            gene=config['genes'], sample=config['samples']),
+        # expand('{}/{{gene}}/{{sample}}/reads.isoforms.{{recycle_model}}.{{extension}}'.format(genes_d),
+        #     gene=config['genes'], sample=config['samples'], recycle_model=config['gurobi']['recycle_models'], extension=['tsv']),
+        # expand('{}/{{gene}}/{{sample}}/reads.isoforms.{{recycle_model}}.plots.pdf'.format(genes_d),
+        #     gene=config['genes'], sample=config['samples'], recycle_model=config['gurobi']['recycle_models'],),
 
 rule deSALT:
     input:
@@ -80,38 +82,13 @@ rule gene_data:
         '  --fastqs {input.reads} --gene {wildcards.gene} --paf {input.paf}'
         '  --padding {params.padding} --output {params.out_dir}'
 
-# rule process_polyA:
-#     input:
-#         reads  = '{}/{{gene}}/{{sample}}/reads.fasta'.format(genes_d),
-#         script = config['exec']['polyA'],
-#     output:
-#         report  = '{}/{{gene}}/{{sample}}/reads.polyA.tsv'.format(genes_d),
-#     conda:
-#         'freddie.env'
-#     shell:
-#         'python {input.script} {input.reads} {output.report}'
-#
-# rule trim_polyA:
-#     input:
-#         report  = '{}/{{gene}}/{{sample}}/reads.polyA.tsv'.format(genes_d),
-#         script = config['exec']['trim'],
-#     output:
-#         reads  = '{}/{{gene}}/{{sample}}/reads.polyA.trimmed.fasta'.format(genes_d),
-#         report  = '{}/{{gene}}/{{sample}}/reads.polyA.trimmed.tsv'.format(genes_d),
-#     params:
-#         min_score = 20
-#     conda:
-#         'freddie.env'
-#     shell:
-#         'cat {input.report} | python {input.script} {output.report} {params.min_score} > {output.reads}'
-
 rule find_segments:
     input:
         transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
         paf             = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
         script          = config['exec']['segment'],
     output:
-        [protected('{}/{{gene}}/{{sample}}/reads.segments.{}'.format(genes_d,ext)) for ext in ['pdf','txt','data','gaps','names']]
+        [protected('{}/{{gene}}/{{sample}}/reads.segments.{}'.format(genes_d,ext)) for ext in ['pdf','txt','data','names']]
     threads:
         8
     params:
@@ -120,6 +97,20 @@ rule find_segments:
         'freddie.env'
     shell:
         '{input.script} -p {input.paf} -t {input.transcripts_tsv} -op {params.out_prefix} -c {threads}'
+
+rule polyA_and_gaps:
+    input:
+        paf    = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
+        segs   = '{}/{{gene}}/{{sample}}/reads.segments.txt'.format(genes_d),
+        names  = '{}/{{gene}}/{{sample}}/reads.segments.names'.format(genes_d),
+        data   = '{}/{{gene}}/{{sample}}/reads.segments.data'.format(genes_d),
+        script = config['exec']['polyA_and_gaps'],
+    output:
+        '{}/{{gene}}/{{sample}}/reads.gaps.txt'.format(genes_d),
+    conda:
+        'freddie.env'
+    shell:
+        '{input.script} -p {input.paf} -s {input.segs} -n {input.names} -d {input.data} -o {output}'
 
 rule find_isoforms:
     input:
