@@ -351,13 +351,13 @@ def run_ILP(reads, remaining_rids, segs, ilp_settings, out_prefix):
                         name  = 'GAPI_C1[({j1},{j2},{k})]'.format(j1=j1,j2=j2,k=k)
                     )
                 GAPR_C1[(i,j1,j2,k)] = ILP_ISOFORMS.addLConstr(
-                    lhs   = (1.0-EPSILON)*GAPI[(j1,j2,k)]-OFFSET-((1-R2I[i][k])*MAX_ISOFORM_LG),
+                    lhs   = (1.0-ilp_settings['epsilon'])*GAPI[(j1,j2,k)]-ilp_settings['offset']-((1-R2I[i][k])*MAX_ISOFORM_LG),
                     sense = GRB.LESS_EQUAL,
                     rhs   = l,
                     name  = 'GAPR_C1[({i},{j1},{j2},{k})]'.format(i=i,j1=j1,j2=j2,k=k)
                 )
                 GAPR_C2[(i,j1,j2,k)] = ILP_ISOFORMS.addLConstr(
-                    lhs   = (1.0+EPSILON)*GAPI[(j1,j2,k)]+OFFSET+((1-R2I[i][k])*MAX_ISOFORM_LG),
+                    lhs   = (1.0+ilp_settings['epsilon'])*GAPI[(j1,j2,k)]+ilp_settings['offset']+((1-R2I[i][k])*MAX_ISOFORM_LG),
                     sense = GRB.GREATER_EQUAL,
                     rhs   = l,
                     name  = 'GAPR_C2[({i},{j1},{j2},{k})]'.format(i=i,j1=j1,j2=j2,k=k)
@@ -524,17 +524,18 @@ def run_ILP(reads, remaining_rids, segs, ilp_settings, out_prefix):
 
 def output_isoforms(isoforms, reads, garbage_rids, segs, outpath):
     out_file = open(outpath, 'w+')
-    for k,isoform in enumerate(isoforms):
+    for idx,isoform in enumerate(isoforms):
         output = list()
-        output.append('isoform_{:03d}'.format(k))
+        isoform_name = 'isoform_{:03d}'.format(idx)
+        output.append(isoform_name)
         output.append('.')
         output.append('.')
         output.append(''.join([str(e) for e in isoform['exons']]))
-        output.extend([str(seg[2]*isoforms[k][eid]) for eid,seg in enumerate(segs)])
+        output.extend([str(seg[2]*isoform['exons'][eid]) for eid,seg in enumerate(segs)])
         out_file.write('#{}\n'.format('\t'.join(output)))
-        for i,corrections in isoform['rid_to_corrections'].keys():
+        for i,corrections in isoform['rid_to_corrections'].items():
             output = list()
-            output.append('isoform_{:03d}'.format(k))
+            output.append(isoform_name)
             output.append(reads[i]['name'])
             output.append(str(i))
             output.append(''.join([str(x) for x in corrections]))
@@ -581,7 +582,7 @@ def main():
     ilp_settings=dict(
         recycle_model   = args.recycle_model,
         strand  = strand,
-        K       = 1,
+        K       = 2,
         epsilon = args.epsilon,
         offset  = args.gap_offset,
         timeout = args.timeout,
@@ -598,7 +599,7 @@ def main():
             ilp_settings   = ilp_settings,
             out_prefix     = '{}.gurobi_logs/round.{}'.format(args.out_prefix, round)
         )
-        if status != 'OPTIMAL' or max([0]+[i['rid_to_corrections'] for i in round_isoforms.values()]) < args.min_isoform_size:
+        if status != 'OPTIMAL' or max([0]+[len(i['rid_to_corrections']) for i in round_isoforms.values()]) < args.min_isoform_size:
             break
         for k,isoform in round_isoforms.items():
             print('Isoform {} size: {}'.format(k, len(isoform['rid_to_corrections'])))
