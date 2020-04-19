@@ -160,45 +160,34 @@ def garbage_cost_exons(I):
     return(max(sum(I.values())-0.5,1))
 # TO DO: think about better ways to define the cost to assign to the garbagte isoform
 
-def run_ILP(reads, remaining_rids, segs, ilp_settings, out_prefix):
-    os.makedirs(out_prefix[:out_prefix.rfind('/')], exist_ok=True)
-    log_file = open('{}.log'.format(out_prefix),'w+')
-
-    # Variables directly based on the input ------------------------------------
-    # I[i,j] = 1 if reads[i]['data'][j]==1 and 0 if reads[i]['data'][j]==0 or 2
-    # C[i,j] = 1 if exon j is between the first and last exons (inclusively)
-    #   covered by read i and is not in read i but can be turned into a 1
-    ISOFORM_INDEX_START = 1
+def preprocess_ilp(reads, segs, ilp_settings):
+    print('Preproessing ILP with {} reads and the following settings:\n{}'.format(len(reads), ilp_settings))
+    N = len(reads)
     M = len(segs)
-    MAX_ISOFORM_LG = sum(seg[2] for seg in segs)
     I = dict()
     C = dict()
-    UB_NB_CORRECTIONS = 0 # Upper bound on the number of 0s that can be corrected into 1
-    for i in remaining_rids:
+    for i in range(N):
         I[i] = dict()
         for j in range(0,M):
             I[i][j] = reads[i]['data'][j]%2
         C[i] = dict()
         (min_i,max_i) = find_segment_read(I,i)
         if ilp_settings['strand']=='-' and reads[i]['tail']['ST'][0]>10:
+            reads[i]['gaps'][(-1,min_i)] = reads[i]['tail']['ST'][1]
             min_i = 0
-        if ilp_settings['strand']=='+' and reads[i]['tail']['EA'][0]>10:
+        elif ilp_settings['strand']=='+' and reads[i]['tail']['EA'][0]>10:
+            reads[i]['gaps'][(max_i,M)] = reads[i]['tail']['EA'][1]
             max_i = M-1
         for j in range(0,M):
             if min_i <= j <= max_i and reads[i]['data'][j]==0:
                 C[i][j]   = 1
-                UB_NB_CORRECTIONS += 1
             else:
                 C[i][j]   = 0
-    log_file.write('# Maximum number of 0\'s that can be corrected into 1: {X}\n'.format(X=UB_NB_CORRECTIONS))
-
     # List of incompatible pairs of reads
     INCOMP_READ_PAIRS_AUX1 = list()
     # Read i1 and i2 have a 1 and a 2 in a given position j
-    for i1 in remaining_rids:
-        for i2 in remaining_rids:
-            if i2<=i1:
-                continue
+    for i1 in range(N):
+        for i2 in range(i1+1,N):
             incomp = False
             for j in range(M):
                 if reads[i1]['data'][j]*reads[i2]['data'][j]==2:
@@ -206,15 +195,12 @@ def run_ILP(reads, remaining_rids, segs, ilp_settings, out_prefix):
                     break
             if incomp:
                 INCOMP_READ_PAIRS_AUX1.append((i1,i2))
-    log_file.write('# Number of incompatible read pairs due to a (1,2) pattern: {X}\n'.format(X=len(INCOMP_READ_PAIRS_AUX1)))
     print('# Number of incompatible read pairs due to a (1,2) pattern: {X}\n'.format(X=len(INCOMP_READ_PAIRS_AUX1)))
 
     # If r1 and r2 don't have any 1 in common, then they are incompatible
     INCOMP_READ_PAIRS_AUX2 = list()
-    for i1 in remaining_rids:
-        for i2 in remaining_rids:
-            if i2<=i1:
-                continue
+    for i1 in range(N):
+        for i2 in range(i1+1,N):
             incomp = True
             for j in range(M):
                 if reads[i1]['data'][j]*reads[i2]['data'][j]==1:
@@ -222,21 +208,38 @@ def run_ILP(reads, remaining_rids, segs, ilp_settings, out_prefix):
                     break
             if incomp:
                 INCOMP_READ_PAIRS_AUX2.append((i1,i2))
-    log_file.write('# Number of incompatible read pairs due to not having any common exons: {X}\n'.format(X=len(INCOMP_READ_PAIRS_AUX2)))
     print('# Number of incompatible read pairs due to not having any common exons: {X}\n'.format(X=len(INCOMP_READ_PAIRS_AUX2)))
 
     INCOMP_READ_PAIRS = list(set(INCOMP_READ_PAIRS_AUX1)|set(INCOMP_READ_PAIRS_AUX2))
-    log_file.write('# Total number of incompatible read pairs: {X}\n'.format(X=len(INCOMP_READ_PAIRS)))
+    print('# Total number of incompatible read pairs: {X}\n'.format(X=len(INCOMP_READ_PAIRS)))
 
     # Assigning a cost to the assignment of reads to the garbage isoform
     GARBAGE_COST = {}
-    for i in remaining_rids:
+    for i in range(N):
         if ilp_settings['recycle_model'] == 'exons':
             GARBAGE_COST[i] = garbage_cost_exons(I=I[i])
         elif ilp_settings['recycle_model'] == 'introns':
             GARBAGE_COST[i] = garbage_cost_introns(C=C[i])
         elif ilp_settings['recycle_model'] == 'constant':
             GARBAGE_COST[i] = 1
+    ilp_settings['I'] = I
+    ilp_settings['C'] = C
+    ilp_settings['INCOMP_READ_PAIRS'] = INCOMP_READ_PAIRS
+    ilp_settings['GARBAGE_COST'] = GARBAGE_COST
+
+def run_ILP(reads, remaining_rids, segs, ilp_settings, out_prefix):
+    os.makedirs(out_prefix[:out_prefix.rfind('/')], exist_ok=True)
+    # Variables directly based on the input ------------------------------------
+    # I[i,j] = 1 if reads[i]['data'][j]==1 and 0 if reads[i]['data'][j]==0 or 2
+    # C[i,j] = 1 if exon j is between the first and last exons (inclusively)
+    #   covered by read i and is not in read i but can be turned into a 1
+    ISOFORM_INDEX_START = 1
+    M = len(segs)
+    MAX_ISOFORM_LG = sum(seg[2] for seg in segs)
+    I                 = ilp_settings['I']
+    C                 = ilp_settings['C']
+    INCOMP_READ_PAIRS = ilp_settings['INCOMP_READ_PAIRS']
+    GARBAGE_COST      = ilp_settings['GARBAGE_COST']
 
     # ILP model ------------------------------------------------------
     ILP_ISOFORMS = Model('isoforms_v6_20200418')
@@ -365,6 +368,8 @@ def run_ILP(reads, remaining_rids, segs, ilp_settings, out_prefix):
     # Adding constraints for incompatible read pairs
     INCOMP_READ_PAIRS_C1 = {}
     for (i1,i2) in INCOMP_READ_PAIRS:
+        if not (i1 in remaining_rids and i2 in remaining_rids):
+            continue
         for k in range(ISOFORM_INDEX_START,ilp_settings['K']): # Again, no such constraint on the garbage isoform if any
             INCOMP_READ_PAIRS_C1[(i1,i2,k)] = ILP_ISOFORMS.addLConstr(
                 lhs   = R2I[i1][k]+R2I[i2][k],
@@ -478,7 +483,6 @@ def run_ILP(reads, remaining_rids, segs, ilp_settings, out_prefix):
            ILP_ISOFORMS_STATUS == GRB.Status.INFEASIBLE or \
            ILP_ISOFORMS_STATUS == GRB.Status.UNBOUNDED:
         status = 'NO_SOLUTION'
-        log_file.write(' The model can not be solved because it is infeasible or unbounded\n')
         ILP_ISOFORMS.computeIIS()
         ILP_ISOFORMS.write('{}.ilp'.format(out_prefix))
     elif ILP_ISOFORMS_STATUS == GRB.Status.OPTIMAL or \
@@ -486,10 +490,8 @@ def run_ILP(reads, remaining_rids, segs, ilp_settings, out_prefix):
             ILP_ISOFORMS_STATUS == GRB.Status.TIME_LIMIT:
         if ILP_ISOFORMS_STATUS == GRB.Status.SUBOPTIMAL:
             status = 'SUBOPTIMAL'
-            log_file.write('The model was stopped with status {}'.format(ILP_ISOFORMS_STATUS))
         elif ILP_ISOFORMS_STATUS == GRB.Status.TIME_LIMIT:
             status = 'TIME_LIMIT'
-            log_file.write('The model was stopped with status {}'.format(ILP_ISOFORMS_STATUS))
         else:
             status = 'OPTIMAL'
         # Writing the optimal solution to disk
@@ -519,7 +521,6 @@ def run_ILP(reads, remaining_rids, segs, ilp_settings, out_prefix):
                 for j in range(0,M):
                     if C[i][j] == 1 and OBJ[i][j][k].getAttr(GRB.Attr.X) > 0.9:
                         isoforms[k]['rid_to_corrections'][i][j] = 'X'
-    log_file.close()
     return status,isoforms
 
 def output_isoforms(isoforms, reads, garbage_rids, segs, outpath):
@@ -588,6 +589,8 @@ def main():
         timeout = args.timeout,
         threads = args.threads,
     )
+    preprocess_ilp(reads, segs, ilp_settings)
+    print('ILP params: {}'.format(ilp_settings.keys()))
     for round in range(args.max_rounds):
         print('==========\nRunning {}-th round with {} reads...'.format(round, len(remaining_rids)))
         if len(remaining_rids) < args.min_isoform_size:
