@@ -127,12 +127,13 @@ def get_interval_start(start, read):
         # print((t_start, t_end),(q_start, q_end),'|',read['length'])
         if start < t_start:
             q_pos=q_start
-            slack=t_start-start
+            slack=start-t_start
         else:
             q_pos = forward_thread_cigar(cigar=cigar, t_goal=start, t_pos=t_start, q_pos=q_start)
             slack = 0
+        assert slack<=0,(slack,t_start,start)
         assert 0<=q_pos<=q_end, (q_start,q_pos,q_end)
-        return q_pos
+        return q_pos,slack
     assert False
 
 def get_interval_end(end, read):
@@ -142,12 +143,13 @@ def get_interval_end(end, read):
         # print((t_start, t_end),(q_start, q_end),'|',read['length'])
         if t_end<end:
             q_pos=q_end
-            slack=end-t_end
+            slack=t_end-end
         else:
             q_pos = forward_thread_cigar(cigar=cigar, t_goal=end-1, t_pos=t_start, q_pos=q_start)
             slack = 0
+        assert slack<=0,(slack,t_end,end)
         assert 0<=q_pos<=q_end, (q_start,q_pos,q_end)
-        return q_pos
+        return q_pos,slack
     assert False
 
 def find_longest_poly(seq, match_score=1, mismatch_score=-2, char='A'):
@@ -185,10 +187,10 @@ def get_unaligned_gaps(reads, segs, tlen):
 
         (f_seg_idx,_) = intervals[0]
         start = segs[f_seg_idx][0]
-        q_ssc_pos = get_interval_start(start=start, read=read)
+        q_ssc_pos,_ = get_interval_start(start=start, read=read)
         (_,l_seg_idx) = intervals[-1]
         end   = segs[l_seg_idx][1]
-        q_esc_pos = get_interval_end(end=end, read=read)
+        q_esc_pos,_ = get_interval_end(end=end, read=read)
         assert 0<=q_ssc_pos<q_esc_pos<=read['length'], (q_ssc_pos,q_esc_pos,read['length'])
         s_polys = list()
         for char in ['A','T']:
@@ -236,12 +238,14 @@ def get_unaligned_gaps(reads, segs, tlen):
         for i1,i2 in zip(intervals[:-1],intervals[1:]):
             (_,i1_l_seg_idx) = i1
             i1_end           = segs[i1_l_seg_idx][1]
-            q_gap_start      = get_interval_end(end=i1_end, read=read)
+            q_gap_start,start_slack      = get_interval_end(end=i1_end, read=read)
             (i2_f_seg_idx,_) = i2
             i2_start         = segs[i2_f_seg_idx][0]
-            q_gap_end        = get_interval_start(start=i2_start, read=read)
-            q_gap_size = q_gap_end-q_gap_start
+            q_gap_end,end_slack        = get_interval_start(start=i2_start, read=read)
             assert 0<q_gap_start<=q_gap_end<read['length'],(q_gap_start,q_gap_end,read['length'])
+            q_gap_size = q_gap_end-q_gap_start
+            q_gap_size = max(0,q_gap_size+start_slack+end_slack)
+            assert 0<=q_gap_size<read['length'],(q_gap_size,start_slack,end_slack)
             assert i1_l_seg_idx<i2_f_seg_idx
             read['gaps'].add(
                 '{}-{}:{}'.format(i1_l_seg_idx,i2_f_seg_idx,q_gap_size),
