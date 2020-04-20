@@ -56,6 +56,7 @@ def read_paf(paf, range_len=0):
     is_first = True
     reads = list()
     read_name_to_id = dict()
+    t_len=0
     for line in open(paf):
         line = line.rstrip().split('\t')
         if is_first:
@@ -273,6 +274,12 @@ def main():
     for s,e in segs:
         assert s<e
     reads,read_name_to_id,tlen = read_paf(args.paf)
+    if len(reads)==0:
+        print('No reads in PAF file!')
+        out_file = open(args.output, 'w+')
+        out_file.close()
+        exit()
+
     for name,rid in {name.rstrip():rid for (rid,name) in enumerate(open(args.names))}.items():
         assert read_name_to_id[name]==rid
         assert reads[rid]['name']==name

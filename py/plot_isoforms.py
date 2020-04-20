@@ -418,6 +418,11 @@ def main():
         transcripts_tsv=args.transcripts_tsv
     )
     rname_to_info = read_fastq(args.fastq)
+    if len(rname_to_info)==0:
+        print('No reads for this gene!')
+        out_file=open('{}.pdf'.format(args.out_prefix),'w+')
+        out_file.close()
+        exit()
     isoforms,reads=get_isoforms(
         isoforms_tsv=args.isoforms_tsv
     )

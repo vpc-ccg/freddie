@@ -566,6 +566,11 @@ def main():
     args = parse_args()
     segs = get_segments(segments=args.segments)
     reads = [dict(name=name.rstrip()) for name in open(args.names)]
+    if len(reads)==0:
+        print('No reads for this gene!')
+        out_file = open('{}.tsv'.format(args.out_prefix),'w+')
+        out_file.close()
+        exit()
     get_data(data=args.data, segs=segs, reads=reads)
     get_gaps(gaps=args.gaps, segs=segs, reads=reads)
 

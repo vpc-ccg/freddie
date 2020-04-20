@@ -70,6 +70,7 @@ def read_paf(paf, range_len=0):
     read_name_to_id = dict()
     rid_to_intervals = dict()
     rid_to_len = dict()
+    t_len=0
     for line in open(paf):
         line = line.rstrip().split('\t')
         if is_first:
@@ -359,7 +360,15 @@ def main():
     if len(rid_to_intervals)>0:
         gene_len = int(open(args.paf).readline().split('\t')[6])
     else:
-        gene_len = 1
+        print("No reads in PAF file!!!")
+        out_file = open('{}.txt'.format(args.out_prefix), 'w+')
+        out_file.close()
+        out_file = open('{}.data'.format(args.out_prefix), 'w+')
+        out_file.close()
+        out_file = open('{}.names'.format(args.out_prefix), 'w+')
+        out_file.close()
+        exit()
+
     X, Y_i, Y_o, Y_a = get_splice(gene_len=gene_len, rid_to_intervals=rid_to_intervals)
 
     if not args.sigma > 0.0:
