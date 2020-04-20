@@ -66,11 +66,6 @@ def parse_args():
                         type=str,
                         required=True,
                         help="Path to FASTQ file of reads")
-    parser.add_argument("-p",
-                        "--paf",
-                        type=str,
-                        required=True,
-                        help="Path to PAF file of reads")
     parser.add_argument("-i",
                         "--isoforms-tsv",
                         type=str,
@@ -84,28 +79,6 @@ def parse_args():
     args = parser.parse_args()
     return args
 
-def get_softclip(paf):
-    rname_to_sc = dict()
-    for line in open(paf):
-        line = line.rstrip().split('\t')
-        name = line[0]
-        if not name in rname_to_sc:
-            rname_to_sc[name] = dict(
-                length  = int(line[1]),
-                strand  = line[4],
-                q_start = int(line[2]),
-                q_end   = int(line[3]),
-            )
-        rname_to_sc[name]['q_start'] = min(rname_to_sc[name]['q_start'], int(line[2]))
-        rname_to_sc[name]['q_end']   = max(rname_to_sc[name]['q_end'], int(line[3]))
-        if rname_to_sc[name]['strand'] == '+':
-            rname_to_sc[name]['scs']=rname_to_sc[name]['q_start']
-            rname_to_sc[name]['sce']=rname_to_sc[name]['length']-rname_to_sc[name]['q_end']-1
-        else:
-            rname_to_sc[name]['scs']=rname_to_sc[name]['length']-rname_to_sc[name]['q_end']-1
-            rname_to_sc[name]['sce']=rname_to_sc[name]['q_start']
-    return rname_to_sc
-
 def get_tinfo(segments_txt, transcripts_tsv):
     segs = [int(l.strip()) for l in open(segments_txt)]
     segs = list(zip(segs[:-1],segs[1:]))
@@ -118,14 +91,16 @@ def get_tinfo(segments_txt, transcripts_tsv):
     assert len(grid_lens)==len(segs)
     tid_to_segs = dict()
     for l in open(transcripts_tsv):
-        tid,_,_,intervals,_ = l.rstrip().split('\t')
+        tid,_,strand,intervals,_ = l.rstrip().split('\t')
         tid_to_segs[tid] = sorted([(int(x.split('-')[0]),int(x.split('-')[1])) for x in intervals.split(',')])
     tid_to_color = {tid:colors[tidx%len(colors)] for tidx,tid in enumerate(sorted(tid_to_segs.keys()))}
-    return segs,grid_lens,tid_to_segs,tid_to_color
+    return segs,grid_lens,tid_to_segs,tid_to_color,strand
 
 def read_fastq(fastq):
     rname_to_info = dict()
-    for line in open(fastq):
+    for line_num,line in enumerate(open(fastq)):
+        if line_num%4==1:
+            rname_to_info[rname]['length']=len(line.rstrip())
         if line[0]!='@':
             continue
         line = line[1:].rstrip().split()
@@ -161,47 +136,83 @@ def get_isoforms(isoforms_tsv):
         rid = int(line[2])
         d = [x=='1' for x in line[3]]
         tname = rname.split('_')[0]
-        if len(tname)==len('ENST00000396043') and tname[0:4]=='ENST' and tname[5:].isdigit():
+        if len(tname)==len('ENST00000396043') and tname.startswith('ENST') and tname[5:].isdigit():
             pass
         else:
             tname=''
-        reads[rid]=dict(iid=iid, name=rname, data=d, tname=tname)
+        read=dict(iid=iid, name=rname, data=d, tname=tname)
+        read['tail']=dict(
+            S_poly_size  = 0,
+            S_poly_gap  = 0,
+            S_poly_type  = '',
+            SSC = 0,
+            E_poly_size  = 0,
+            E_poly_gap  = 0,
+            E_poly_type  = '',
+            ESC = 0,
+        )
+        for gap in line[4+len(line[3]):]:
+            k,v=gap.split(':')
+            v = [int(x) for x in v.strip('()').split(',')]
+            if v[0]<1:
+                continue
+            for s in ['S','E']:
+                if gap.startswith('{}SC'.format(s)):
+                    read['tail']['{}SC'.format(s)]=v[0]
+                    continue
+                for c in ['A','T']:
+                    if gap.startswith('{}{}'.format(s,c)):
+                        read['tail']['{}_poly_type'.format(s)]=c
+                        read['tail']['{}_poly_size'.format(s)]=v[0]
+                        read['tail']['{}_poly_gap'.format(s)]=v[1]
+        assert len(read['tail'])==8,read['tail']
+        reads[rid]=read
         isoforms[iid]['rids'].append(rid)
     isoforms = [isoforms[x] for x in sorted(isoforms.keys())]
     return isoforms,reads
 
-def plot_isoforms(isoform, grid_lens, tid_to_segs, segs, reads, tid_to_color, out_prefix):
-    max_scs = max(r['scs'] for r in reads.values())
-    max_sce = max(r['sce'] for r in reads.values())
-    for threshold,value in grid_width_ratios:
-        if max_scs > threshold:
-            scs_gs_ratio = value
-            break
-    for threshold,value in grid_width_ratios:
-        if max_sce > threshold:
-            sce_gs_ratio = value
-            break
-    fig = plt.figure(figsize=(len(grid_lens)+2, 30), constrained_layout=False)
+def plot_isoforms(isoform, grid_lens, tid_to_segs, segs, reads, tid_to_color, strand, out_prefix):
+    s_tail_order = ['SC','_poly_size','_poly_gap',]
+    e_tail_order = list(reversed(s_tail_order))
+    s_tail_gs_ratios = list()
+    e_tail_gs_ratios = list()
+    for x in s_tail_order:
+        sm = 2000
+        for threshold,value in grid_width_ratios:
+            if sm > threshold:
+                s_tail_gs_ratios.append(value)
+                break
+    for x in e_tail_order:
+        em = 2000
+        for threshold,value in grid_width_ratios:
+            if em > threshold:
+                e_tail_gs_ratios.append(value)
+                break
+    fig = plt.figure(figsize=(min(60,len(s_tail_gs_ratios)+len(grid_lens)+len(e_tail_gs_ratios)), 30), constrained_layout=False)
     out_gs = fig.add_gridspec(
         ncols=3,
         nrows=1,
-        width_ratios=[scs_gs_ratio, sum(grid_lens), sce_gs_ratio],
+        width_ratios=[sum(s_tail_gs_ratios), sum(grid_lens), sum(e_tail_gs_ratios)],
         wspace=0.05
     )
     gs = out_gs[0].subgridspec(
-        ncols=1,
+        ncols=len(s_tail_gs_ratios),
         nrows=2,
         height_ratios=[1,5],
+        width_ratios=s_tail_gs_ratios,
         hspace=.1,
+        wspace=.10,
     )
-    scs_ax = fig.add_subplot(gs[1])
+    s_axes = [fig.add_subplot(gs[1,i]) for i in range(len(s_tail_gs_ratios))]
     gs = out_gs[2].subgridspec(
-        ncols=1,
+        ncols=len(e_tail_gs_ratios),
         nrows=2,
         height_ratios=[1,5],
+        width_ratios=e_tail_gs_ratios,
         hspace=.1,
+        wspace=.10,
     )
-    sce_ax = fig.add_subplot(gs[1])
+    e_axes = [fig.add_subplot(gs[1,i]) for i in range(len(e_tail_gs_ratios))]
     gs = out_gs[1].subgridspec(
         ncols=len(grid_lens),
         nrows=2,
@@ -214,17 +225,38 @@ def plot_isoforms(isoform, grid_lens, tid_to_segs, segs, reads, tid_to_color, ou
     r_axes = [fig.add_subplot(gs[1,i]) for i in range(len(grid_lens))]
 
     ylim=len(isoform['rids'])
-    scs_ax.set_ylim(0,ylim)
-    scs_ax.set_yticks([])
-    scs_ax.set_xscale('log')
-    scs_ax.set_xlim(max_scs+10, 1)
-    scs_ax.set_xticks([50,100,500,1000,2000])
-    sce_ax.set_ylim(0,ylim)
-    sce_ax.set_yticks([])
-    sce_ax.set_xscale('log')
-    sce_ax.set_xlim(1, max_sce+10)
-    sce_ax.set_xticks([50,100,500,1000,2000])
-
+    for ax in [s_axes[0], s_axes[2],]:
+        ax.set_xticks([50,100,500,1000,2000])
+        ax.set_ylim(0,ylim)
+        ax.set_yticks([])
+        ax.set_xscale('log')
+        ax.set_xlim(sm, 1)
+    s_axes[0].set_title('Extra SC', loc='left', y=-0.025)
+    s_axes[2].set_title('Gap', loc='right', y=-0.025)
+    for ax in [s_axes[1],]:
+        ax.set_title('Start polyA/T')
+        ax.xaxis.tick_top()
+        # ax.tick_params(axis='x', rotation=90)
+        # ax.set_xticks([0, 10, 30, 50, 100,150])
+        ax.set_ylim(0,ylim)
+        ax.set_yticks([])
+        ax.set_xlim(150, 0)
+    for ax in [e_axes[0], e_axes[2],]:
+        ax.set_xticks([50,100,500,1000,2000])
+        ax.set_ylim(0,ylim)
+        ax.set_yticks([])
+        ax.set_xscale('log')
+        ax.set_xlim(1,em)
+    e_axes[0].set_title('Gap', loc='left', y=-0.025)
+    e_axes[2].set_title('Extra SC', loc='right', y=-0.025)
+    for ax in [e_axes[1],]:
+        ax.set_title('End polyA/T')
+        ax.xaxis.tick_top()
+        # ax.tick_params(axis='x', rotation=90)
+        # ax.set_xticks([0, 10, 30, 50, 100,150])
+        ax.set_ylim(0,ylim)
+        ax.set_yticks([])
+        ax.set_xlim(0, 150)
     for axes,ylim in [(t_axes,len(tid_to_segs)),(r_axes,len(isoform['rids']))]:
         for ax,(s,e) in zip(axes,segs):
             ax.grid(zorder=0)
@@ -242,7 +274,8 @@ def plot_isoforms(isoform, grid_lens, tid_to_segs, segs, reads, tid_to_color, ou
             else:
                 ax.set_yticklabels([])
                 # ax.set_yticks([])
-
+    t_axes[0].set_yticklabels(sorted(tid_to_segs.keys()))
+    t_axes[-1].set_yticklabels(sorted(tid_to_segs.keys()))
     isoform_reads = [reads[rid] for rid in isoform['rids']]
     # tid_to_color.get(read['tname'],'gray')
     for read in isoform_reads:
@@ -309,18 +342,40 @@ def plot_isoforms(isoform, grid_lens, tid_to_segs, segs, reads, tid_to_color, ou
             #     color = colors_ch[read['color_idx']]
             # else:
             #     color = colors_ch[-1]
-        scs_ax.add_patch(patches.Rectangle(
-            xy     = (0,p),
-            width  = read['scs'],
-            height = 1,
-            color  = color,
-        ))
-        sce_ax.add_patch(patches.Rectangle(
-            xy     = (0,p),
-            width  = read['sce'],
-            height = 1,
-            color  = color,
-        ))
+        for s_ax,x in zip(s_axes,s_tail_order):
+            k = 'S{}'.format(x)
+            if x =='_poly_size' and (strand=='+' or read['tail']['S_poly_type']=='A'):
+                s_ax.add_patch(patches.Rectangle(
+                    xy     = (0,p),
+                    width  = read['tail'][k],
+                    height = 1,
+                    color  = 'red',
+                    hatch  = '/',
+                ))
+            else:
+                s_ax.add_patch(patches.Rectangle(
+                    xy     = (0,p),
+                    width  = read['tail'][k],
+                    height = 1,
+                    color  = color,
+                ))
+        for e_ax,x in zip(e_axes,e_tail_order):
+            k = 'E{}'.format(x)
+            if x =='_poly_size' and (strand=='-' or read['tail']['E_poly_type']=='T'):
+                e_ax.add_patch(patches.Rectangle(
+                    xy     = (0,p),
+                    width  = read['tail'][k],
+                    height = 1,
+                    color  = 'red',
+                    hatch  = '/',
+                ))
+            else:
+                e_ax.add_patch(patches.Rectangle(
+                    xy     = (0,p),
+                    width  = read['tail'][k],
+                    height = 1,
+                    color  = color,
+                ))
         for aid,ax in enumerate(r_axes):
             if read['data'][aid]==False:
                 continue
@@ -352,17 +407,17 @@ def plot_isoforms(isoform, grid_lens, tid_to_segs, segs, reads, tid_to_color, ou
                 else:
                     x_1 = (e-seg_s)/seg_l
                 t_axes[t_aid].add_patch(patches.Rectangle(xy=(x_0,tid_to_p[tid]),width=x_1,height=1,color=tid_to_color.get(tid,'gray')))
+            # t_axes[0].text(x=-0.5, y=tid_to_p[tid]+0.5, s=tid)
     # plt.savefig('{}.svg'.format(out_prefix),bbox_inches='tight')
     plt.savefig('{}.pdf'.format(out_prefix),bbox_inches='tight')
 
 def main():
     args = parse_args()
-    rname_to_info = read_fastq(args.fastq)
-    rname_to_sc   = get_softclip(args.paf)
-    segs,grid_lens,tid_to_segs,tid_to_color=get_tinfo(
+    segs,grid_lens,tid_to_segs,tid_to_color,strand=get_tinfo(
         segments_txt=args.segments_txt,
         transcripts_tsv=args.transcripts_tsv
     )
+    rname_to_info = read_fastq(args.fastq)
     isoforms,reads=get_isoforms(
         isoforms_tsv=args.isoforms_tsv
     )
@@ -373,14 +428,6 @@ def main():
         for k,v in rname_to_info[rname].items():
             assert not k in read
             reads[rid][k]=v
-        assert rname in rname_to_sc
-        reads[rid]['scs'] = rname_to_sc[rname]['scs']
-        reads[rid]['sce'] = rname_to_sc[rname]['sce']
-        reads[rid]['strand'] = rname_to_sc[rname]['strand']
-        reads[rid]['length'] = rname_to_sc[rname]['length']
-        # if not read['ch'] in ch_to_rids:
-        #     ch_to_rids[read['ch']] = set()
-        # ch_to_rids[read['ch']].add(rid)
         read['rid']=rid
         try:
             read['fexon'] = read['data'].index(True)
@@ -413,6 +460,7 @@ def main():
             segs=segs,
             reads=reads,
             tid_to_color=tid_to_color,
+            strand=strand,
             out_prefix='{}.{}'.format(args.out_prefix,iid),
         )
 

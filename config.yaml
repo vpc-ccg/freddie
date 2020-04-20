@@ -6,26 +6,28 @@ gurobi:
     timeout: 30
     recycle_models:
         - constant
-        - exons
-        - introns
-        - relative
+        # - exons
+        # - introns
+        # - relative
 
 samples:
-    P000S000_small:
-        - /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R000/P000R000.pass.fastq
-        - /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R001/P000R001.pass.fastq
-        - /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R002/P000R002.pass.fastq
-    # P001S000:
-    #     - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R410/P001R410.pass.fastq
-    #     - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R411/P001R411.pass.fastq
-    #     - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R510/P001R510.pass.fastq
-    #     - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R511/P001R511.pass.fastq
-    N_sim_small:
+    # P000S000_small:
+    #     - /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R000/P000R000.pass.fastq
+    #     - /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R001/P000R001.pass.fastq
+    #     - /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/P000R002/P000R002.pass.fastq
+    P001S000:
+        - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R410/P001R410.pass.fastq
+        - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R411/P001R411.pass.fastq
+        - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R510/P001R510.pass.fastq
+        - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R511/P001R511.pass.fastq
+    # N_sim_small:
+    #     - /groups/hachgrp/projects/dev-ltr-simulator/analysis/ltr-sim-dev/reads/P000S000.L-non.fastq
+    N_sim:
         - /groups/hachgrp/projects/dev-ltr-simulator/analysis/ltr-sim-dev/reads/P000S000.L-non.fastq
-    # L_sim:
-    #     - /groups/hachgrp/projects/dev-ltr-simulator/analysis/ltr-sim-dev/reads/P000S000.L-low.fastq
-    # H_sim:
-    #     - /groups/hachgrp/projects/dev-ltr-simulator/analysis/ltr-sim-dev/reads/P000S000.L-high.fastq
+    L_sim:
+        - /groups/hachgrp/projects/dev-ltr-simulator/analysis/ltr-sim-dev/reads/P000S000.L-low.fastq
+    H_sim:
+        - /groups/hachgrp/projects/dev-ltr-simulator/analysis/ltr-sim-dev/reads/P000S000.L-high.fastq
 
 exec:
     sam_to_paf     : py/sam_to_paf.py
@@ -38,31 +40,31 @@ exec:
 
 genes:
     AR         : AR
-    # MYC        : MYC
-    # PLSCR3     : PLSCR3
-    # E2F1       : E2F1
-    # BLOC1S1    : BLOC1S1
+    MYC        : MYC
+    PLSCR3     : PLSCR3
+    E2F1       : E2F1
+    BLOC1S1    : BLOC1S1
     SRSF2      : SRSF2
-    # ATP5F1D    : ATP5F1D
-    # HAX1       : HAX1
-    # JTB        : JTB
-    # SLC50A1    : SLC50A1
-    # CTXN1      : CTXN1
-    # CEBPB      : CEBPB
-    # PGAM2      : PGAM2
-    # GADD45GIP1 : GADD45GIP1
-    # SFN        : SFN
-    # NDUFA1     : NDUFA1
-    # HIGD2A     : HIGD2A
-    # ENDOG      : ENDOG
-    # HOXB13     : HOXB13
-    # TMEM238    : TMEM238
-    # ZNF503     : ZNF503
-    # PYURF      : PYURF
-    # ARF6       : ARF6
-    # SEPHS2     : SEPHS2
-    # SF3B5      : SF3B5
-    # GTDC1      : GTDC1
+    ATP5F1D    : ATP5F1D
+    HAX1       : HAX1
+    JTB        : JTB
+    SLC50A1    : SLC50A1
+    CTXN1      : CTXN1
+    CEBPB      : CEBPB
+    PGAM2      : PGAM2
+    GADD45GIP1 : GADD45GIP1
+    SFN        : SFN
+    NDUFA1     : NDUFA1
+    HIGD2A     : HIGD2A
+    ENDOG      : ENDOG
+    HOXB13     : HOXB13
+    TMEM238    : TMEM238
+    ZNF503     : ZNF503
+    PYURF      : PYURF
+    ARF6       : ARF6
+    SEPHS2     : SEPHS2
+    SF3B5      : SF3B5
+    GTDC1      : GTDC1
 
 mapping_settings:
     dna  : splice

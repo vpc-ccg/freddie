@@ -24,18 +24,18 @@ gene_data=[
 
 rule all:
     input:
-        # expand('{}/{{sample}}.deSALT.sam'.format(mapped_d), sample=config['samples']),
-        # expand('{}/{{sample}}.deSALT.paf'.format(mapped_d), sample=config['samples']),
-        # expand('{}/{{gene}}/{{sample}}/{{data_file}}'.format(genes_d),
-        #     gene=config['genes'], sample=config['samples'], data_file=gene_data),
+        expand('{}/{{sample}}.deSALT.sam'.format(mapped_d), sample=config['samples']),
+        expand('{}/{{sample}}.deSALT.paf'.format(mapped_d), sample=config['samples']),
+        expand('{}/{{gene}}/{{sample}}/{{data_file}}'.format(genes_d),
+            gene=config['genes'], sample=config['samples'], data_file=gene_data),
         expand('{}/{{gene}}/{{sample}}/reads.segments.{{extension}}'.format(genes_d),
             gene=config['genes'], sample=config['samples'], extension=['txt', 'pdf', 'data', 'names']),
         expand('{}/{{gene}}/{{sample}}/reads.gaps.txt'.format(genes_d),
             gene=config['genes'], sample=config['samples']),
-        # expand('{}/{{gene}}/{{sample}}/reads.isoforms.{{recycle_model}}.{{extension}}'.format(genes_d),
-        #     gene=config['genes'], sample=config['samples'], recycle_model=config['gurobi']['recycle_models'], extension=['tsv']),
-        # expand('{}/{{gene}}/{{sample}}/reads.isoforms.{{recycle_model}}.plots.pdf'.format(genes_d),
-        #     gene=config['genes'], sample=config['samples'], recycle_model=config['gurobi']['recycle_models'],),
+        expand('{}/{{gene}}/{{sample}}/reads.isoforms.{{recycle_model}}.{{extension}}'.format(genes_d),
+            gene=config['genes'], sample=config['samples'], recycle_model=config['gurobi']['recycle_models'], extension=['tsv']),
+        expand('{}/{{gene}}/{{sample}}/reads.isoforms.{{recycle_model}}.plots.pdf'.format(genes_d),
+            gene=config['genes'], sample=config['samples'], recycle_model=config['gurobi']['recycle_models'],),
 
 rule deSALT:
     input:
@@ -100,26 +100,27 @@ rule find_segments:
 
 rule polyA_and_gaps:
     input:
+        script = config['exec']['polyA_and_gaps'],
         paf    = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
         segs   = '{}/{{gene}}/{{sample}}/reads.segments.txt'.format(genes_d),
         names  = '{}/{{gene}}/{{sample}}/reads.segments.names'.format(genes_d),
         data   = '{}/{{gene}}/{{sample}}/reads.segments.data'.format(genes_d),
         reads  = '{}/{{gene}}/{{sample}}/reads.fastq'.format(genes_d),
-        script = config['exec']['polyA_and_gaps'],
     output:
-        '{}/{{gene}}/{{sample}}/reads.gaps.txt'.format(genes_d),
+        gaps   = '{}/{{gene}}/{{sample}}/reads.gaps.txt'.format(genes_d),
     conda:
         'freddie.env'
     shell:
-        '{input.script} -p {input.paf} -q {input.reads} -s {input.segs} -n {input.names} -d {input.data} -o {output}'
+        '{input.script} -p {input.paf} -q {input.reads} -s {input.segs} -n {input.names} -d {input.data} -o {output.gaps}'
 
 rule find_isoforms:
     input:
         script  = config['exec']['find_isoforms'],
-        segs    = '{}/{{gene}}/{{sample}}/reads.segments.txt'.format(genes_d),
-        data    = '{}/{{gene}}/{{sample}}/reads.segments.data'.format(genes_d),
-        gaps    = '{}/{{gene}}/{{sample}}/reads.segments.gaps'.format(genes_d),
-        names   = '{}/{{gene}}/{{sample}}/reads.segments.names'.format(genes_d),
+        transcripts = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
+        data        = '{}/{{gene}}/{{sample}}/reads.segments.data'.format(genes_d),
+        segs        = '{}/{{gene}}/{{sample}}/reads.segments.txt'.format(genes_d),
+        gaps        = '{}/{{gene}}/{{sample}}/reads.gaps.txt'.format(genes_d),
+        names       = '{}/{{gene}}/{{sample}}/reads.segments.names'.format(genes_d),
     output:
         isoforms = protected('{}/{{gene}}/{{sample}}/reads.isoforms.{{recycle_model}}.tsv'.format(genes_d)),
     params:
@@ -135,20 +136,19 @@ rule find_isoforms:
         'export GRB_LICENSE_FILE={params.license}; '
         '{input.script}'
         ' -rm    {wildcards.recycle_model} '
-        ' -st    {input.segs} '
-        ' -sd    {input.data} '
-        ' -ug    {input.gaps}'
-        ' -e     {params.epsilon} '
+        ' -tr    {input.transcripts} '
+        ' -d     {input.data} '
+        ' -s     {input.segs} '
+        ' -g     {input.gaps} '
         ' -names {input.names} '
-        ' -t     {threads}'
         ' -to    {params.timeout} '
-        ' -op    {params.out_prefix}'
+        ' -t     {threads} '
+        ' -op    {params.out_prefix} '
 
 rule plot_isoforms:
     input:
         script      = config['exec']['plot_isoforms'],
         reads       = '{}/{{gene}}/{{sample}}/reads.fastq'.format(genes_d),
-        paf         = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
         transcripts = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
         segs        = '{}/{{gene}}/{{sample}}/reads.segments.txt'.format(genes_d),
         isoforms    = '{}/{{gene}}/{{sample}}/reads.isoforms.{{recycle_model}}.tsv'.format(genes_d),
@@ -159,4 +159,4 @@ rule plot_isoforms:
     conda:
         'freddie.env'
     shell:
-        '{input.script} -q {input.reads} -p {input.paf} -t {input.transcripts} -s {input.segs} -i {input.isoforms} -op {params.out_prefix}'
+        '{input.script} -q {input.reads} -t {input.transcripts} -s {input.segs} -i {input.isoforms} -op {params.out_prefix}'
