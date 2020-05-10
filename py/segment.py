@@ -367,6 +367,8 @@ def main():
         out_file.close()
         out_file = open('{}.names'.format(args.out_prefix), 'w+')
         out_file.close()
+        out_file = open('{}.pdf'.format(args.out_prefix), 'w+')
+        out_file.close()
         exit()
 
     X, Y_i, Y_o, Y_a = get_splice(gene_len=gene_len, rid_to_intervals=rid_to_intervals)
