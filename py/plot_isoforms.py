@@ -123,15 +123,20 @@ def read_fastq(fastq):
 def get_isoforms(isoforms_tsv):
     reads = dict()
     isoforms = dict()
-    iid = -1
+    isoform_name_to_iid = dict()
     for line in open(isoforms_tsv):
         line = line.rstrip().split('\t')
         if line[0][0]=='#':
-            iid+=1
+            isoform_name = line[0][1:]
+            assert not isoform_name in isoform_name_to_iid
+            iid = len(isoform_name_to_iid)
+            isoform_name_to_iid[isoform_name]=iid
             isoform_name = line[0][1:]
             isoform_data = [x=='1' for x in line[3]]
             isoforms[iid] = dict(name=isoform_name, data=isoform_data, rids=list())
             continue
+        isoform_name = line[0]
+        iid = isoform_name_to_iid[isoform_name]
         rname = line[1]
         rid = int(line[2])
         d = [x=='1' for x in line[3]]

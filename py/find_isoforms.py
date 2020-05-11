@@ -547,6 +547,13 @@ def output_isoforms(isoforms, reads, garbage_rids, segs, outpath):
             for k,v in sorted(reads[i]['tail'].items()):
                 output.append('{}:{}'.format(k,v))
             out_file.write('{}\n'.format('\t'.join(output)))
+    output = list()
+    output.append('isoform_GARB')
+    output.append('.')
+    output.append('.')
+    output.append(''.join('0'*len(segs)))
+    output.extend([str(0)]*len(segs))
+    out_file.write('#{}\n'.format('\t'.join(output)))
     for i in garbage_rids:
         output = list()
         output.append('isoform_GARB')
