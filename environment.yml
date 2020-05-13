@@ -19,5 +19,6 @@ dependencies:
   - scipy=1.2.1=py36h09a28d5_1
   - samtools=1.9=h8571acd_11
   - biopython
-  - gurobi
+  - gurobi=8.1.1
   - desalt=1.5.2
+  - pypdf2=1.26.0

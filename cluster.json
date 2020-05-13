@@ -7,67 +7,27 @@
         "name" : "freddie_snake",
         "p" : "long,big-mem,normal,express",
     },
-    "freddie_make" :
-    {
-        "c" : 6,
-        "name" : "nanosim_make",
-    },
-    "nanosim_make" :
-    {
-        "name" : "nanosim_make",
-    },
-    "reads_to_bam" :
+    "deSALT" :
     {
         "c" : 32,
         "time" : "05:59:00",
         "mem" : "128GB",
-        "name" : "reads_to_bam",
+        "name" : "deSALT",
     },
-    "get_gene_data" :
+    "gene_data" :
     {
         "mem" : "32GB",
-        "name" : "get_gene_data",
+        "name" : "gene_data",
     },
-    "train_nanosim" :
-    {
-        "c" : 32,
-        "time" : "11:59:00",
-        "mem" : "256GB",
-        "name" : "nanosim_read_analysis",
-    },
-    "run_nanosim" :
-    {
-        "c" : 32,
-        "time" : "05:59:00",
-        "mem" : "128GB",
-        "name" : "nanosim_read_analysis",
-    },
-    "nanosim_simulate" :
-    {
-        "time" : "02:59:00",
-        "mem" : "128GB",
-        "name" : "nanosim_simulate",
-    },
-    "get_nanosim_tsv" :
+    "find_segments" :
     {
         "mem" : "32GB",
-        "name" : "get_nanosim_tsv",
+        "name" : "find_segments",
     },
-    "freddie_align" :
+    "plot_isoforms" :
     {
-        "time" : "23:59:00",
-        "mem" : "128GB",
-        "name" : "freddie_align",
-    },
-    "freddie_plot" :
-    {
-        "time" : "02:59:00",
-        "mem" : "128GB",
-        "name" : "freddie_plot",
-    },
-    "dot_to_pdf" :
-    {
-        "name" : "dot_to_pdf",
+        "mem" : "32GB",
+        "name" : "plot_isoforms",
     },
     "find_isoforms" :
     {
