@@ -1,0 +1,158 @@
+configfile: 'benchmark_config.yaml'
+
+def get_abs_path(path):
+    import os
+    abs_path = os.popen('readlink -f {}'.format(path)).read()
+    return abs_path.rstrip("\r\n")
+def make_slurm():
+    import os
+    os.makedirs('slurm'.format(outpath), mode=0o777, exist_ok=True)
+
+def get_which(command):
+    import subprocess
+    result = subprocess.run(['which', command], stdout=subprocess.PIPE)
+    return result.stdout.decode('ascii').rstrip()
+
+outpath = get_abs_path(config['outpath'])
+preprocess_d   = '{}/preprocess'.format(outpath)
+output_d       = '{}/output'.format(outpath)
+
+gnu_time = get_which('time')
+bam2Bed12 = '{}/bin/bam2Bed12.py'.format(get_which('flair.py').rstrip('/flair.py'))
+
+make_slurm()
+
+rule all:
+    input:
+        'extern/gffcompare',
+        expand('{}/{{sample}}.bam'.format(preprocess_d), sample=config['samples']),
+        expand('{}/{{sample}}.bam.bai'.format(preprocess_d), sample=config['samples']),
+        expand('{}/{{sample}}.flair.bed'.format(preprocess_d), sample=config['samples']),
+        expand('{}/{{tool}}.{{sample}}.{{extension}}'.format(output_d),
+            tool=['stringtie', 'flair'],
+            sample=config['samples'],
+            extension=['isoforms.gtf', 'time.tsv']),
+        # expand('{}/{{sim_sample}}.ref.gtf'.format(preprocess_d), sim_sample=[s for s in config['samples'] if s.endswith('_sim')]),
+        expand('{}/{{sim_sample}}.ref.gtf'.format(preprocess_d), sim_sample=config['samples']),
+        expand('{}/{{tool}}.{{sample}}.gffcompare'.format(output_d), tool=['stringtie','flair'],sample=config['samples']),
+
+rule gffcompare_make:
+    output:
+        'extern/gffcompare'
+    shell:
+        ' git clone  --branch v0.11.6 https://github.com/gpertea/gffcompare extern/gffcompare_v0.11.6; '
+        ' make -C extern/gffcompare_v0.11.6 release;'
+        ' cp extern/gffcompare_v0.11.6/gffcompare {output}'
+
+rule gffcompare:
+    input:
+        script='extern/gffcompare',
+        reference_gtf = '{}/{{sample}}.ref.gtf'.format(preprocess_d),
+        sample_gtf    = '{}/{{tool}}.{{sample}}.isoforms.gtf'.format(output_d),
+    output:
+        stats=protected('{}/{{tool}}.{{sample}}.gffcompare'.format(output_d)),
+    params:
+        out_prefix='{}/{{tool}}.{{sample}}.gffcompare'.format(output_d),
+    shell:
+        '{input.script} -T -r {input.reference_gtf} -o {params.out_prefix} {input.sample_gtf}'
+
+rule ref_gtf_from_non_sim:
+    input:
+        gtf = config['references']['gtf'],
+    wildcard_constraints:
+        sample="|".join([s for s in config['samples'] if not s.endswith('_sim')])
+    output:
+        gtf=protected('{}/{{sample}}.ref.gtf'.format(preprocess_d)),
+    shell:
+        'ln -s {input.gtf} {output.gtf}'
+
+
+rule ref_gtf_from_sim:
+    input:
+        reads = lambda wildcards: config['samples'][wildcards.sim_sample],
+        gtf = config['references']['gtf'],
+    wildcard_constraints:
+        sim_sample="[A-Z]_sim"
+    output:
+        gtf=protected('{}/{{sim_sample}}.ref.gtf'.format(preprocess_d)),
+    params:
+        min_transcript_cov=3
+    run:
+        tids = dict()
+        for file_path in input.reads:
+            for line in open(file_path):
+                if not line[0]=='@':
+                    continue
+                tid = line[1:].split('_')[0]
+                tids[tid]=tids.get(tid,0)+1
+        ref_tids = set()
+        out_file = open(output[0],'w+')
+        for line in open(input.gtf):
+            if line[0]=='#':
+                out_file.write(line)
+                continue
+            info = {x.split(' ')[0]:x.split(' ')[1].strip('"') for x in line.rstrip().split('\t')[-1].rstrip(';').split('; ')}
+            if not 'transcript_id' in info:
+                continue
+            tid = info['transcript_id']
+            ref_tids.add(tid)
+            if not tid in tids:
+                continue
+            if tids[tid] >= params.min_transcript_cov:
+                out_file.write(line)
+
+rule reads_to_bam:
+    input:
+        reads  = lambda wildcards: config['samples'][wildcards.sample],
+        genome = config['references']['dna'],
+    output:
+        bam=protected('{}/{{sample}}.bam'.format(preprocess_d)),
+        bai=protected('{}/{{sample}}.bam.bai'.format(preprocess_d)),
+    threads:
+        32
+    shell:
+        'minimap2 -a -x splice -t {threads} {input.genome} {input.reads} | '
+        '  samtools sort -T {output.bam}.tmp -m 2G -@ {threads} -O bam - > {output.bam}; '
+        '  samtools index {output.bam}; '
+
+rule preprocess_flair:
+    input:
+        bam='{}/{{sample}}.bam'.format(preprocess_d),
+    output:
+        bed=protected('{}/{{sample}}.flair.bed'.format(preprocess_d)),
+    params:
+        bam2Bed12=bam2Bed12,
+    shell:
+        '{params.bam2Bed12} -i {input.bam} > {output.bed}'
+
+rule stringtie:
+    input:
+        bam='{}/{{sample}}.bam'.format(preprocess_d),
+    output:
+        gtf=protected('{}/stringtie.{{sample}}.isoforms.gtf'.format(output_d)),
+        time=protected('{}/stringtie.{{sample}}.time.tsv'.format(output_d)),
+    params:
+        gnu_time=gnu_time,
+        gnu_time_format='"%e\\t%U\\t%M"',
+    shell:
+        '{params.gnu_time} -f {params.gnu_time_format} -o {output.time} '
+        ' stringtie -p 1 -L -o {output.gtf} {input.bam}'
+
+rule flair:
+    input:
+        bed='{}/{{sample}}.flair.bed'.format(preprocess_d),
+        reads  = lambda wildcards: config['samples'][wildcards.sample],
+        genome = config['references']['dna'],
+        gtf = config['references']['gtf'],
+    output:
+        gtf=protected('{}/flair.{{sample}}.isoforms.gtf'.format(output_d)),
+        time=protected('{}/flair.{{sample}}.time.tsv'.format(output_d)),
+    params:
+        gnu_time=gnu_time,
+        gnu_time_format='"%e\\t%U\\t%M"',
+        out_prefix='{}/flair.{{sample}}'.format(output_d),
+    shell:
+        '{params.gnu_time} -f {params.gnu_time_format} -o {output.time} bash -c "'
+        ' flair.py correct  -t 1 -q {input.bed}                           -o {params.out_prefix} -g {input.genome} -f {input.gtf} ;'
+        ' flair.py collapse -t 1 -q {params.out_prefix}_all_corrected.bed -o {params.out_prefix} -g {input.genome} -f {input.gtf} -r {input.reads} '
+        '"'
