@@ -124,8 +124,8 @@ def read_sam(sam, format):
             name      = aln.query_name,
             contig    = aln.reference_name,
             strand    = '-' if aln.is_reverse else '+',
-            intervals = get_intervals(aln),
             tint      = float('inf'),
+            intervals = get_intervals(aln),
         ))
     return contigs,reads
 
@@ -189,8 +189,9 @@ def main():
         tints = get_transcriptional_intervals(reads=reads, contig=contig)
         for idx,tint in enumerate(tints):
             record = list()
-            record.append('#{}:{}'.format(contig,idx))
-            record.append(','.join('{}:{}'.format(s,e) for s,e in tint['intervals']))
+            record.append('#{}'.format(contig))
+            record.append('{}'.format(idx))
+            record.append(','.join('{}-{}'.format(s,e) for s,e in tint['intervals']))
             record.append(str(len(tint['rids'])))
             outfile.write('\t'.join(record))
             outfile.write('\n')
@@ -199,6 +200,7 @@ def main():
         record.append(str(read['id']))
         record.append(read['name'])
         record.append(read['contig'])
+        record.append(read['strand'])
         record.append(str(read['tint']))
         for interval in read['intervals']:
             record.append('{}-{}:{}-{}:{}'.format(*interval))
