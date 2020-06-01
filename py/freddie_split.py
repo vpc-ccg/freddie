@@ -148,7 +148,7 @@ def get_transcriptional_intervals(reads, contig):
             end = e
             rids = list()
         assert start<=s
-        end = e
+        end = max(end, e)
         rids.append(rid)
         reads[rid]['tint'] = min(reads[rid]['tint'],len(intervals))
     intervals.append(dict(
