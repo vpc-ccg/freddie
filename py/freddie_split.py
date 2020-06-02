@@ -2,8 +2,7 @@
 import argparse
 import re
 import pysam
-from itertools import zip_longest
-from collections import namedtuple
+from collections import deque
 
 cigar_re = re.compile(r'(\d+)([M|I|D|N|S|H|P|=|X]{1})')
 
@@ -120,19 +119,19 @@ def read_sam(sam, format):
             continue
         assert aln.reference_name in contigs, '{} : {}'.format(aln.reference_name, contigs)
         reads.append(dict(
-            id        = len(reads),
-            name      = aln.query_name,
-            contig    = aln.reference_name,
-            strand    = '-' if aln.is_reverse else '+',
-            tint      = float('inf'),
-            intervals = get_intervals(aln),
+            id           = len(reads),
+            name         = aln.query_name,
+            contig       = aln.reference_name,
+            strand       = '-' if aln.is_reverse else '+',
+            simple_tints = list(),
+            tint         = None,
+            intervals    = get_intervals(aln),
         ))
     return contigs,reads
 
 def get_transcriptional_intervals(reads, contig):
     intervals = list()
-    start = None
-    end = None
+    start,end = None,None
     rids = list()
     for s,e,rid in sorted((i[0],i[1],read['id']) for read in reads if read['contig']==contig for i in read['intervals']):
         if (start,end) == (None,None):
@@ -150,31 +149,41 @@ def get_transcriptional_intervals(reads, contig):
         assert start<=s
         end = max(end, e)
         rids.append(rid)
-        reads[rid]['tint'] = min(reads[rid]['tint'],len(intervals))
+        reads[rid]['simple_tints'].append(len(intervals))
     intervals.append(dict(
         tint=-1,
         start=start,
         end=end,
         rids=rids,
     ))
-    final_tints = dict()
+
+    enqueued = [False for _ in intervals]
+    multi_tints = list()
     for idx,interval in enumerate(intervals):
-        tint = min(reads[rid]['tint'] for rid in interval['rids'])
-        interval['tint'] = tint
+        if enqueued[idx]:
+            continue
+        group = list()
+        queue = deque()
+        queue.append(idx)
+        enqueued[idx]=True
+        while len(queue) > 0:
+            tint = queue.pop()
+            group.append(tint)
+            for rid in intervals[tint]['rids']:
+                for i in reads[rid]['simple_tints']:
+                    if not enqueued[i]:
+                        enqueued[i]=True
+                        queue.append(i)
+        rids = set()
+        group_intervals = list()
+        for tint in group:
+            rids.update(intervals[tint]['rids'])
+            group_intervals.append((intervals[tint]['start'],intervals[tint]['end']))
         for rid in rids:
-            reads[rid]['tint']=tint
-        if not tint in final_tints:
-            final_tints[tint]=list()
-        final_tints[tint].append(idx)
-    final_tints = sorted(final_tints.values())
-    final_tint_to_intervals = list()
-    for idx,tints in enumerate(final_tints):
-        rids = sorted({rid for tint in tints for rid in intervals[tint]['rids']})
-        final_intervals = [(intervals[tind]['start'],intervals[tind]['end']) for tind in tints]
-        for rid in rids:
-            reads[rid]['tint']=idx
-        final_tint_to_intervals.append(dict(intervals=final_intervals, rids=rids))
-    return final_tint_to_intervals
+            reads[rid]['tint']=len(multi_tints)
+        multi_tints.append(dict(intervals=sorted(group_intervals), rids=sorted(rids)))
+    assert all(enqueued)
+    return multi_tints
 
 def main():
     args = parse_args()
