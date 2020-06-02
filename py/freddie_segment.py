@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from multiprocessing import Pool
 
+from itertools import starmap
 import argparse
 import re
 from math import ceil
@@ -105,7 +106,7 @@ def read_split(split_tsv):
             if tint['id'] >= len(tints):
                 tints.extend([None]*(tint['id']-len(tints)+1))
             assert tints[tint['id']] == None, 'Transcriptional interval with id {} is repeated!'.format(tint['id'])
-            assert all(a[1]<=b[0] for a,b in zip(tint['intervals'][:-1],tint['intervals'][1:]))
+            assert all(a[1]<=b[0] for a,b in zip(tint['intervals'][:-1],tint['intervals'][1:])),tint['intervals']
             assert all(s<e for s,e in tint['intervals'])
             tints[tint['id']] = tint
         else:
@@ -134,13 +135,13 @@ def read_split(split_tsv):
         len(x['reads'])==x['read_count']
     return tints
 
-def optimize(candidate_y_idxs, C, start, end, low, high, min_read_support_outside):
+def optimize(candidate_y_idxs, C, start, end, low, high, read_support):
     cov_mem = dict()
     yea_mem = dict()
     nay_mem = dict()
     amb_mem = dict()
 
-    print('Precomputing coverage mems for {}...'.format((start,end)))
+    # print('Precomputing coverage mems for {}...'.format((start,end)))
     for i in range(start, end):
         for j in range(i, end+1):
             cov_mem[(i,j)] = (C[j]-C[i])/(candidate_y_idxs[j]-candidate_y_idxs[i]+1)
@@ -172,7 +173,7 @@ def optimize(candidate_y_idxs, C, start, end, low, high, min_read_support_outsid
                         yea_mem[(j,k)]
                     ),
                 ))
-                if out_mem[(i,j,k)] < min_read_support_outside:
+                if out_mem[(i,j,k)] < read_support:
                     out_mem[(i,j,k)] = -float('inf')
         return out_mem[(i,j,k)]
     D = dict()
@@ -201,7 +202,7 @@ def optimize(candidate_y_idxs, C, start, end, low, high, min_read_support_outsid
         B[(i,j,k)] = max_b
         return D[(i,j,k)]
 
-    print('DP...')
+    # print('DP...')
     # Lower bound on score is no segmentation
     max_d = inside(start,end)
     max_b = (-1,-1,-1)
@@ -210,45 +211,45 @@ def optimize(candidate_y_idxs, C, start, end, low, high, min_read_support_outsid
             if dp(start,j,k) > max_d:
                 max_b = (start,j,k)
                 max_d = dp(*max_b)
-    print(max_b,max_d)
+    # print(max_b,max_d)
     return D,B,max_d,max_b,in_mem,out_mem
 
 
 def run_optimize(candidate_y_idxs, fixed_c_idxs, coverage, low_threshold, high_threshold, min_read_support_outside):
-    final_y_idxs = set()
-    
-    final_c_idxs = set(fixed_c_idxs)
+    final_y_idxs = set(fixed_c_idxs)
     for start,end in zip(fixed_c_idxs[:-1],fixed_c_idxs[1:]):
         D,B,max_d,max_b,in_mem,out_mem = optimize(
             candidate_y_idxs         = candidate_y_idxs,
             C                        = coverage,
             start                    = start,
             end                      = end,
-            low_threshold            = low_threshold,
-            high_threshold           = high_threshold,
-            min_read_support_outside = min_read_support_outside,
+            low                      = low_threshold,
+            high                     = high_threshold,
+            read_support             = min_read_support_outside,
         )
         while max_b != (-1,-1,-1):
-            final_c_idxs.update(max_b)
-            print('B:', max_b)
-            print('I:', in_mem[(max_b[0],max_b[1])])
-            print('O:', out_mem[max_b])
+            final_y_idxs.update(max_b)
+            # print('B:', max_b)
+            # print('I:', in_mem[(max_b[0],max_b[1])])
+            # print('O:', out_mem[max_b])
             max_b = B[max_b]
-    return sorted(final_c_idxs)
+    return sorted(final_y_idxs)
 
 
 def get_cumulative_coverage(candidate_y_idxs, y_idx_to_r_idxs):
-    C = np.zeros((len(candidate_y_idxs)+1, len(reads)), dtype=np.uint32)
-    for C_idx,(cur_y_idx,nxt_y_idx) in enumerate(zip(y_idxs[:-1],y_idxs[1:]), start=1):
-        C[idx,rid] = y_idx_to_r_idxs[cur_c_idx:nxt_c_idx].sum()
+    C = np.zeros((len(candidate_y_idxs)+1, y_idx_to_r_idxs.shape[1]), dtype=np.uint32)
+    for C_idx,(cur_y_idx,nxt_y_idx) in enumerate(zip(candidate_y_idxs[:-1],candidate_y_idxs[1:]), start=1):
+        C[C_idx] = y_idx_to_r_idxs[cur_y_idx:nxt_y_idx].sum(axis=0)
     for C_idx in range(1,len(C)):
-        C[i] += C[i-1]
+        C[C_idx] += C[C_idx-1]
     return C
 
-def segment(tint, sigma, low_threshold, variance_factor, max_candidates_per_seg, min_read_support_outside, threads):
+def segment(segment_args):
+    tint, sigma, low_threshold, high_threshold, variance_factor, max_candidates_per_seg, min_read_support_outside, threads = segment_args
     pos_to_Yy_idx = dict()
     Yy_idx_to_pos = list()
     Yy_idx_to_r_idxs = list()
+    Y = list()
     for s,e in tint['intervals']:
         y_idx_to_pos = list()
         for p in range(s,e):
@@ -256,18 +257,20 @@ def segment(tint, sigma, low_threshold, variance_factor, max_candidates_per_seg,
             y_idx_to_pos.append(p)
         Yy_idx_to_pos.append(y_idx_to_pos)
         Yy_idx_to_r_idxs.append(np.zeros((len(y_idx_to_pos), len(tint['reads'])), dtype=bool))
-    Y = [np.zeros(len(x)) for x in idx_to_pos]
+        Y.append(np.zeros(len(y_idx_to_pos)))
+    assert len(pos_to_Yy_idx)==sum(len(y_idx_to_pos) for y_idx_to_pos in Y)
     for r_idx,read in enumerate(tint['reads']):
         for ts,te,_,_,_ in read['intervals']:
-            Y_idx,y_idx = pos_to_idx[ts]
+            Y_idx,y_idx = pos_to_Yy_idx[ts]
             Y[Y_idx][y_idx] += 1
-            Y_idx,y_idx = pos_to_idx[te-1]
+            Y_idx,y_idx = pos_to_Yy_idx[te-1]
             Y[Y_idx][y_idx] += 1
             for pos in range(ts,te):
-                Y_idx,y_idx = pos_to_idx[ts]
+                Y_idx,y_idx = pos_to_Yy_idx[pos]
                 Yy_idx_to_r_idxs[Y_idx][y_idx][r_idx] = True
     Y = [gaussian_filter1d(y,sigma) for y in Y]
-    variance_threhsold = np.concatenate(Y).mean() + variance_factor*np.concatenate(Y).std()
+    Y_none_zero_vals = np.array([v for y in Y for v in y if v > 0])
+    variance_threhsold = Y_none_zero_vals.mean() + variance_factor*Y_none_zero_vals.std()
 
     run_optimize_args = list()
     for Y_idx,y in enumerate(Y):
@@ -279,51 +282,56 @@ def segment(tint, sigma, low_threshold, variance_factor, max_candidates_per_seg,
                 fixed_c_idxs.add(c_idx)
         for s,e in zip(sorted(fixed_c_idxs)[:-1],sorted(fixed_c_idxs)[1:]):
             candidate_count = (e-s)-1
-            if candidate_count <= args.max_candidates_per_seg:
+            if candidate_count <= max_candidates_per_seg:
                 continue
-            extra = candidate_count//args.max_candidates_per_seg
-            for i in range(extra):
-                fixed_c_idxs.add(s+(i+1)*candidate_count//extra)
+            extra = candidate_count//max_candidates_per_seg
+            brks = np.round(np.linspace(s, e, extra+2)).astype(int)[1:-1]
+            fixed_c_idxs.update(brks)
+            # print('Add {} extra breakspoints ({}) between {}'.format(extra, brks,(s,e)))
         fixed_c_idxs = sorted(fixed_c_idxs)
 
         cumulative_coverage = get_cumulative_coverage(candidate_y_idxs, Yy_idx_to_r_idxs[Y_idx])
         run_optimize_args.append((
             candidate_y_idxs,
             fixed_c_idxs,
-            coverage,
+            cumulative_coverage,
             low_threshold,
             high_threshold,
             min_read_support_outside
         ))
     final_positions = list()
-    with Pool(threads) as p:
-        for y_idx,final_c_idxs in enumerate(p.starmap(run_optimize, run_optimize_args)):
-            final_positions.extend()
-            print(y_idx,final_c_idxs)
-
-
-
-
-
-
-    exit()
+    for Y_idx,final_y_idxs in enumerate(starmap(run_optimize, run_optimize_args)):
+        final_positions.extend([Yy_idx_to_pos[Y_idx][y_idx] for y_idx in final_y_idxs])
+    return tint['id'],final_positions
 
 def main():
     args = parse_args()
 
     tints = read_split(args.split_tsv)
-    for idx,tint in enumerate(tints):
-        if idx % 100 == 0:
-            print('Segmenting transcriptional multi-interval {}/{}'.format(idx+1,len(tints)))
-        segment(
-            tint                     = tint,
-            sigma                    = args.sigma,
-            low_threshold            = args.low_threshold,
-            variance_factor          = args.variance_factor,
-            max_candidates_per_seg   = args.max_candidates_per_seg,
-            min_read_support_outside = args.min_read_support_outside,
-            threads                  = args.threads,
-        )
+    sub_process_threads = min(1, args.threads)
+    sup_process_threads = max(1, args.threads//1)
+    assert sub_process_threads*sup_process_threads <= args.threads
+    # print(sub_process_threads)
+    # print(sup_process_threads)
+    segment_args = list()
+    for tint in tints:
+        segment_args.append((
+            tint,
+            args.sigma,
+            args.low_threshold,
+            args.high_threshold,
+            args.variance_factor,
+            args.max_candidates_per_seg,
+            args.min_read_support_outside,
+            sub_process_threads,
+        ))
+    with Pool(sup_process_threads) as p:
+        for idx,(tint_idx,final_positions) in enumerate(p.imap_unordered(segment, segment_args, chunksize=20)):
+            print('Done with {}-th transcriptional multi-intervals ({}/{})'.format(tint_idx, idx+1,len(tints)))
+            tints[idx]['final_positions']=final_positions
+
+    for tint in tints:
+        print(tint['final_positions'])
 
 if __name__ == "__main__":
     main()
