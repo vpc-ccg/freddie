@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 from multiprocessing import Pool
 
-from itertools import starmap
-from itertools import chain
+from itertools import starmap,chain,groupby
+from operator import itemgetter
 import argparse
 import re
 from math import ceil
@@ -113,7 +113,7 @@ def read_split(split_tsv):
             if tint['id'] >= len(tints):
                 tints.extend([None]*(tint['id']-len(tints)+1))
             assert tints[tint['id']] == None, 'Transcriptional interval with id {} is repeated!'.format(tint['id'])
-            assert all(a[1]<=b[0] for a,b in zip(tint['intervals'][:-1],tint['intervals'][1:])),tint['intervals']
+            assert all(a[1]<b[0] for a,b in zip(tint['intervals'][:-1],tint['intervals'][1:])),(tint['intervals'])
             assert all(s<e for s,e in tint['intervals'])
             tints[tint['id']] = tint
         else:
@@ -141,6 +141,191 @@ def read_split(split_tsv):
         assert x!=None
         len(x['reads'])==x['read_count']
     return tints
+
+def read_sequence(tints, read_files):
+    name_to_idx=dict()
+    for tidx,tint in enumerate(tints):
+        for ridx,read in enumerate(tint['reads']):
+            name_to_idx[read['name']] = (tidx,ridx)
+            tints[tidx]['reads'][ridx]['seq']=''
+    for read_file in read_files:
+        read_file = open(read_file)
+        first_line = read_file.readline()
+        assert first_line[0] in ['@','>'], first_line
+        if first_line[0] == '@':
+            for idx,line in enumerate(chain([first_line], read_file)):
+                if idx % 4 == 0:
+                    assert line[0]=='@'
+                    name = line[1:].split()[0]
+                if idx % 4 == 1:
+                    if name in name_to_idx:
+                        tidx,ridx=name_to_idx[name]
+                        tints[tidx]['reads'][ridx]['seq'] = line.rstrip()
+                if idx % 4 == 2:
+                    assert line.rstrip()=='+'
+                if idx % 4 == 3:
+                    if name in name_to_idx:
+                        assert len(line.rstrip())==len(tints[tidx]['reads'][ridx]['seq']),line+'\n'+tints[tidx]['reads'][ridx]['seq']
+        else:
+            for line in chain([first_line], read_file):
+                assert not line[0] in ['@','+']
+                if line[0]=='>':
+                    name = line[1:].split()[0]
+                else:
+                    if name in name_to_idx:
+                        tidx,ridx=name_to_idx[name]
+                        tints[tidx]['reads'][ridx]['seq'] += line.rstrip()
+    for tint in tints:
+        for read in tint['reads']:
+            assert read['seq'] != ''
+            read['length']=len(read['seq'])
+    return
+
+def forward_thread_cigar(cigar, t_goal, t_pos, q_pos):
+    assert t_pos<=t_goal
+    cig_idx = 0
+    while t_pos < t_goal:
+        c,t = cigar[cig_idx]
+        # print(t_goal-t_pos, c,t)
+        c = min(c, t_goal-t_pos)
+        if t in ['M','X','=']:
+            t_pos += c
+            q_pos += c
+        if t in ['D']:
+            t_pos += c
+        if t in ['I']:
+            q_pos += c
+        cig_idx+=1
+    assert t_pos==t_goal
+    return q_pos
+
+def get_interval_start(start, read):
+    for (t_start,t_end,q_start,q_end,cigar) in read['intervals']:
+        if t_end < start:
+            continue
+        # print((t_start, t_end),(q_start, q_end),'|',read['length'])
+        if start < t_start:
+            q_pos=q_start
+            slack=start-t_start
+        else:
+            q_pos = forward_thread_cigar(cigar=cigar, t_goal=start, t_pos=t_start, q_pos=q_start)
+            slack = 0
+        assert slack<=0,(slack,t_start,start)
+        assert 0<=q_pos<=q_end, (q_start,q_pos,q_end)
+        return q_pos,slack
+    assert False
+
+def get_interval_end(end, read):
+    for (t_start,t_end,q_start,q_end,cigar) in reversed(read['intervals']):
+        if t_start > end:
+            continue
+        # print((t_start, t_end),(q_start, q_end),'|',read['length'])
+        if t_end<end:
+            q_pos=q_end
+            slack=t_end-end
+        else:
+            q_pos = forward_thread_cigar(cigar=cigar, t_goal=end-1, t_pos=t_start, q_pos=q_start)
+            slack = 0
+        assert slack<=0,(slack,t_end,end)
+        assert 0<=q_pos<=q_end, (q_start,q_pos,q_end)
+        return q_pos,slack
+    assert False
+
+def find_longest_poly(seq, match_score=1, mismatch_score=-2, char='A'):
+    if len(seq)==0:
+        return
+    if seq[0]==char:
+        scores=[match_score]
+    else:
+        scores=[0]
+    for m in (match_score if c==char else mismatch_score for c in seq[1:]):
+        scores.append(max(0,scores[-1]+m))
+    for k,g in groupby(enumerate(scores),lambda x:x[1]>0):
+        if not k:
+            continue
+        i,s = list(zip(*g))
+        max_s,max_i=max(zip(s,i))
+        l = max_i+1-i[0]
+        yield i[0], l, seq[i[0]:i[0]+l].count(char)/l
+
+def get_unaligned_gaps_and_polyA(read, segs):
+    read['gaps']=set()
+    if not 1 in read['data']:
+        return
+    intervals = list()
+    for d,group in groupby(enumerate(read['data']), lambda x: x[1]):
+        if d != 1:
+            continue
+        group = list(group)
+        f_seg_idx = group[0][0]
+        l_seg_idx = group[-1][0]
+        intervals.append((f_seg_idx,l_seg_idx))
+    assert len(intervals)>0, read['data']
+    (f_seg_idx,_) = intervals[0]
+    start = segs[f_seg_idx][0]
+    q_ssc_pos,_ = get_interval_start(start=start, read=read)
+    (_,l_seg_idx) = intervals[-1]
+    end   = segs[l_seg_idx][1]
+    q_esc_pos,_ = get_interval_end(end=end, read=read)
+    assert 0<=q_ssc_pos<q_esc_pos<=read['length'], (q_ssc_pos,q_esc_pos,read['length'],start,end,read['intervals'],read['id'])
+    s_polys = list()
+    for char in ['A','T']:
+        for i,l,p in find_longest_poly(read['seq'][0:q_ssc_pos], char=char):
+            if l < 20 or p < 0.85:
+                continue
+            assert 0<=i<q_ssc_pos,(i,q_ssc_pos,read['length'])
+            s_polys.append((i,l,p,char))
+    if len(s_polys)>0:
+        i,l,p,char = max(s_polys, key=lambda x: x[2])
+        poly_to_gene_gap_size = q_ssc_pos-i-l
+        assert 0<=poly_to_gene_gap_size<q_ssc_pos
+        read['gaps'].add(
+            'S{}_{}:{}'.format(char,l,poly_to_gene_gap_size)
+        )
+        read['gaps'].add(
+            'SSC:{}'.format(i)
+        )
+    else:
+        read['gaps'].add(
+            'SSC:{}'.format(q_ssc_pos)
+        )
+    e_polys = list()
+    for char in ['A','T']:
+        for i,l,p in find_longest_poly(read['seq'][q_esc_pos:], char=char):
+            if l < 20 or p < 0.85:
+                continue
+            assert 0<=i<read['length']-q_esc_pos,(i,q_esc_pos,read['length'])
+            e_polys.append((i,l,p,char))
+    if len(e_polys)>0:
+        i,l,p,char = max(e_polys, key=lambda x: x[2])
+        poly_to_gene_gap_size = i
+        assert 0<=poly_to_gene_gap_size<read['length']-q_esc_pos, (q_esc_pos,i,l,p,read['length'],poly_to_gene_gap_size)
+        read['gaps'].add(
+            'E{}_{}:{}'.format(char,l,poly_to_gene_gap_size)
+        )
+        read['gaps'].add(
+            'ESC:{}'.format(read['length']-q_esc_pos-poly_to_gene_gap_size)
+        )
+        assert read['length']-q_esc_pos-poly_to_gene_gap_size>0
+    else:
+        read['gaps'].add(
+            'ESC:{}'.format(read['length']-q_esc_pos)
+        )
+    for i1,i2 in zip(intervals[:-1],intervals[1:]):
+        (_,i1_l_seg_idx) = i1
+        i1_end           = segs[i1_l_seg_idx][1]
+        q_gap_start,start_slack      = get_interval_end(end=i1_end, read=read)
+        (i2_f_seg_idx,_) = i2
+        i2_start         = segs[i2_f_seg_idx][0]
+        q_gap_end,end_slack        = get_interval_start(start=i2_start, read=read)
+        assert 0<q_gap_start<=q_gap_end<read['length'],(q_gap_start,q_gap_end,read['length'])
+        q_gap_size = q_gap_end-q_gap_start
+        q_gap_size = max(0,q_gap_size+start_slack+end_slack)
+        assert 0<=q_gap_size<read['length'],(q_gap_size,start_slack,end_slack)
+        assert i1_l_seg_idx<i2_f_seg_idx
+        read['gaps'].add(
+            '{}-{}:{}'.format(i1_l_seg_idx,i2_f_seg_idx,q_gap_size),
+        )
 
 def optimize(candidate_y_idxs, C, start, end, low, high, read_support):
     cov_mem = dict()
@@ -221,9 +406,8 @@ def optimize(candidate_y_idxs, C, start, end, low, high, read_support):
     # print(max_b,max_d)
     return D,B,max_d,max_b,in_mem,out_mem
 
-
 def run_optimize(candidate_y_idxs, fixed_c_idxs, coverage, low_threshold, high_threshold, min_read_support_outside):
-    final_y_idxs = set(fixed_c_idxs)
+    final_c_idxs = set(fixed_c_idxs)
     for start,end in zip(fixed_c_idxs[:-1],fixed_c_idxs[1:]):
         D,B,max_d,max_b,in_mem,out_mem = optimize(
             candidate_y_idxs         = candidate_y_idxs,
@@ -235,13 +419,12 @@ def run_optimize(candidate_y_idxs, fixed_c_idxs, coverage, low_threshold, high_t
             read_support             = min_read_support_outside,
         )
         while max_b != (-1,-1,-1):
-            final_y_idxs.update(max_b)
+            final_c_idxs.update(max_b)
             # print('B:', max_b)
             # print('I:', in_mem[(max_b[0],max_b[1])])
             # print('O:', out_mem[max_b])
             max_b = B[max_b]
-    return sorted(final_y_idxs)
-
+    return sorted(final_c_idxs)
 
 def get_cumulative_coverage(candidate_y_idxs, y_idx_to_r_idxs):
     C = np.zeros((len(candidate_y_idxs)+1, y_idx_to_r_idxs.shape[1]), dtype=np.uint32)
@@ -252,14 +435,15 @@ def get_cumulative_coverage(candidate_y_idxs, y_idx_to_r_idxs):
     return C
 
 def segment(segment_args):
-    tint, sigma, low_threshold, high_threshold, variance_factor, max_candidates_per_seg, min_read_support_outside, threads = segment_args
+    tint, sigma, low_threshold, high_threshold, variance_factor, max_candidates_per_seg, min_read_support_outside = segment_args
     pos_to_Yy_idx = dict()
     Yy_idx_to_pos = list()
     Yy_idx_to_r_idxs = list()
     Y = list()
     for s,e in tint['intervals']:
         y_idx_to_pos = list()
-        for p in range(s,e):
+        for p in range(s,e+1):
+            assert not p in pos_to_Yy_idx
             pos_to_Yy_idx[p]=(len(Yy_idx_to_pos),len(y_idx_to_pos))
             y_idx_to_pos.append(p)
         Yy_idx_to_pos.append(y_idx_to_pos)
@@ -267,19 +451,21 @@ def segment(segment_args):
         Y.append(np.zeros(len(y_idx_to_pos)))
     assert len(pos_to_Yy_idx)==sum(len(y_idx_to_pos) for y_idx_to_pos in Y)
     for r_idx,read in enumerate(tint['reads']):
+        read['data']=list()
         for ts,te,_,_,_ in read['intervals']:
             Y_idx,y_idx = pos_to_Yy_idx[ts]
             Y[Y_idx][y_idx] += 1
-            Y_idx,y_idx = pos_to_Yy_idx[te-1]
+            Y_idx,y_idx = pos_to_Yy_idx[te]
             Y[Y_idx][y_idx] += 1
             for pos in range(ts,te):
                 Y_idx,y_idx = pos_to_Yy_idx[pos]
                 Yy_idx_to_r_idxs[Y_idx][y_idx][r_idx] = True
+
     Y = [gaussian_filter1d(y,sigma) for y in Y]
     Y_none_zero_vals = np.array([v for y in Y for v in y if v > 0])
     variance_threhsold = Y_none_zero_vals.mean() + variance_factor*Y_none_zero_vals.std()
 
-    run_optimize_args = list()
+    tint['final_positions'] = list()
     for Y_idx,y in enumerate(Y):
         candidate_y_idxs,_ = find_peaks(y)
         candidate_y_idxs = sorted(set(candidate_y_idxs) | {0,len(y)-1})
@@ -298,67 +484,39 @@ def segment(segment_args):
         fixed_c_idxs = sorted(fixed_c_idxs)
 
         cumulative_coverage = get_cumulative_coverage(candidate_y_idxs, Yy_idx_to_r_idxs[Y_idx])
-        run_optimize_args.append((
+        final_c_idxs=run_optimize(
             candidate_y_idxs,
             fixed_c_idxs,
             cumulative_coverage,
             low_threshold,
             high_threshold,
             min_read_support_outside
-        ))
-    final_positions = list()
-    for Y_idx,final_y_idxs in enumerate(starmap(run_optimize, run_optimize_args)):
-        final_positions.extend([Yy_idx_to_pos[Y_idx][y_idx] for y_idx in final_y_idxs])
-    return tint['id'],final_positions
-
-def read_sequence(tints, read_files):
-    name_to_idx=dict()
-    for tidx,tint in enumerate(tints):
-        for ridx,read in enumerate(tint['reads']):
-            name_to_idx[read['name']] = (tidx,ridx)
-            tints[tidx]['reads'][ridx]['seq']=''
-    for read_file in read_files:
-        read_file = open(read_file)
-        first_line = read_file.readline()
-        assert first_line[0] in ['@','>'], first_line
-        if first_line[0] == '@':
-            for idx,line in enumerate(chain([first_line], read_file)):
-                if idx % 4 == 0:
-                    assert line[0]=='@'
-                    name = line[1:].split()[0]
-                if idx % 4 == 1:
-                    if name in name_to_idx:
-                        tidx,ridx=name_to_idx[name]
-                        tints[tidx]['reads'][ridx]['seq'] = line.rstrip()
-                if idx % 4 == 2:
-                    assert line.rstrip()=='+'
-                if idx % 4 == 3:
-                    if name in name_to_idx:
-                        assert len(line.rstrip())==len(tints[tidx]['reads'][ridx]['seq']),line+'\n'+tints[tidx]['reads'][ridx]['seq']
-        else:
-            for line in chain([first_line], read_file):
-                assert not line[0] in ['@','+']
-                if line[0]=='>':
-                    name = line[1:].split()[0]
+        )
+        final_y_idxs = [candidate_y_idxs[c_idx] for c_idx in final_c_idxs]
+        tint['final_positions'].extend([Yy_idx_to_pos[Y_idx][y_idx] for y_idx in final_y_idxs])
+        for r_idx,read in enumerate(tint['reads']):
+            for s,e in zip(final_c_idxs[:-1],final_c_idxs[1:]):
+                cov_ratio = (cumulative_coverage[e][r_idx]-cumulative_coverage[s][r_idx])/(candidate_y_idxs[e]-candidate_y_idxs[s]+1)
+                if cov_ratio > high_threshold:
+                    read['data'].append(1)
+                elif cov_ratio < low_threshold:
+                    read['data'].append(0)
                 else:
-                    if name in name_to_idx:
-                        tidx,ridx=name_to_idx[name]
-                        tints[tidx]['reads'][ridx]['seq'] += line.rstrip()
-    for tint in tints:
-        for read in tint['reads']:
-            assert read['seq'] != ''
-    return
+                    read['data'].append(2)
+            read['data'].append(0)
+    tint['segs']=[(s,e) for s,e in zip(tint['final_positions'][:-1],tint['final_positions'][1:])]
+    for read in tint['reads']:
+        read['data'].pop()
+        assert len(read['data'])==len(tint['segs']),(read['data'],tint['segs'])
+        get_unaligned_gaps_and_polyA(read=read, segs=tint['segs'])
+    return tint
 
 def main():
     args = parse_args()
 
-    tints = read_split(args.split_tsv)
+    tints = read_split(args.split_tsv)[:10]
+    read_sequence(tints, args.reads)
 
-    sub_process_threads = min(1, args.threads)
-    sup_process_threads = max(1, args.threads//1)
-    assert sub_process_threads*sup_process_threads <= args.threads
-    # print(sub_process_threads)
-    # print(sup_process_threads)
     segment_args = list()
     for tint in tints:
         segment_args.append((
@@ -369,16 +527,32 @@ def main():
             args.variance_factor,
             args.max_candidates_per_seg,
             args.min_read_support_outside,
-            sub_process_threads,
         ))
-    # with Pool(sup_process_threads) as p:
-    #     for idx,(tint_idx,final_positions) in enumerate(p.imap_unordered(segment, segment_args, chunksize=20)):
-    #         print('Done with {}-th transcriptional multi-intervals ({}/{})'.format(tint_idx, idx+1,len(tints)))
-    #         tints[idx]['final_positions']=final_positions
+    # with Pool(args.threads) as p:
+    #     for idx,tint in enumerate(p.imap_unordered(segment, segment_args, chunksize=20)):
+    with Pool(args.threads) as p:
+        for idx,tint in enumerate(map(segment, segment_args)):
+            tints[tint['id']]=tint
+            print('Done with {}-th transcriptional multi-intervals ({}/{})'.format(tint['id'], idx+1,len(tints)))
 
-    read_sequence(tints, args.reads)
+    out_file = open(args.output, 'w')
     for tint in tints:
-        print(tint['final_positions'])
+        record = list()
+        record.append('#{}'.format(tint['chr']))
+        record.append(str(tint['id']))
+        record.append(','.join(map(str,tint['final_positions'])))
+        print('\t'.join(record), file=out_file)
+    for tint in tints:
+        for read in tint['reads']:
+            record = list()
+            record.append(str(read['id']))
+            record.append(read['name'])
+            record.append(read['chr'])
+            record.append(read['strand'])
+            record.append(''.join(map(str,read['data'])))
+            record.append(','.join(map(str,read['gaps'])))
+            print('\t'.join(record), file=out_file)
+    out_file.close()
 
 if __name__ == "__main__":
     main()

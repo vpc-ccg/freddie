@@ -136,7 +136,7 @@ def get_transcriptional_intervals(reads, contig):
     for s,e,rid in sorted((i[0],i[1],read['id']) for read in reads if read['contig']==contig for i in read['intervals']):
         if (start,end) == (None,None):
             start,end = s,e
-        if s >= end:
+        if s > end:
             intervals.append(dict(
                 tint=-1,
                 start=start,
