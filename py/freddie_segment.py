@@ -2,6 +2,7 @@
 from multiprocessing import Pool
 
 from itertools import starmap
+from itertools import chain
 import argparse
 import re
 from math import ceil
@@ -18,6 +19,12 @@ def parse_args():
                         type=str,
                         required=True,
                         help="Path to Freddie split TSV file of the reads")
+    parser.add_argument("-r",
+                        "--reads",
+                        nargs="+",
+                        type=str,
+                        required=True,
+                        help="Space separated paths to reads in FASTQ or FASTA format used to extract polyA tail information")
     parser.add_argument("-o",
                         "--output",
                         type=str,
@@ -304,10 +311,49 @@ def segment(segment_args):
         final_positions.extend([Yy_idx_to_pos[Y_idx][y_idx] for y_idx in final_y_idxs])
     return tint['id'],final_positions
 
+def read_sequence(tints, read_files):
+    name_to_idx=dict()
+    for tidx,tint in enumerate(tints):
+        for ridx,read in enumerate(tint['reads']):
+            name_to_idx[read['name']] = (tidx,ridx)
+            tints[tidx]['reads'][ridx]['seq']=''
+    for read_file in read_files:
+        read_file = open(read_file)
+        first_line = read_file.readline()
+        assert first_line[0] in ['@','>'], first_line
+        if first_line[0] == '@':
+            for idx,line in enumerate(chain([first_line], read_file)):
+                if idx % 4 == 0:
+                    assert line[0]=='@'
+                    name = line[1:].split()[0]
+                if idx % 4 == 1:
+                    if name in name_to_idx:
+                        tidx,ridx=name_to_idx[name]
+                        tints[tidx]['reads'][ridx]['seq'] = line.rstrip()
+                if idx % 4 == 2:
+                    assert line.rstrip()=='+'
+                if idx % 4 == 3:
+                    if name in name_to_idx:
+                        assert len(line.rstrip())==len(tints[tidx]['reads'][ridx]['seq']),line+'\n'+tints[tidx]['reads'][ridx]['seq']
+        else:
+            for line in chain([first_line], read_file):
+                assert not line[0] in ['@','+']
+                if line[0]=='>':
+                    name = line[1:].split()[0]
+                else:
+                    if name in name_to_idx:
+                        tidx,ridx=name_to_idx[name]
+                        tints[tidx]['reads'][ridx]['seq'] += line.rstrip()
+    for tint in tints:
+        for read in tint['reads']:
+            assert read['seq'] != ''
+    return
+
 def main():
     args = parse_args()
 
     tints = read_split(args.split_tsv)
+
     sub_process_threads = min(1, args.threads)
     sup_process_threads = max(1, args.threads//1)
     assert sub_process_threads*sup_process_threads <= args.threads
@@ -325,11 +371,12 @@ def main():
             args.min_read_support_outside,
             sub_process_threads,
         ))
-    with Pool(sup_process_threads) as p:
-        for idx,(tint_idx,final_positions) in enumerate(p.imap_unordered(segment, segment_args, chunksize=20)):
-            print('Done with {}-th transcriptional multi-intervals ({}/{})'.format(tint_idx, idx+1,len(tints)))
-            tints[idx]['final_positions']=final_positions
+    # with Pool(sup_process_threads) as p:
+    #     for idx,(tint_idx,final_positions) in enumerate(p.imap_unordered(segment, segment_args, chunksize=20)):
+    #         print('Done with {}-th transcriptional multi-intervals ({}/{})'.format(tint_idx, idx+1,len(tints)))
+    #         tints[idx]['final_positions']=final_positions
 
+    read_sequence(tints, args.reads)
     for tint in tints:
         print(tint['final_positions'])
 
