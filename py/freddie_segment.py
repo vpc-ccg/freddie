@@ -549,7 +549,7 @@ def main():
         mapper = Pool(args.threads).imap_unordered
     else:
         mapper = map
-    for idx,tint in enumerate(mapper(segment, segment_args, chunksize=20)) if args.threads>1 else enumerate(mapper(segment, segment_args)):
+    for idx,tint in enumerate(Pool(args.threads).imap_unordered(segment, segment_args, chunksize=20)) if args.threads>1 else enumerate(map(segment, segment_args)):
         tints[tint['id']]=tint
         record = list()
         record.append('#{}'.format(tint['chr']))
