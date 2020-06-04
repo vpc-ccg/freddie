@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 from multiprocessing import Pool
 
-from itertools import starmap,chain,groupby
-from operator import itemgetter
+from itertools import chain,groupby
 import argparse
 import re
 from math import ceil
