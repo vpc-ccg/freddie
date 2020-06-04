@@ -5,6 +5,12 @@ import subprocess
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Outputs SAM alignments using deSALT splice aligner")
+    parser.add_argument("-r",
+                        "--reads",
+                        nargs="+",
+                        type=str,
+                        required=True,
+                        help="Space separated paths to reads in FASTQ or FASTA format")
     parser.add_argument("-g",
                         "--genome",
                         type=str,
@@ -30,12 +36,6 @@ def parse_args():
                         type=int,
                         default=1,
                         help="Number of threads for deSALT alignment. Default: 1")
-    parser.add_argument("-r",
-                        "--reads",
-                        nargs="+",
-                        type=str,
-                        required=True,
-                        help="Space separated paths to reads in FASTQ or FASTA format")
     parser.add_argument("-m",
                         "--temporary-prefix",
                         type=str,

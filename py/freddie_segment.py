@@ -545,10 +545,6 @@ def main():
             args.min_read_support_outside,
         ))
     out_file = open(args.output, 'w')
-    if args.threads > 1:
-        mapper = Pool(args.threads).imap_unordered
-    else:
-        mapper = map
     for idx,tint in enumerate(Pool(args.threads).imap_unordered(segment, segment_args, chunksize=20)) if args.threads>1 else enumerate(map(segment, segment_args)):
         tints[tint['id']]=tint
         record = list()
