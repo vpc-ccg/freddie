@@ -30,7 +30,7 @@ def parse_args():
                         type=str,
                         default='freddie_segment.tsv',
                         help="Path to output file. Default: freddie_segment.tsv")
-    parser.add_argument("-c",
+    parser.add_argument("-t",
                         "--threads",
                         type=int,
                         default=1,
@@ -50,7 +50,7 @@ def parse_args():
                         type=float,
                         default=0.90,
                         help="High threshold above which the read will be considered as covering a segment. Default: 0.9")
-    parser.add_argument("-v",
+    parser.add_argument("-vf",
                         "--variance-factor",
                         type=float,
                         default=3.0,
@@ -199,8 +199,14 @@ def forward_thread_cigar(cigar, t_goal, t_pos, q_pos):
     assert t_pos==t_goal
     return q_pos
 
+
 def get_interval_start(start, read):
+    '''
+    Finds the first position in the read alignment intervals that aligns to start or after.
+    Any (negative) offset is reported as slack.
+    '''
     for (t_start,t_end,q_start,q_end,cigar) in read['intervals']:
+        # We haven't passed the start location yet
         if t_end < start:
             continue
         # print((t_start, t_end),(q_start, q_end),'|',read['length'])
@@ -211,20 +217,26 @@ def get_interval_start(start, read):
             q_pos = forward_thread_cigar(cigar=cigar, t_goal=start, t_pos=t_start, q_pos=q_start)
             slack = 0
         assert slack<=0,(slack,t_start,start)
-        assert 0<=q_pos<=q_end, (q_start,q_pos,q_end)
+        assert q_start<=q_pos<=q_end, (q_start,q_pos,q_end)
         return q_pos,slack
     assert False
 
 def get_interval_end(end, read):
+    '''
+    Finds the last location on the read that aligns on or before end.
+    Any (negative) offset is reported as slack.
+    '''
     for (t_start,t_end,q_start,q_end,cigar) in reversed(read['intervals']):
+        # We haven't passed end yet
         if t_start > end:
             continue
         # print((t_start, t_end),(q_start, q_end),'|',read['length'])
+        # the right most interval that covers end, ends before end
         if t_end<end:
             q_pos=q_end
             slack=t_end-end
         else:
-            q_pos = forward_thread_cigar(cigar=cigar, t_goal=end-1, t_pos=t_start, q_pos=q_start)
+            q_pos = forward_thread_cigar(cigar=cigar, t_goal=end, t_pos=t_start, q_pos=q_start)
             slack = 0
         assert slack<=0,(slack,t_end,end)
         assert 0<=q_pos<=q_end, (q_start,q_pos,q_end)
@@ -440,6 +452,7 @@ def segment(segment_args):
     Yy_idx_to_pos = list()
     Yy_idx_to_r_idxs = list()
     Y = list()
+    # print('Generating index for tint {} with {} intervals'.format(tint['id'], tint['intervals']))
     for s,e in tint['intervals']:
         y_idx_to_pos = list()
         for p in range(s,e+1):
@@ -450,6 +463,7 @@ def segment(segment_args):
         Yy_idx_to_r_idxs.append(np.zeros((len(y_idx_to_pos), len(tint['reads'])), dtype=bool))
         Y.append(np.zeros(len(y_idx_to_pos)))
     assert len(pos_to_Yy_idx)==sum(len(y_idx_to_pos) for y_idx_to_pos in Y)
+    # print('Building per read coverage data for tint {}'.format(tint['id']))
     for r_idx,read in enumerate(tint['reads']):
         read['data']=list()
         for ts,te,_,_,_ in read['intervals']:
@@ -484,6 +498,7 @@ def segment(segment_args):
         fixed_c_idxs = sorted(fixed_c_idxs)
 
         cumulative_coverage = get_cumulative_coverage(candidate_y_idxs, Yy_idx_to_r_idxs[Y_idx])
+        # print('Optimizing tint {} with:\n\tcandidate {} locations: {}\n\tfixed {} loations: {}'.format(tint['id'], len(candidate_y_idxs),candidate_y_idxs,len(fixed_c_idxs),[candidate_y_idxs[c_idx] for c_idx in fixed_c_idxs]))
         final_c_idxs=run_optimize(
             candidate_y_idxs,
             fixed_c_idxs,
@@ -505,6 +520,7 @@ def segment(segment_args):
                     read['data'].append(2)
             read['data'].append(0)
     tint['segs']=[(s,e) for s,e in zip(tint['final_positions'][:-1],tint['final_positions'][1:])]
+    # print('Extracting unaligned gaps and polyA tail data from reads for tint {}'.format(tint['id']))
     for read in tint['reads']:
         read['data'].pop()
         assert len(read['data'])==len(tint['segs']),(read['data'],tint['segs'])
@@ -514,11 +530,11 @@ def segment(segment_args):
 def main():
     args = parse_args()
 
-    tints = read_split(args.split_tsv)[:10]
+    tints = read_split(args.split_tsv)
     read_sequence(tints, args.reads)
 
     segment_args = list()
-    for tint in tints:
+    for tint in tints[:]:
         segment_args.append((
             tint,
             args.sigma,
@@ -528,30 +544,29 @@ def main():
             args.max_candidates_per_seg,
             args.min_read_support_outside,
         ))
-    # with Pool(args.threads) as p:
-    #     for idx,tint in enumerate(p.imap_unordered(segment, segment_args, chunksize=20)):
-    with Pool(args.threads) as p:
-        for idx,tint in enumerate(map(segment, segment_args)):
-            tints[tint['id']]=tint
-            print('Done with {}-th transcriptional multi-intervals ({}/{})'.format(tint['id'], idx+1,len(tints)))
-
     out_file = open(args.output, 'w')
-    for tint in tints:
+    if args.threads > 1:
+        mapper = Pool(args.threads).imap_unordered
+    else:
+        mapper = map
+    for idx,tint in enumerate(mapper(segment, segment_args, chunksize=20)) if args.threads>1 else enumerate(mapper(segment, segment_args)):
+        tints[tint['id']]=tint
         record = list()
         record.append('#{}'.format(tint['chr']))
         record.append(str(tint['id']))
         record.append(','.join(map(str,tint['final_positions'])))
         print('\t'.join(record), file=out_file)
-    for tint in tints:
         for read in tint['reads']:
             record = list()
             record.append(str(read['id']))
             record.append(read['name'])
             record.append(read['chr'])
             record.append(read['strand'])
+            record.append(str(read['tint']))
             record.append(''.join(map(str,read['data'])))
             record.append(','.join(map(str,read['gaps'])))
             print('\t'.join(record), file=out_file)
+        print('Done with {}-th transcriptional multi-intervals ({}/{})'.format(tint['id'], idx+1,len(tints)))
     out_file.close()
 
 if __name__ == "__main__":
