@@ -117,8 +117,6 @@ def read_split(split_tsv):
             tints[tint['id']] = tint
         else:
             re_dict = read_prog.match(line).groupdict()
-            re_dict['rid']        = int(re_dict['rid'])
-            re_dict['cid']        = int(re_dict['cid'])
             read = dict(
                 id         = int(re_dict['rid']),
                 name       = re_dict['name'],
@@ -337,6 +335,7 @@ def get_unaligned_gaps_and_polyA(read, segs):
         read['gaps'].add(
             '{}-{}:{}'.format(i1_l_seg_idx,i2_f_seg_idx,q_gap_size),
         )
+    read['gaps']=sorted(read['gaps'])
 
 def optimize(candidate_y_idxs, C, start, end, low, high, read_support):
     cov_mem = dict()
@@ -544,24 +543,27 @@ def main():
             args.min_read_support_outside,
         ))
     out_file = open(args.output, 'w')
-    for idx,tint in enumerate(Pool(args.threads).imap_unordered(segment, segment_args, chunksize=20)) if args.threads>1 else enumerate(map(segment, segment_args)):
-        tints[tint['id']]=tint
-        record = list()
-        record.append('#{}'.format(tint['chr']))
-        record.append(str(tint['id']))
-        record.append(','.join(map(str,tint['final_positions'])))
-        print('\t'.join(record), file=out_file)
-        for read in tint['reads']:
+    with Pool(args.threads) as p:
+        if args.threads == 1:
+            p.close()
+        for idx,tint in enumerate(p.imap_unordered(segment, segment_args, chunksize=20)) if args.threads>1 else enumerate(map(segment, segment_args)):
+            tints[tint['id']]=tint
             record = list()
-            record.append(str(read['id']))
-            record.append(read['name'])
-            record.append(read['chr'])
-            record.append(read['strand'])
-            record.append(str(read['tint']))
-            record.append(''.join(map(str,read['data'])))
-            record.append(','.join(map(str,read['gaps'])))
+            record.append('#{}'.format(tint['chr']))
+            record.append(str(tint['id']))
+            record.append(','.join(map(str,tint['final_positions'])))
             print('\t'.join(record), file=out_file)
-        print('Done with {}-th transcriptional multi-intervals ({}/{})'.format(tint['id'], idx+1,len(tints)))
+            for read in tint['reads']:
+                record = list()
+                record.append(str(read['id']))
+                record.append(read['name'])
+                record.append(read['chr'])
+                record.append(read['strand'])
+                record.append(str(read['tint']))
+                record.append(''.join(map(str,read['data'])))
+                record.append(''.join('{},'.format(g) for g in read['gaps']))
+                print('\t'.join(record), file=out_file)
+            print('Done with {}-th transcriptional multi-intervals ({}/{})'.format(tint['id'], idx+1,len(tints)))
     out_file.close()
 
 if __name__ == "__main__":
