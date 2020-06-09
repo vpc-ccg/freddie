@@ -22,26 +22,25 @@ bam2Bed12 = '{}/bin/bam2Bed12.py'.format(get_which('flair.py').rstrip('/flair.py
 
 make_slurm()
 
+tools = ['freddie', 'stringtie', 'flair']
+tools = ['freddie',]
 rule all:
     input:
         'extern/gffcompare',
-        expand('{}/{{sample}}.bam'.format(preprocess_d), sample=config['samples']),
-        expand('{}/{{sample}}.bam.bai'.format(preprocess_d), sample=config['samples']),
-        expand('{}/{{sample}}.flair.bed'.format(preprocess_d), sample=config['samples']),
         expand('{}/{{tool}}.{{sample}}.{{extension}}'.format(output_d),
-            tool=['stringtie', 'flair'],
+            tool=tools,
             sample=config['samples'],
             extension=['isoforms.gtf', 'time.tsv']),
         # expand('{}/{{sim_sample}}.ref.gtf'.format(preprocess_d), sim_sample=[s for s in config['samples'] if s.endswith('_sim')]),
         expand('{}/{{sim_sample}}.ref.gtf'.format(preprocess_d), sim_sample=config['samples']),
-        expand('{}/{{tool}}.{{sample}}.gffcompare'.format(output_d), tool=['stringtie','flair'],sample=config['samples']),
+        expand('{}/{{tool}}.{{sample}}.gffcompare'.format(output_d), tool=tools,sample=config['samples']),
 
 rule gffcompare_make:
     output:
         'extern/gffcompare'
     shell:
-        ' git clone  --branch v0.11.6 https://github.com/gpertea/gffcompare extern/gffcompare_v0.11.6; '
-        ' make -C extern/gffcompare_v0.11.6 release;'
+        ' git clone  --branch v0.11.6 https://github.com/gpertea/gffcompare extern/gffcompare_v0.11.6 && '
+        ' make -C extern/gffcompare_v0.11.6 release && '
         ' cp extern/gffcompare_v0.11.6/gffcompare {output}'
 
 rule gffcompare:
@@ -112,8 +111,42 @@ rule reads_to_bam:
         32
     shell:
         'minimap2 -a -x splice -t {threads} {input.genome} {input.reads} | '
-        '  samtools sort -T {output.bam}.tmp -m 2G -@ {threads} -O bam - > {output.bam}; '
-        '  samtools index {output.bam}; '
+        '  samtools sort -T {output.bam}.tmp -m 2G -@ {threads} -O bam - > {output.bam} && '
+        '  samtools index {output.bam} '
+
+rule freddie:
+    input:
+        sam   = '{}/{{sample}}.sam'.format(preprocess_d),
+        reads =  lambda wildcards: config['samples'][wildcards.sample],
+    output:
+        split   = protected('{}/freddie.{{sample}}.split.tsv'.format(output_d)),
+        segment = protected('{}/freddie.{{sample}}.segment.tsv'.format(output_d)),
+        cluster = protected('{}/freddie.{{sample}}.cluster.tsv'.format(output_d)),
+        gtf     = protected('{}/freddie.{{sample}}.isoforms.gtf'.format(output_d)),
+        time    = protected('{}/freddie.{{sample}}.time.tsv'.format(output_d)),
+    threads:
+        4
+    params:
+        gnu_time=gnu_time,
+        gnu_time_format='"%e\\t%U\\t%M"',
+    shell:
+        '{params.gnu_time} -f {params.gnu_time_format} -o {output.time} bash -c "'
+        ' py/freddie_split.py -s {input.sam} -o {output.split} && '
+        ' py/freddie_segment.py -s {output.split} -r {input.reads} -o {output.segment} && '
+        ' py/freddie_cluster.py -s {output.segment} -o {output.cluster} && '
+        ' py/freddie_isoforms.py -c {output.cluster} -o {output.gtf} '
+        '"'
+
+rule preprocess_freddie:
+    input:
+        reads  = lambda wildcards: config['samples'][wildcards.sample],
+        index = config['references']['dna_desalt'],
+    output:
+        sam=protected('{}/{{sample}}.sam'.format(preprocess_d)),
+    threads:
+        4
+    shell:
+        'py/freddie_align.py -r  {input.reads}  -i {input.index} -s ont1d -o {output.sam} -t 4'
 
 rule preprocess_flair:
     input:
@@ -153,6 +186,6 @@ rule flair:
         out_prefix='{}/flair.{{sample}}'.format(output_d),
     shell:
         '{params.gnu_time} -f {params.gnu_time_format} -o {output.time} bash -c "'
-        ' flair.py correct  -t 1 -q {input.bed}                           -o {params.out_prefix} -g {input.genome} -f {input.gtf} ;'
+        ' flair.py correct  -t 1 -q {input.bed}                           -o {params.out_prefix} -g {input.genome} -f {input.gtf} &&'
         ' flair.py collapse -t 1 -q {params.out_prefix}_all_corrected.bed -o {params.out_prefix} -g {input.genome} -f {input.gtf} -r {input.reads} '
         '"'

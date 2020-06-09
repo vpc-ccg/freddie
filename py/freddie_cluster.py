@@ -45,12 +45,12 @@ def parse_args():
     parser.add_argument("-to",
                         "--timeout",
                         type=int,
-                        default=15,
-                        help="Gurobi time-out in minutes. Default: 15")
+                        default=4,
+                        help="Gurobi time-out in minutes. Default: 4")
     parser.add_argument("-t",
                         "--threads",
                         type=int,
-                        default=8,
+                        default=1,
                         help="Number of threads to use")
     parser.add_argument("-l",
                         "--logs-dir",
@@ -421,19 +421,16 @@ def run_ilp(tint, remaining_rids, ilp_settings, log_prefix):
                         vars   = [R2I[i][k],E2I[j][k]],
                         name   = 'OBJ_C1[{i}][{j}][{k}]'.format(i=i,j=j,k=k)
                     )
-                    OBJ_SUM.addTerms(
-                        coeffs = 1.0,
-                        vars   = OBJ[i][j][k]
-                    )
+                    OBJ_SUM.addTerms(1.0, OBJ[i][j][k])
+                    #     coeffs = 1.0,
+                    #     vars   = OBJ[i][j][k]
+                    # )
     # We add the chosen cost for each isoform assigned to the garbage isoform if any
     GAR_OBJ   = {}
     GAR_OBJ_C = {}
     for i in remaining_rids:
         if ilp_settings['recycle_model'] in ['constant', 'exons', 'introns']:
-            OBJ_SUM.addTerms(
-                coeffs = 1.0*GARBAGE_COST[i],
-                vars   = R2I[i][0]
-            )
+            OBJ_SUM.addTerms(1.0*GARBAGE_COST[i], R2I[i][0])
         elif ilp_settings['recycle_model'] == 'relative':
             GAR_OBJ[i]   = {}
             GAR_OBJ_C[i] = {}
@@ -451,10 +448,7 @@ def run_ilp(tint, remaining_rids, ilp_settings, log_prefix):
                             vars   = [R2I[i][0],E2I_min[j][k]],
                             name   = 'GAR_OBJ_C[{i}][{j}][{k}]'.format(i=i,j=j,k=k)
                         )
-                        OBJ_SUM.addTerms(
-                            coeffs = 1.0,
-                            vars   = GAR_OBJ[i][j][k]
-                        )
+                        OBJ_SUM.addTerms(1.0, GAR_OBJ[i][j][k])
                     elif I[i][j] == 0 and C[i][j] == 1:
                         pass
 
@@ -476,21 +470,10 @@ def run_ilp(tint, remaining_rids, ilp_settings, log_prefix):
 
     isoforms = {k:dict() for k in range(ISOFORM_INDEX_START,ilp_settings['K'])}
     print('STATUS: {}'.format(ILP_ISOFORMS_STATUS))
-    if ILP_ISOFORMS_STATUS == GRB.Status.INF_OR_UNBD or \
-           ILP_ISOFORMS_STATUS == GRB.Status.INFEASIBLE or \
-           ILP_ISOFORMS_STATUS == GRB.Status.UNBOUNDED:
+    if ILP_ISOFORMS_STATUS != GRB.Status.OPTIMAL:
         status = 'NO_SOLUTION'
-        ILP_ISOFORMS.computeIIS()
-        ILP_ISOFORMS.write('{}.ilp'.format(log_prefix))
-    elif ILP_ISOFORMS_STATUS == GRB.Status.OPTIMAL or \
-            ILP_ISOFORMS_STATUS == GRB.Status.SUBOPTIMAL or \
-            ILP_ISOFORMS_STATUS == GRB.Status.TIME_LIMIT:
-        if ILP_ISOFORMS_STATUS == GRB.Status.SUBOPTIMAL:
-            status = 'SUBOPTIMAL'
-        elif ILP_ISOFORMS_STATUS == GRB.Status.TIME_LIMIT:
-            status = 'TIME_LIMIT'
-        else:
-            status = 'OPTIMAL'
+    else:
+        status = 'OPTIMAL'
         # Writing the optimal solution to disk
         solution_file = open('{}.sol'.format(log_prefix), 'w+')
         for v in ILP_ISOFORMS.getVars():
