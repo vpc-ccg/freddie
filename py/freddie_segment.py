@@ -140,6 +140,18 @@ def read_split(split_tsv):
     return tints
 
 def read_sequence(tints, read_files):
+    rev_comp = dict(
+        A='T',
+        C='G',
+        G='C',
+        T='A'
+    )
+    dna_id = dict(
+        A='A',
+        C='C',
+        G='G',
+        T='T'
+    )
     name_to_idx=dict()
     for tidx,tint in enumerate(tints):
         for ridx,read in enumerate(tint['reads']):
@@ -176,6 +188,10 @@ def read_sequence(tints, read_files):
         for read in tint['reads']:
             assert read['seq'] != ''
             read['length']=len(read['seq'])
+            if read['strand']=='+':
+                read['seq']=''.join(dna_id.get(x,'N') for x in read['seq'].upper())
+            else:
+                read['seq']=''.join(rev_comp.get(x,'N') for x in reversed(read['seq'].upper()))
     return
 
 def forward_thread_cigar(cigar, t_goal, t_pos, q_pos):

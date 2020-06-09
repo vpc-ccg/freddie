@@ -52,12 +52,21 @@ def parse_args():
                         type=int,
                         default=8,
                         help="Number of threads to use")
+    parser.add_argument("-l",
+                        "--logs-dir",
+                        type=str,
+                        default=None,
+                        help="Directory path where logs will be outputted. Default: <--output>.logs")
     parser.add_argument("-o",
                         "--output",
                         type=str,
                         default='freddie_cluster.tsv',
                         help="Path to output file. Default: freddie_cluster.tsv")
     args = parser.parse_args()
+
+    if args.logs_dir == None:
+        args.logs_dir = args.output + '.logs'
+    args.logs_dir = args.logs_dir.rstrip('/')
 
     assert args.recycle_model in recycle_models
     assert args.gap_offset       >= 0
@@ -67,7 +76,64 @@ def parse_args():
     assert args.min_isoform_size >= 0
     assert args.max_rounds       >= 0
 
-    return(args)
+    return args
+
+def read_segment(segment_tsv):
+    tints = list()
+    tint_prog   = re.compile(r'#%(chr_re)s\t%(cid_re)s\t%(positions_re)s\n$' % {
+        'chr_re'       : '(?P<chr>[0-9A-Za-z!#$%&+./:;?@^_|~-][0-9A-Za-z!#$%&*+./:;=?@^_|~-]*)',
+        'cid_re'       : '(?P<cid>[0-9]+)',
+        'positions_re' : '(?P<positions>([0-9]+)(,([0-9]+))*)',
+    })
+    internal_gap_re = '(\d+)-(\d+):(\d+),'
+    softclip_gap_re = '([ES]SC):(\d+),'
+    poly_gap_re     = '([ES][AT])_(\d+):(\d+),'
+    read_prog = re.compile(r'%(rid_re)s\t%(name_re)s\t%(chr_re)s\t%(strand_re)s\t%(cid_re)s\t%(data_re)s\t%(gaps)s\n$' % {
+        'rid_re'    : '(?P<rid>[0-9]+)',
+        'name_re'   : '(?P<name>[!-?A-~]{1,254})',
+        'chr_re'    : '(?P<chr>[0-9A-Za-z!#$%&+./:;?@^_|~-][0-9A-Za-z!#$%&*+./:;=?@^_|~-]*)',
+        'strand_re' : '(?P<strand>[+-])',
+        'cid_re'    : '(?P<cid>[0-9]+)',
+        'data_re'   : '(?P<data>[012]+)',
+        'gaps'      : r'(?P<gaps>(%(i)s|%(s)s|%(p)s)*)' % {'i':internal_gap_re, 's':softclip_gap_re, 'p':poly_gap_re},
+    })
+    internal_gap_prog = re.compile(internal_gap_re)
+    softclip_gap_prog = re.compile(softclip_gap_re)
+    poly_gap_prog    = re.compile(poly_gap_re)
+    for line in open(segment_tsv):
+        if line[0]=='#':
+            re_dict = tint_prog.match(line).groupdict()
+            tint = dict(
+                id    = int(re_dict['cid']),
+                chr   = re_dict['chr'],
+                segs  = [int(x) for x in re_dict['positions'].split(',')],
+                reads = list(),
+            )
+            assert all(a<b for a,b in zip(tint['segs'][:-1],tint['segs'][1:])),(tint['segs'])
+            tint['segs'] = [(s,e,e-s) for s,e in zip(tint['segs'][:-1],tint['segs'][1:])]
+            if tint['id'] >= len(tints):
+                tints.extend([None]*(tint['id']-len(tints)+1))
+            assert tints[tint['id']] == None, 'Transcriptional interval with id {} is repeated!'.format(tint['id'])
+            tints[tint['id']] = tint
+        else:
+            re_dict = read_prog.match(line).groupdict()
+            read = dict(
+                id         = int(re_dict['rid']),
+                name       = re_dict['name'],
+                chr        = re_dict['chr'],
+                strand     = re_dict['strand'],
+                tint       = int(re_dict['cid']),
+                data       = [int(d) for d in re_dict['data']],
+                gaps       = {(int(g[0]),int(g[1])) : int(g[2])             for g in internal_gap_prog.findall(re_dict['gaps'])},
+                softclip   = {s[0]                  : int(s[1])             for s in softclip_gap_prog.findall(re_dict['gaps'])},
+                poly_tail  = {p[0]                  : (int(p[1]),int(p[2])) for p in poly_gap_prog.findall(    re_dict['gaps'])},
+            )
+            tind_id = read['tint']
+            tints[tind_id]['reads'].append(read)
+            assert len(read['data'])==len(tints[tind_id]['segs']), (read['data'],tints[tind_id]['segs'])
+            assert read['chr']==tints[tind_id]['chr']
+            assert all(0<=g[0]<g[1]<len(read['data']) for g in read['gaps'].keys())
+    return tints
 
 def find_segment_read(M,i):
     min_i = -1
@@ -88,45 +154,41 @@ def garbage_cost_exons(I):
     return(max(sum(I.values())-0.5,1))
 # TO DO: think about better ways to define the cost to assign to the garbagte isoform
 
-def preprocess_ilp(reads, segs, ilp_settings):
-    print('Preproessing ILP with {} reads and the following settings:\n{}'.format(len(reads), ilp_settings))
+def preprocess_ilp(tint, ilp_settings):
+    print('Preproessing ILP with {} reads and the following settings:\n{}'.format(len(tint['reads']), ilp_settings))
+    reads = tint['reads']
     N = len(reads)
-    M = len(segs)
+    M = len(tint['segs'])
     I = dict()
     C = dict()
-    for i in range(N):
+    tail_s_rids = list()
+    tail_e_rids = list()
+
+    for i,read in enumerate(reads):
         I[i] = dict()
         for j in range(0,M):
-            I[i][j] = reads[i]['data'][j]%2
+            I[i][j] = read['data'][j]%2
         C[i] = dict()
         (min_i,max_i) = find_segment_read(I,i)
-        if ilp_settings['strand']=='-' and reads[i]['tail']['ST'][0]>10:
-            reads[i]['gaps'][(-1,min_i)] = reads[i]['tail']['ST'][1]
-            min_i = 0
-        elif ilp_settings['strand']=='+' and reads[i]['tail']['EA'][0]>10:
-            reads[i]['gaps'][(max_i,M)] = reads[i]['tail']['EA'][1]
-            max_i = M-1
+
+        if len(read['poly_tail'])==1:
+            tail_key = next(iter(read['poly_tail']))
+            tail_val = read['poly_tail'][tail_key]
+            if tail_key in ['SA','ST'] and tail_val[0] > 10:
+                tail_s_rids.append(i)
+                read['gaps'][(-1,min_i)] = tail_val[1]
+                min_i = 0
+            elif tail_key in ['EA','ET'] and tail_val[0] > 10:
+                tail_e_rids.append(i)
+                read['gaps'][(max_i,M)] = tail_val[1]
+                max_i = M-1
         for j in range(0,M):
             if min_i <= j <= max_i and reads[i]['data'][j]==0:
                 C[i][j]   = 1
             else:
                 C[i][j]   = 0
-    # List of incompatible pairs of reads
-    INCOMP_READ_PAIRS_AUX1 = list()
-    # Read i1 and i2 have a 1 and a 2 in a given position j
-    for i1 in range(N):
-        for i2 in range(i1+1,N):
-            incomp = False
-            for j in range(M):
-                if reads[i1]['data'][j]*reads[i2]['data'][j]==2:
-                    incomp=True
-                    break
-            if incomp:
-                INCOMP_READ_PAIRS_AUX1.append((i1,i2))
-    print('# Number of incompatible read pairs due to a (1,2) pattern: {X}\n'.format(X=len(INCOMP_READ_PAIRS_AUX1)))
-
     # If r1 and r2 don't have any 1 in common, then they are incompatible
-    INCOMP_READ_PAIRS_AUX2 = list()
+    incomp_rids = list()
     for i1 in range(N):
         for i2 in range(i1+1,N):
             incomp = True
@@ -135,42 +197,49 @@ def preprocess_ilp(reads, segs, ilp_settings):
                     incomp=False
                     break
             if incomp:
-                INCOMP_READ_PAIRS_AUX2.append((i1,i2))
-    print('# Number of incompatible read pairs due to not having any common exons: {X}\n'.format(X=len(INCOMP_READ_PAIRS_AUX2)))
+                incomp_rids.append((i1,i2))
+    print('# Number of incompatible read pairs due to not having any common exons: {}\n'.format(len(incomp_rids)))
+    for i1 in tail_s_rids:
+        for i2 in tail_e_rids:
+            if i1 < i2:
+                incomp_rids.append((i1,i2))
+            else:
+                incomp_rids.append((i2,i1))
 
-    INCOMP_READ_PAIRS = list(set(INCOMP_READ_PAIRS_AUX1)|set(INCOMP_READ_PAIRS_AUX2))
-    print('# Total number of incompatible read pairs: {X}\n'.format(X=len(INCOMP_READ_PAIRS)))
+    incomp_rids = list(set(incomp_rids))
+    print('# Total number of incompatible read pairs: {}\n'.format(len(incomp_rids)))
 
     # Assigning a cost to the assignment of reads to the garbage isoform
-    GARBAGE_COST = {}
+    garbage_cost = {}
     for i in range(N):
         if ilp_settings['recycle_model'] == 'exons':
-            GARBAGE_COST[i] = garbage_cost_exons(I=I[i])
+            garbage_cost[i] = garbage_cost_exons(I=I[i])
         elif ilp_settings['recycle_model'] == 'introns':
-            GARBAGE_COST[i] = garbage_cost_introns(C=C[i])
+            garbage_cost[i] = garbage_cost_introns(C=C[i])
         elif ilp_settings['recycle_model'] == 'constant':
-            GARBAGE_COST[i] = 1
-    ilp_settings['I'] = I
-    ilp_settings['C'] = C
-    ilp_settings['INCOMP_READ_PAIRS'] = INCOMP_READ_PAIRS
-    ilp_settings['GARBAGE_COST'] = GARBAGE_COST
+            garbage_cost[i] = 1
+    tint['ilp_data']=dict(
+        I=I,
+        C=C,
+        incomp_rids=incomp_rids,
+        garbage_cost=garbage_cost,
+    )
 
-def run_ILP(reads, remaining_rids, segs, ilp_settings, out_prefix):
-    os.makedirs(out_prefix[:out_prefix.rfind('/')], exist_ok=True)
+def run_ilp(tint, remaining_rids, ilp_settings, log_prefix):
     # Variables directly based on the input ------------------------------------
     # I[i,j] = 1 if reads[i]['data'][j]==1 and 0 if reads[i]['data'][j]==0 or 2
     # C[i,j] = 1 if exon j is between the first and last exons (inclusively)
     #   covered by read i and is not in read i but can be turned into a 1
     ISOFORM_INDEX_START = 1
-    M = len(segs)
-    MAX_ISOFORM_LG = sum(seg[2] for seg in segs)
-    I                 = ilp_settings['I']
-    C                 = ilp_settings['C']
-    INCOMP_READ_PAIRS = ilp_settings['INCOMP_READ_PAIRS']
-    GARBAGE_COST      = ilp_settings['GARBAGE_COST']
+    M = len(tint['segs'])
+    MAX_ISOFORM_LG = sum(seg[2] for seg in tint['segs'])
+    I                 = tint['ilp_data']['I']
+    C                 = tint['ilp_data']['C']
+    INCOMP_READ_PAIRS = tint['ilp_data']['incomp_rids']
+    GARBAGE_COST      = tint['ilp_data']['garbage_cost']
 
     # ILP model ------------------------------------------------------
-    ILP_ISOFORMS = Model('isoforms_v6_20200418')
+    ILP_ISOFORMS = Model('isoforms_v7_20200608')
     ILP_ISOFORMS.setParam(GRB.Param.Threads, ilp_settings['threads'])
 
     # Decision variables
@@ -268,7 +337,7 @@ def run_ILP(reads, remaining_rids, segs, ilp_settings, out_prefix):
     GAPR_C1 = {} # Constraint ensuring that the unaligned gap is not too short for every isoform and gap
     GAPR_C2 = {} # Constraint ensuring that the unaligned gap is not too long for every isoform and gap
     for i in remaining_rids:
-        for ((j1,j2),l) in reads[i]['gaps'].items():
+        for ((j1,j2),l) in tint['reads'][i]['gaps'].items():
             for k in range(ISOFORM_INDEX_START,ilp_settings['K']): # No such constraint on the garbage isoform if any
                 if not (j1,j2,k) in GAPI:
                     GAPI[(j1,j2,k)]      = ILP_ISOFORMS.addVar(
@@ -278,7 +347,7 @@ def run_ILP(reads, remaining_rids, segs, ilp_settings, out_prefix):
                     GAPI_C1[(j1,j2,k)]   = ILP_ISOFORMS.addLConstr(
                         lhs   = GAPI[(j1,j2,k)],
                         sense = GRB.EQUAL,
-                        rhs   = quicksum(E2I[j][k]*segs[j][2] for j in range(j1+1,j2)),
+                        rhs   = quicksum(E2I[j][k]*tint['segs'][j][2] for j in range(j1+1,j2)),
                         name  = 'GAPI_C1[({j1},{j2},{k})]'.format(j1=j1,j2=j2,k=k)
                     )
                 GAPR_C1[(i,j1,j2,k)] = ILP_ISOFORMS.addLConstr(
@@ -365,7 +434,7 @@ def run_ILP(reads, remaining_rids, segs, ilp_settings, out_prefix):
                 coeffs = 1.0*GARBAGE_COST[i],
                 vars   = R2I[i][0]
             )
-        elif RE_MOD == 'relative':
+        elif ilp_settings['recycle_model'] == 'relative':
             GAR_OBJ[i]   = {}
             GAR_OBJ_C[i] = {}
             for j in range(0,M):
@@ -394,12 +463,12 @@ def run_ILP(reads, remaining_rids, segs, ilp_settings, out_prefix):
         sense = GRB.MINIMIZE
     )
 
-    ILP_ISOFORMS.write('{}.lp'.format(out_prefix))
+    ILP_ISOFORMS.write('{}.lp'.format(log_prefix))
 
     # Optimization
     #ILP_ISOFORMS.Params.PoolSearchMode=2
     #ILP_ISOFORMS.Params.PoolSolutions=5
-    ILP_ISOFORMS.setParam('LogFile', '{}.glog'.format(out_prefix))
+    ILP_ISOFORMS.setParam('LogFile', '{}.glog'.format(log_prefix))
     ILP_ISOFORMS.setParam('TimeLimit', ilp_settings['timeout']*60)
     ILP_ISOFORMS.optimize()
 
@@ -412,7 +481,7 @@ def run_ILP(reads, remaining_rids, segs, ilp_settings, out_prefix):
            ILP_ISOFORMS_STATUS == GRB.Status.UNBOUNDED:
         status = 'NO_SOLUTION'
         ILP_ISOFORMS.computeIIS()
-        ILP_ISOFORMS.write('{}.ilp'.format(out_prefix))
+        ILP_ISOFORMS.write('{}.ilp'.format(log_prefix))
     elif ILP_ISOFORMS_STATUS == GRB.Status.OPTIMAL or \
             ILP_ISOFORMS_STATUS == GRB.Status.SUBOPTIMAL or \
             ILP_ISOFORMS_STATUS == GRB.Status.TIME_LIMIT:
@@ -423,7 +492,7 @@ def run_ILP(reads, remaining_rids, segs, ilp_settings, out_prefix):
         else:
             status = 'OPTIMAL'
         # Writing the optimal solution to disk
-        solution_file = open('{}.sol'.format(out_prefix), 'w+')
+        solution_file = open('{}.sol'.format(log_prefix), 'w+')
         for v in ILP_ISOFORMS.getVars():
             solution_file.write('{}\t{}\n'.format(v.VarName, v.X))
         solution_file.close()
@@ -445,130 +514,121 @@ def run_ILP(reads, remaining_rids, segs, ilp_settings, out_prefix):
         # Read id to its exon corrections
         for k in range(ISOFORM_INDEX_START,ilp_settings['K']):
             for i in isoforms[k]['rid_to_corrections'].keys():
-                isoforms[k]['rid_to_corrections'][i] = [str(reads[i]['data'][j]) for j in range(M)]
+                isoforms[k]['rid_to_corrections'][i] = [str(tint['reads'][i]['data'][j]) for j in range(M)]
                 for j in range(0,M):
                     if C[i][j] == 1 and OBJ[i][j][k].getAttr(GRB.Attr.X) > 0.9:
                         isoforms[k]['rid_to_corrections'][i][j] = 'X'
     return status,isoforms
 
-def output_isoforms(isoforms, reads, garbage_rids, segs, outpath):
-    out_file = open(outpath, 'w+')
-    for idx,isoform in enumerate(isoforms):
+def output_isoforms(tint, out_file):
+    reads = tint['reads']
+    output = list()
+    output.append('#{}'.format(tint['chr']))
+    output.append(str(tint['id']))
+    output.append(','.join([str(s[0]) for s in tint['segs']]+[str(tint['segs'][-1][1])]))
+    out_file.write('{}\n'.format('\t'.join(output)))
+    for iid,isoform in enumerate(tint['isoforms']):
         output = list()
-        isoform_name = 'isoform_{:03d}'.format(idx)
-        output.append(isoform_name)
-        output.append('.')
-        output.append('.')
-        output.append(''.join([str(e) for e in isoform['exons']]))
-        output.extend([str(seg[2]*isoform['exons'][eid]) for eid,seg in enumerate(segs)])
-        out_file.write('#{}\n'.format('\t'.join(output)))
+        output.append('isoform_{}'.format(iid))
+        output.append(str(tint['id']))
+        output.append(''.join(map(str, isoform['exons'])))
+        out_file.write('{}\n'.format('\t'.join(output)))
         for i,corrections in isoform['rid_to_corrections'].items():
             output = list()
-            output.append(isoform_name)
+            output.append(str(reads[i]['id']))
             output.append(reads[i]['name'])
-            output.append(str(i))
-            output.append(''.join([str(x) for x in corrections]))
+            output.append(reads[i]['chr'])
+            output.append(reads[i]['strand'])
+            output.append(str((reads[i]['tint'])))
+            output.append(str(iid))
+            output.append(''.join(map(str,corrections)))
             exon_strs = [str(x) for x in corrections]
             for (j1,j2),l in reads[i]['gaps'].items():
                 exon_strs[j1]+='({})'.format(l)
             output.extend(exon_strs)
-            for k,v in sorted(reads[i]['tail'].items()):
+            for k,v in sorted(reads[i]['poly_tail'].items()):
                 output.append('{}:{}'.format(k,v))
             out_file.write('{}\n'.format('\t'.join(output)))
-    output = list()
-    output.append('isoform_GARB')
-    output.append('.')
-    output.append('.')
-    output.append(''.join('0'*len(segs)))
-    output.extend([str(0)]*len(segs))
-    out_file.write('#{}\n'.format('\t'.join(output)))
-    for i in garbage_rids:
+    for i in tint['garbage_rids']:
         output = list()
-        output.append('isoform_GARB')
+        output.append(str(reads[i]['id']))
         output.append(reads[i]['name'])
-        output.append(str(i))
-        output.append(''.join([str(x) for x in reads[i]['data']]))
+        output.append(reads[i]['chr'])
+        output.append(reads[i]['strand'])
+        output.append(str((reads[i]['tint'])))
+        output.append('*')
+        output.append('*')
         exon_strs = [str(x) for x in reads[i]['data']]
         for (j1,j2),l in reads[i]['gaps'].items():
             exon_strs[j1]+='({})'.format(l)
         output.extend(exon_strs)
-        for k,v in sorted(reads[i]['tail'].items()):
+        for k,v in sorted(reads[i]['poly_tail'].items()):
             output.append('{}:{}'.format(k,v))
         out_file.write('{}\n'.format('\t'.join(output)))
-    out_file.close()
+
+def cluster_tint(cluster_args):
+    tint, ilp_settings, min_isoform_size, logs_dir=cluster_args
+
+    os.makedirs('{}/{}'.format(logs_dir, tint['id']), exist_ok=True)
+    preprocess_ilp(tint, ilp_settings)
+    tint['isoforms'] = list()
+    remaining_rids = set(range(len(tint['reads'])))
+
+    for round in range(ilp_settings['max_rounds']):
+        print('==========\ntint {}: Running {}-th round with {} reads...'.format(tint['id'], round, len(remaining_rids)))
+        if len(remaining_rids) < min_isoform_size:
+            break
+        status,round_isoforms = run_ilp(
+            tint          = tint,
+            remaining_rids = remaining_rids,
+            ilp_settings   = ilp_settings,
+            log_prefix     = '{}/{}/round.{}'.format(logs_dir, tint['id'], round),
+        )
+        if status != 'OPTIMAL' or max([0]+[len(i['rid_to_corrections']) for i in round_isoforms.values()]) < min_isoform_size:
+            break
+        for k,isoform in round_isoforms.items():
+            print('Isoform {} size: {}'.format(k, len(isoform['rid_to_corrections'])))
+            if len(isoform['rid_to_corrections']) < min_isoform_size:
+                continue
+            tint['isoforms'].append(isoform)
+            for rid,corrections in isoform['rid_to_corrections'].items():
+                assert rid in remaining_rids
+                remaining_rids.remove(rid)
+                tint['reads'][rid]['corrections']=corrections
+                tint['reads'][rid]['isoform']=len(tint['isoforms'])-1
+        print('------->')
+        print('Remaining reads: {}\n'.format(len(remaining_rids)))
+        print('<-------')
+    tint['garbage_rids'] = sorted(remaining_rids)
+    for rid in tint['garbage_rids']:
+        tint['reads'][rid]['isoform']     = None
+        tint['reads'][rid]['corrections'] = None
+    return tint
 
 def main():
     args = parse_args()
 
-
-
-    segs = get_segments(segments=args.segments)
-    reads = [dict(name=name.rstrip()) for name in open(args.names)]
-    if len(reads)==0:
-        print('No reads for this gene!')
-        out_file = open('{}.tsv'.format(args.out_prefix),'w+')
-        out_file.close()
-        exit()
-    get_data(data=args.data, segs=segs, reads=reads)
-    get_gaps(gaps=args.gaps, segs=segs, reads=reads)
-
-    strand = list({l.rstrip().split('\t')[2] for l in open(args.transcripts)})
-    assert len(strand)==1
-    strand = strand[0]
-
-    print('Matrix size: {}x{}'.format(len(reads),len(segs)))
-
-    remaining_rids = set(rid for rid in range(len(reads)))
-    for read in reads:
-        read['isoform']=-1
-
-    isoforms           = list()
     ilp_settings=dict(
-        recycle_model   = args.recycle_model,
-        strand  = strand,
-        K       = 2,
-        epsilon = args.epsilon,
-        offset  = args.gap_offset,
-        timeout = args.timeout,
-        threads = args.threads,
+        recycle_model    = args.recycle_model,
+        K                = 2,
+        epsilon          = args.epsilon,
+        offset           = args.gap_offset,
+        timeout          = args.timeout,
+        max_rounds       = args.max_rounds,
+        threads          = 1,
     )
-    preprocess_ilp(reads, segs, ilp_settings)
-    print('ILP params: {}'.format(ilp_settings.keys()))
-    for round in range(args.max_rounds):
-        print('==========\nRunning {}-th round with {} reads...'.format(round, len(remaining_rids)))
-        if len(remaining_rids) < args.min_isoform_size:
-            break
-        status,round_isoforms = run_ILP(
-            reads          = reads,
-            remaining_rids = remaining_rids,
-            segs           = segs,
-            ilp_settings   = ilp_settings,
-            out_prefix     = '{}.gurobi_logs/round.{}'.format(args.out_prefix, round)
-        )
-        if status != 'OPTIMAL' or max([0]+[len(i['rid_to_corrections']) for i in round_isoforms.values()]) < args.min_isoform_size:
-            break
-        for k,isoform in round_isoforms.items():
-            print('Isoform {} size: {}'.format(k, len(isoform['rid_to_corrections'])))
-            if len(isoform['rid_to_corrections']) < args.min_isoform_size:
-                continue
-            isoforms.append(isoform)
-            for rid,corrections in isoform['rid_to_corrections'].items():
-                assert rid in remaining_rids
-                remaining_rids.remove(rid)
-                reads[rid]['corrections']=corrections
-                reads[rid]['isoform']=len(isoforms)-1
-        print('------->')
-        print('Remaining reads: {}\n'.format(len(remaining_rids)))
-        print('<-------')
-
-    output_isoforms(
-        isoforms     = isoforms,
-        reads        = reads,
-        garbage_rids = remaining_rids,
-        segs         = segs,
-        outpath      = '{}.tsv'.format(args.out_prefix)
-    )
-
-
+    tints = read_segment(segment_tsv=args.segment_tsv)
+    cluster_args = [
+        (tint, ilp_settings, args.min_isoform_size, args.logs_dir) for tint in tints
+    ]
+    print(ilp_settings)
+    out_file = open(args.output, 'w')
+    with Pool(args.threads) as p:
+        if args.threads == 1:
+            p.close()
+        for idx,tint in enumerate(p.imap_unordered(cluster_tint, cluster_args, chunksize=20)) if args.threads>1 else enumerate(map(cluster_tint, cluster_args)):
+            output_isoforms(tint, out_file)
+            print('Done with {}-th transcriptional multi-intervals ({}/{})'.format(tint['id'], idx+1,len(tints)))
+    out_file.close()
 if __name__ == "__main__":
     main()
