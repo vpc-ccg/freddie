@@ -63,7 +63,7 @@ rule ref_gtf_from_non_sim:
     output:
         gtf=protected('{}/{{sample}}.ref.gtf'.format(preprocess_d)),
     shell:
-        'ln -s {input.gtf} {output.gtf}'
+        'cp {input.gtf} {output.gtf}'
 
 
 rule ref_gtf_from_sim:
