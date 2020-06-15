@@ -55,6 +55,8 @@ def output_gtf(tints, outpath):
             l_seg = len(isoform['data'])-1 - isoform['data'][::-1].index('1')
             record.append(str(tint['segs'][l_seg][1]))
             record.append('.')
+            record.append('+')
+            record.append('.')
             record.append('transcript_id "{chr}_{tint}_{iid}"; '.format(
                 chr=tint['chr'],
                 tint=tint['id'],
