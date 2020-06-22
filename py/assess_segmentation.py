@@ -32,6 +32,11 @@ def parse_args():
                         type=int,
                         default=4,
                         help="Min read coverage threshold per transcript. Default: 4")
+    parser.add_argument("-w",
+                        "--window",
+                        type=int,
+                        default=5,
+                        help="Plus/minus window for matching. Default: 5")
     args = parser.parse_args()
 
     return args
@@ -138,11 +143,11 @@ def main():
 
 
     print('--> Freddie matches in annotation:')
-    d=compare(a_pos=freddie_positions, b_pos=annotation_positions)
+    d=compare(a_pos=freddie_positions, b_pos=annotation_positions, w=args.window)
     for k,v in sorted(d.items()):
         print('{} ({}%) positions with {} matches'.format(v,v*1000//Freddie_sum/10.0,k))
     print('--> Annotation matches in freddie:')
-    d=compare(a_pos=annotation_positions, b_pos=freddie_positions, a_bound=b_pos)
+    d=compare(a_pos=annotation_positions, b_pos=freddie_positions, w=args.window, a_bound=b_pos)
     for k,v in sorted(d.items()):
         print('{} ({}%) positions with {} matches'.format(v,v*1000//annotation_sum/10.0,k))
 
