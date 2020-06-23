@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from multiprocessing import Pool
 import os
 import argparse
 import re
@@ -55,6 +56,11 @@ def parse_args():
                         type=str,
                         required=True,
                         help="Path to TSV file of Freddie cluster")
+    parser.add_argument("-t",
+                        "--threads",
+                        type=int,
+                        default=1,
+                        help="Number of threads. Default: 1")
     parser.add_argument("-od",
                         "--out-dir",
                         type=str,
@@ -62,6 +68,7 @@ def parse_args():
                         help="Output directory. Will be created if does not exist. Default: freddie_plot")
     args = parser.parse_args()
     args.out_dir = args.out_dir.rstrip('/')
+    assert 1 <= args.threads <= 256
     return args
 
 def plot_isoform(isoform, transcripts, plot_settings, outpath):
@@ -318,7 +325,10 @@ def get_tints(cluster_tsv, segment_tsv):
                 tints[tint_id]['tids'].add(read['tid'])
     return tints
 
-def plot_tint(tint, transcripts, out_dir):
+def plot_tint(plot_args):
+    tint,transcripts,out_dir = plot_args
+    print('Outputting to',out_dir)
+    os.makedirs(out_dir, exist_ok=True)
     plot_settings = dict()
 
     grid_lens = list()
@@ -369,8 +379,13 @@ def main():
     #     print(tid)
     #     print(transcript['intervals'])
     #     print(transcript['name'])
-    tints = get_tints(cluster_tsv=args.cluster_tsv, segment_tsv=args.segment_tsv)
-    # for tint in tints.values():
+    plot_args = list()
+    for tint in get_tints(cluster_tsv=args.cluster_tsv, segment_tsv=args.segment_tsv).values():
+        plot_args.append((
+            tint,
+            transcripts,
+            '{}/{}'.format(args.out_dir, tint['id']),
+        ))
     #     print(tint['id'])
     #     print(tint['chrom'])
     #     print(tint['segs'])
@@ -384,11 +399,13 @@ def main():
     #             print(read)
 
     os.makedirs(args.out_dir, exist_ok=True)
-    for tint in tints.values():
-        out_dir='{}/{}'.format(args.out_dir, tint['id'])
-        print('Outputting to',out_dir)
-        os.makedirs(out_dir, exist_ok=True)
-        plot_tint(tint=tint, transcripts=transcripts, out_dir=out_dir)
+    if args.threads > 1:
+        with Pool(args.threads) as p:
+            for _ in p.imap_unordered(plot_tint, plot_args, chunksize=20):
+                pass
+    else:
+        for _ in map(plot_tint, plot_args):
+            pass
 
 if __name__ == "__main__":
     main()
