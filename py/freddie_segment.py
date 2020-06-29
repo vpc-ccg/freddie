@@ -525,7 +525,7 @@ def segment(segment_args):
         tint['final_positions'].extend([Yy_idx_to_pos[Y_idx][y_idx] for y_idx in final_y_idxs])
         for r_idx,read in enumerate(tint['reads']):
             for s,e in zip(final_c_idxs[:-1],final_c_idxs[1:]):
-                cov_ratio = (cumulative_coverage[e][r_idx]-cumulative_coverage[s][r_idx])/(candidate_y_idxs[e]-candidate_y_idxs[s]+1)
+                cov_ratio = (cumulative_coverage[e][r_idx]-cumulative_coverage[s][r_idx])/max(1,(candidate_y_idxs[e]-candidate_y_idxs[s]+1-10))
                 if cov_ratio > high_threshold:
                     read['data'].append(1)
                 elif cov_ratio < low_threshold:
