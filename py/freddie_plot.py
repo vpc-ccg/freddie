@@ -221,12 +221,21 @@ def plot_isoform(isoform, transcripts, plot_settings, outpath):
         for aid,ax in enumerate(r_axes):
             if read['data'][aid]=='0':
                 continue
-            ax.add_patch(patches.Rectangle(
-                xy     = (0,p),
-                width  = 1,
-                height = 1,
-                color  = color,
-            ))
+            if read['data'][aid]=='1':
+                ax.add_patch(patches.Rectangle(
+                    xy     = (0,p),
+                    width  = 1,
+                    height = 1,
+                    color  = color,
+                ))
+            if read['data'][aid]=='2':
+                ax.add_patch(patches.Rectangle(
+                    xy     = (0,p),
+                    width  = 1,
+                    height = 1,
+                    facecolor  = color,
+                    hatch     = '/',
+                ))
     # for ax in r_axes+[sce_ax,scs_ax]:
     #     ax.hlines(y=ch_changes, xmin=0, xmax=1, alpha=0.4)
     for p,tid in enumerate(plot_settings['plot_tids']):
