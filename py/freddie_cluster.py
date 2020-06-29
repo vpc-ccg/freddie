@@ -79,7 +79,7 @@ def parse_args():
     return args
 
 def read_segment(segment_tsv):
-    tints = list()
+    tints = dict()
     tint_prog   = re.compile(r'#%(chr_re)s\t%(cid_re)s\t%(positions_re)s\n$' % {
         'chr_re'       : '(?P<chr>[0-9A-Za-z!#$%&+./:;?@^_|~-][0-9A-Za-z!#$%&*+./:;=?@^_|~-]*)',
         'cid_re'       : '(?P<cid>[0-9]+)',
@@ -111,9 +111,7 @@ def read_segment(segment_tsv):
             )
             assert all(a<b for a,b in zip(tint['segs'][:-1],tint['segs'][1:])),(tint['segs'])
             tint['segs'] = [(s,e,e-s) for s,e in zip(tint['segs'][:-1],tint['segs'][1:])]
-            if tint['id'] >= len(tints):
-                tints.extend([None]*(tint['id']-len(tints)+1))
-            assert tints[tint['id']] == None, 'Transcriptional interval with id {} is repeated!'.format(tint['id'])
+            assert not tint['id'] in tints, 'Transcriptional interval with id {} is repeated!'.format(tint['id'])
             tints[tint['id']] = tint
         else:
             re_dict = read_prog.match(line).groupdict()
@@ -338,6 +336,8 @@ def run_ilp(tint, remaining_rids, ilp_settings, log_prefix):
     GAPR_C2 = {} # Constraint ensuring that the unaligned gap is not too long for every isoform and gap
     for i in remaining_rids:
         for ((j1,j2),l) in tint['reads'][i]['gaps'].items():
+            if l ==62:
+                print((j1,j2),l)
             for k in range(ISOFORM_INDEX_START,ilp_settings['K']): # No such constraint on the garbage isoform if any
                 if not (j1,j2,k) in GAPI:
                     GAPI[(j1,j2,k)]      = ILP_ISOFORMS.addVar(
@@ -602,7 +602,7 @@ def main():
     )
     tints = read_segment(segment_tsv=args.segment_tsv)
     cluster_args = [
-        (tint, ilp_settings, args.min_isoform_size, args.logs_dir) for tint in tints
+        (tint, ilp_settings, args.min_isoform_size, args.logs_dir) for tint in tints.values()
     ]
     print(ilp_settings)
     out_file = open(args.output, 'w')
