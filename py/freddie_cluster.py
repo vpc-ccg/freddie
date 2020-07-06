@@ -35,13 +35,13 @@ def parse_args():
     parser.add_argument("-mr",
                         "--max-rounds",
                         type=int,
-                        default=20,
-                        help="Maximum number of ILP rounds. Default {}".format(20))
+                        default=30,
+                        help="Maximum number of ILP rounds. Default {}".format(30))
     parser.add_argument("-is",
                         "--min-isoform-size",
                         type=int,
-                        default=5,
-                        help="Minimum isoform size in terms of number supporting reads. Default {}".format(5))
+                        default=3,
+                        help="Minimum isoform size in terms of number supporting reads. Default {}".format(3))
     parser.add_argument("-to",
                         "--timeout",
                         type=int,

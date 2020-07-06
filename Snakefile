@@ -11,152 +11,93 @@ def make_slurm():
 outpath = get_abs_path(config['outpath'])
 make_slurm()
 
-genes_d    = '{}/genes'.format(outpath)
-mapped_d   = '{}/mapped'.format(outpath)
-
-gene_data=[
-    'transcripts.tsv',
-    'transcripts.fasta',
-    'gene.fasta',
-    'reads.fastq',
-    'reads.paf',
-]
+output_d = '{}'.format(outpath)
+mapped_d = '{}/mapped'.format(outpath)
 
 rule all:
     input:
-        expand('{}/{{sample}}.deSALT.sam'.format(mapped_d), sample=config['samples']),
-        expand('{}/{{sample}}.deSALT.paf'.format(mapped_d), sample=config['samples']),
-        expand('{}/{{gene}}/{{sample}}/{{data_file}}'.format(genes_d),
-            gene=config['genes'], sample=config['samples'], data_file=gene_data),
-        expand('{}/{{gene}}/{{sample}}/reads.segments.{{extension}}'.format(genes_d),
-            gene=config['genes'], sample=config['samples'], extension=['txt', 'pdf', 'data', 'names']),
-        expand('{}/{{gene}}/{{sample}}/reads.gaps.txt'.format(genes_d),
-            gene=config['genes'], sample=config['samples']),
-        expand('{}/{{gene}}/{{sample}}/reads.isoforms.{{recycle_model}}.{{extension}}'.format(genes_d),
-            gene=config['genes'], sample=config['samples'], recycle_model=config['gurobi']['recycle_models'], extension=['tsv']),
-        expand('{}/{{gene}}/{{sample}}/reads.isoforms.{{recycle_model}}.plots.pdf'.format(genes_d),
-            gene=config['genes'], sample=config['samples'], recycle_model=config['gurobi']['recycle_models'],),
+        expand('{}/freddie.{{sample}}.sam'.format(mapped_d), sample=config['samples']),
+        expand('{}/freddie.{{sample}}.split.tsv'.format(output_d), sample=config['samples']),
+        expand('{}/freddie.{{sample}}.segment.tsv'.format(output_d), sample=config['samples']),
+        expand('{}/freddie.{{sample}}.cluster.tsv'.format(output_d), sample=config['samples']),
+        expand('{}/freddie.{{sample}}.isoforms.gtf'.format(output_d), sample=config['samples']),
+        expand('{}/freddie.{{sample}}.plot/'.format(output_d), sample=config['samples']),
 
-rule deSALT:
+rule align:
     input:
-        index = config['references']['dna_desalt'],
-        reads = lambda wildcards: config['samples'][wildcards.sample],
+        script = config['exec']['align'],
+        index  = config['references']['dna_desalt'],
+        reads  = lambda wildcards: config['samples'][wildcards.sample]['reads'],
     output:
-        sam = protected('{}/{{sample}}.deSALT.sam'.format(mapped_d)),
+        sam = protected('{}/freddie.{{sample}}.sam'.format(mapped_d)),
     params:
-        temp = '{}/{{sample}}.deSALT.temp.'.format(mapped_d),
+        seq_type = lambda wildcards: config['samples'][wildcards.sample]['seq_type'],
     conda:
         'freddie.env'
-    threads:
-        20
-    shell:
-        'deSALT aln -t {threads} -x ont1d --temp-file-perfix {params.temp} -o {output.sam} {input.index} {input.reads}'
-
-rule sam_to_paf:
-    input:
-        script = config['exec']['sam_to_paf'],
-        sam    = '{}/{{sample}}.deSALT.sam'.format(mapped_d),
-    output:
-        paf = '{}/{{sample}}.deSALT.paf'.format(mapped_d),
-    conda:
-        'freddie.env'
-    shell:
-        '{input.script} -s {input.sam} -p {output.paf}'
-
-rule gene_data:
-    input:
-        reads  = lambda wildcards: config['samples'][wildcards.sample],
-        gtf    = config['annotations']['gtf'],
-        genome = config['references']['dna'],
-        paf    = '{}/{{sample}}.deSALT.paf'.format(mapped_d),
-        script = config['exec']['gene_data'],
-    params:
-        out_dir=lambda wildcards: '{}/{}/{}'.format(genes_d, config['genes'][wildcards.gene], wildcards.sample),
-        padding=1000
-    output:
-        ['{}/{{gene}}/{{sample}}/{}'.format(genes_d, out_file) for out_file in gene_data]
-    conda:
-        'freddie.env'
-    shell:
-        '{input.script} --genome {input.genome} --gtf {input.gtf}'
-        '  --fastqs {input.reads} --gene {wildcards.gene} --paf {input.paf}'
-        '  --padding {params.padding} --output {params.out_dir}'
-
-rule find_segments:
-    input:
-        transcripts_tsv = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
-        paf             = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
-        script          = config['exec']['segment'],
-    output:
-        [protected('{}/{{gene}}/{{sample}}/reads.segments.{}'.format(genes_d,ext)) for ext in ['pdf','txt','data','names']]
-    threads:
-        8
-    params:
-        out_prefix='{}/{{gene}}/{{sample}}/reads.segments'.format(genes_d),
-    conda:
-        'freddie.env'
-    shell:
-        '{input.script} -p {input.paf} -t {input.transcripts_tsv} -op {params.out_prefix} -c {threads}'
-
-rule polyA_and_gaps:
-    input:
-        script = config['exec']['polyA_and_gaps'],
-        paf    = '{}/{{gene}}/{{sample}}/reads.paf'.format(genes_d),
-        segs   = '{}/{{gene}}/{{sample}}/reads.segments.txt'.format(genes_d),
-        names  = '{}/{{gene}}/{{sample}}/reads.segments.names'.format(genes_d),
-        data   = '{}/{{gene}}/{{sample}}/reads.segments.data'.format(genes_d),
-        reads  = '{}/{{gene}}/{{sample}}/reads.fastq'.format(genes_d),
-    output:
-        gaps   = '{}/{{gene}}/{{sample}}/reads.gaps.txt'.format(genes_d),
-    conda:
-        'freddie.env'
-    shell:
-        '{input.script} -p {input.paf} -q {input.reads} -s {input.segs} -n {input.names} -d {input.data} -o {output.gaps}'
-
-rule find_isoforms:
-    input:
-        script  = config['exec']['find_isoforms'],
-        transcripts = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
-        data        = '{}/{{gene}}/{{sample}}/reads.segments.data'.format(genes_d),
-        segs        = '{}/{{gene}}/{{sample}}/reads.segments.txt'.format(genes_d),
-        gaps        = '{}/{{gene}}/{{sample}}/reads.gaps.txt'.format(genes_d),
-        names       = '{}/{{gene}}/{{sample}}/reads.segments.names'.format(genes_d),
-    output:
-        isoforms = protected('{}/{{gene}}/{{sample}}/reads.isoforms.{{recycle_model}}.tsv'.format(genes_d)),
-    params:
-        out_prefix = '{}/{{gene}}/{{sample}}/reads.isoforms.{{recycle_model}}'.format(genes_d),
-        epsilon    = 0.2,
-        timeout    = config['gurobi']['timeout'],
-        license    = config['gurobi']['license'],
     threads:
         32
+    shell:
+        '{input.script} -r {input.reads} -i {input.index} -s {params.seq_type} -o {output.sam} -t {threads}'
+
+rule split:
+    input:
+        script = config['exec']['segment'],
+        sam    = '{}/freddie.{{sample}}.sam'.format(mapped_d),
+    output:
+        split = protected('{}/freddie.{{sample}}.split.tsv'.format(output_d)),
     conda:
         'freddie.env'
+    shell:
+        '{input.script} -s {input.sam} -o {output.split}'
+
+rule segment:
+    input:
+        script = config['exec']['segment'],
+        split  = '{}/freddie.{{sample}}.split.tsv'.format(output_d),
+        reads  = lambda wildcards: config['samples'][wildcards.sample]['reads'],
+    output:
+        segment = protected('{}/freddie.{{sample}}.segment.tsv'.format(output_d)),
+    conda:
+        'freddie.env'
+    threads:
+        32
+    shell:
+        '{input.script} -s {input.split} -r {input.reads} -o {output.segment} -t {threads}'
+
+rule cluster:
+    input:
+        script  = config['exec']['segment'],
+        segment ='{}/freddie.{{sample}}.segment.tsv'.format(output_d),
+    output:
+        cluster = protected('{}/freddie.{{sample}}.cluster.tsv'.format(output_d)),
+    conda:
+        'freddie.env'
+    params:
+        license = config['gurobi']['license'],
+        timeout = config['gurobi']['timeout'],
+    threads:
+        32
     shell:
         'export GRB_LICENSE_FILE={params.license}; '
-        '{input.script}'
-        ' -rm    {wildcards.recycle_model} '
-        ' -tr    {input.transcripts} '
-        ' -d     {input.data} '
-        ' -s     {input.segs} '
-        ' -g     {input.gaps} '
-        ' -names {input.names} '
-        ' -to    {params.timeout} '
-        ' -t     {threads} '
-        ' -op    {params.out_prefix} '
+        '{input.script} -s {input.segment} -o {output.cluster} -t {threads} -to {params.timeout}'
 
-rule plot_isoforms:
+rule isoforms:
     input:
-        script      = config['exec']['plot_isoforms'],
-        reads       = '{}/{{gene}}/{{sample}}/reads.fastq'.format(genes_d),
-        transcripts = '{}/{{gene}}/{{sample}}/transcripts.tsv'.format(genes_d),
-        segs        = '{}/{{gene}}/{{sample}}/reads.segments.txt'.format(genes_d),
-        isoforms    = '{}/{{gene}}/{{sample}}/reads.isoforms.{{recycle_model}}.tsv'.format(genes_d),
+        script  = config['exec']['isoforms'],
+        cluster = '{}/freddie.{{sample}}.cluster.tsv'.format(output_d),
     output:
-        isoform_pdf = protected('{}/{{gene}}/{{sample}}/reads.isoforms.{{recycle_model}}.plots.pdf'.format(genes_d)),
-    params:
-        out_prefix  = '{}/{{gene}}/{{sample}}/reads.isoforms.{{recycle_model}}.plots'.format(genes_d),
-    conda:
-        'freddie.env'
+        isoforms = protected('{}/freddie.{{sample}}.isoforms.gtf'.format(output_d)),
+    threads:
+        32
     shell:
-        '{input.script} -q {input.reads} -t {input.transcripts} -s {input.segs} -i {input.isoforms} -op {params.out_prefix}'
+        '{input.script} -c {input.cluster} -o {output.isoforms}'
+
+rule plot:
+    input:
+        script = config['exec']['plot'],
+        cluster = '{}/freddie.{{sample}}.cluster.tsv'.format(output_d),
+        annotation = config['annotations']['gtf']
+    output:
+        plot_dir = directory('{}/freddie.{{sample}}.plot/'.format(output_d)),
+    shell:
+        '{input.script} -a {input.annotation} -o {output.isoforms} -c {input.cluster} -s {input.segment} -od {output.plot_dir} -t {threads}'

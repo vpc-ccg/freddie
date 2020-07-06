@@ -4,7 +4,7 @@ from multiprocessing import Pool
 from itertools import chain,groupby
 import argparse
 import re
-from math import ceil
+from math import ceil,exp
 
 import numpy as np
 from scipy.ndimage import gaussian_filter1d
@@ -39,16 +39,11 @@ def parse_args():
                         type=float,
                         default=5.0,
                         help="Sigma value for gaussian_filter1d")
-    parser.add_argument("-lt",
-                        "--low-threshold",
-                        type=float,
-                        default=0.10,
-                        help="Low threshold under which the read will be considered as not covering a segment. Default: 0.1")
-    parser.add_argument("-ht",
-                        "--high-threshold",
+    parser.add_argument("-td",
+                        "--threshold",
                         type=float,
                         default=0.90,
-                        help="High threshold above which the read will be considered as covering a segment. Default: 0.9")
+                        help="Threshold above which the read will be considered as covering a segment. Low threshold is 1-threshold. Anything in between is considered ambigious. Default: 0.9")
     parser.add_argument("-vf",
                         "--variance-factor",
                         type=float,
@@ -66,8 +61,7 @@ def parse_args():
                         help="Minimum reads support for splice site to support a breakpoint")
     args = parser.parse_args()
 
-
-    assert(1 >= args.high_threshold > args.low_threshold >= 0)
+    assert(1 >= args.threshold >= 0.5)
     assert(args.variance_factor>0)
     assert(args.sigma>0)
     assert(args.max_candidates_per_seg>0)
@@ -353,7 +347,7 @@ def get_unaligned_gaps_and_polyA(read, segs):
         )
     read['gaps']=sorted(read['gaps'])
 
-def optimize(candidate_y_idxs, C, start, end, low, high, read_support):
+def optimize(candidate_y_idxs, C, start, end, smoothed_threshold, low, high, read_support):
     cov_mem = dict()
     yea_mem = dict()
     nay_mem = dict()
@@ -362,7 +356,14 @@ def optimize(candidate_y_idxs, C, start, end, low, high, read_support):
     # print('Precomputing coverage mems for {}...'.format((start,end)))
     for i in range(start, end):
         for j in range(i, end+1):
-            cov_mem[(i,j)] = (C[j]-C[i])/(candidate_y_idxs[j]-candidate_y_idxs[i]+1)
+            seg_len = (candidate_y_idxs[j]-candidate_y_idxs[i]+1)
+            cov_mem[(i,j)] = (C[j]-C[i])/seg_l
+            if seg_len < len(smoothed_threshold):
+                h = smoothed_threshold[seg_len]
+                l = 1-h
+            else:
+                h = high
+                l = low
             yea_mem[(i,j)] = cov_mem[(i,j)] > high
             nay_mem[(i,j)] = cov_mem[(i,j)] < low
             amb_mem[(i,j)] = np.logical_not(np.logical_or(yea_mem[(i,j)],nay_mem[(i,j)]))
@@ -432,7 +433,7 @@ def optimize(candidate_y_idxs, C, start, end, low, high, read_support):
     # print(max_b,max_d)
     return D,B,max_d,max_b,in_mem,out_mem
 
-def run_optimize(candidate_y_idxs, fixed_c_idxs, coverage, low_threshold, high_threshold, min_read_support_outside):
+def run_optimize(candidate_y_idxs, fixed_c_idxs, coverage, smoothed_threshold, low_threshold, high_threshold, min_read_support_outside):
     final_c_idxs = set(fixed_c_idxs)
     for start,end in zip(fixed_c_idxs[:-1],fixed_c_idxs[1:]):
         D,B,max_d,max_b,in_mem,out_mem = optimize(
@@ -440,6 +441,7 @@ def run_optimize(candidate_y_idxs, fixed_c_idxs, coverage, low_threshold, high_t
             C                        = coverage,
             start                    = start,
             end                      = end,
+            smoothed_threshold       = smoothed_threshold,
             low                      = low_threshold,
             high                     = high_threshold,
             read_support             = min_read_support_outside,
@@ -461,7 +463,8 @@ def get_cumulative_coverage(candidate_y_idxs, y_idx_to_r_idxs):
     return C
 
 def segment(segment_args):
-    tint, sigma, low_threshold, high_threshold, variance_factor, max_candidates_per_seg, min_read_support_outside = segment_args
+    tint, sigma, smoothed_threshold, high_threshold, variance_factor, max_candidates_per_seg, min_read_support_outside = segment_args
+    low_threshold = 1 - high_threshold
     pos_to_Yy_idx = dict()
     Yy_idx_to_pos = list()
     Yy_idx_to_r_idxs = list()
@@ -514,21 +517,29 @@ def segment(segment_args):
         cumulative_coverage = get_cumulative_coverage(candidate_y_idxs, Yy_idx_to_r_idxs[Y_idx])
         # print('Optimizing tint {} with:\n\tcandidate {} locations: {}\n\tfixed {} loations: {}'.format(tint['id'], len(candidate_y_idxs),candidate_y_idxs,len(fixed_c_idxs),[candidate_y_idxs[c_idx] for c_idx in fixed_c_idxs]))
         final_c_idxs=run_optimize(
-            candidate_y_idxs,
-            fixed_c_idxs,
-            cumulative_coverage,
-            low_threshold,
-            high_threshold,
-            min_read_support_outside
+            candidate_y_idxs=candidate_y_idxs,
+            fixed_c_idxs=fixed_c_idxs,
+            coverage=cumulative_coverage,
+            smoothed_threshold=smoothed_threshold,
+            low_threshold=low_threshold,
+            high_threshold=high_threshold,
+            min_read_support_outside=min_read_support_outside
         )
         final_y_idxs = [candidate_y_idxs[c_idx] for c_idx in final_c_idxs]
         tint['final_positions'].extend([Yy_idx_to_pos[Y_idx][y_idx] for y_idx in final_y_idxs])
         for r_idx,read in enumerate(tint['reads']):
             for s,e in zip(final_c_idxs[:-1],final_c_idxs[1:]):
-                cov_ratio = (cumulative_coverage[e][r_idx]-cumulative_coverage[s][r_idx])/max(1,(candidate_y_idxs[e]-candidate_y_idxs[s]+1-10))
-                if cov_ratio > high_threshold:
+                seg_len = e-s+1
+                if seg_len < len(smoothed_threshold):
+                    ht = high_threshold
+                    lt = low_threshold
+                else:
+                    ht = smoothed_threshold[seg_len]
+                    lt = 1-ht
+                cov_ratio = (cumulative_coverage[e][r_idx]-cumulative_coverage[s][r_idx])/seg_len
+                if cov_ratio > ht:
                     read['data'].append(1)
-                elif cov_ratio < low_threshold:
+                elif cov_ratio < lt:
                     read['data'].append(0)
                 else:
                     read['data'].append(2)
@@ -541,6 +552,17 @@ def segment(segment_args):
         get_unaligned_gaps_and_polyA(read=read, segs=tint['segs'])
     return tint
 
+def smooth_threshold(threshold):
+    smooth = list()
+    while True:
+        x = len(smooth)
+        y = threshold/(1 + ((threshold-.5)/.5)*exp(-0.05*x))
+        if x>5 and x*(threshold-y)<0.5:
+            break
+        smooth.append(round(y,2))
+        assert len(smooth)<1000
+    return smooth
+
 def main():
     args = parse_args()
 
@@ -552,8 +574,8 @@ def main():
         segment_args.append((
             tint,
             args.sigma,
-            args.low_threshold,
-            args.high_threshold,
+            smooth_threshold(threshold=args.threshold),
+            args.threshold,
             args.variance_factor,
             args.max_candidates_per_seg,
             args.min_read_support_outside,
