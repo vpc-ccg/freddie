@@ -17,11 +17,11 @@ mapped_d = '{}/mapped'.format(outpath)
 rule all:
     input:
         expand('{}/freddie.{{sample}}.sam'.format(mapped_d), sample=config['samples']),
-        expand('{}/freddie.{{sample}}.split.tsv'.format(output_d), sample=config['samples']),
-        expand('{}/freddie.{{sample}}.segment.tsv'.format(output_d), sample=config['samples']),
-        expand('{}/freddie.{{sample}}.cluster.tsv'.format(output_d), sample=config['samples']),
-        expand('{}/freddie.{{sample}}.isoforms.gtf'.format(output_d), sample=config['samples']),
-        expand('{}/freddie.{{sample}}.plot/'.format(output_d), sample=config['samples']),
+        # expand('{}/freddie.{{sample}}.split.tsv'.format(output_d), sample=config['samples']),
+        # expand('{}/freddie.{{sample}}.segment.tsv'.format(output_d), sample=config['samples']),
+        # expand('{}/freddie.{{sample}}.cluster.tsv'.format(output_d), sample=config['samples']),
+        # expand('{}/freddie.{{sample}}.isoforms.gtf'.format(output_d), sample=config['samples']),
+        # expand('{}/freddie.{{sample}}.plot/'.format(output_d), sample=config['samples']),
 
 rule align:
     input:
@@ -95,9 +95,12 @@ rule isoforms:
 rule plot:
     input:
         script = config['exec']['plot'],
+        segment = '{}/freddie.{{sample}}.segment.tsv'.format(output_d),
         cluster = '{}/freddie.{{sample}}.cluster.tsv'.format(output_d),
         annotation = config['annotations']['gtf']
     output:
         plot_dir = directory('{}/freddie.{{sample}}.plot/'.format(output_d)),
+    threads:
+        32
     shell:
-        '{input.script} -a {input.annotation} -o {output.isoforms} -c {input.cluster} -s {input.segment} -od {output.plot_dir} -t {threads}'
+        '{input.script} -a {input.annotation} -c {input.cluster} -s {input.segment} -od {output.plot_dir} -t {threads}'
