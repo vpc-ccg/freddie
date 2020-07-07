@@ -2,7 +2,7 @@ outpath:
     test/dev-out/
 
 gurobi:
-    license: ~/gurobi.lic
+    license: /home/baraa/gurobi.lic
     timeout: 15
 
 samples:

@@ -1,5 +1,13 @@
 configfile: 'config.yaml'
 
+for k in config.keys():
+    if not k.startswith('override_'):
+        continue
+    keys = k[len('override_'):].split('_')
+    top_dict = eval('config{}'.format(''.join(['["{}"]'.format(x) for x in keys[:-1]])))
+    assert keys[-1] in top_dict
+    top_dict[keys[-1]]=config[k]
+
 def get_abs_path(path):
     import os
     abs_path = os.popen('readlink -f {}'.format(path)).read()
@@ -17,11 +25,11 @@ mapped_d = '{}/mapped'.format(outpath)
 rule all:
     input:
         expand('{}/freddie.{{sample}}.sam'.format(mapped_d), sample=config['samples']),
-        # expand('{}/freddie.{{sample}}.split.tsv'.format(output_d), sample=config['samples']),
-        # expand('{}/freddie.{{sample}}.segment.tsv'.format(output_d), sample=config['samples']),
-        # expand('{}/freddie.{{sample}}.cluster.tsv'.format(output_d), sample=config['samples']),
-        # expand('{}/freddie.{{sample}}.isoforms.gtf'.format(output_d), sample=config['samples']),
-        # expand('{}/freddie.{{sample}}.plot/'.format(output_d), sample=config['samples']),
+        expand('{}/freddie.{{sample}}.split.tsv'.format(output_d), sample=config['samples']),
+        expand('{}/freddie.{{sample}}.segment.tsv'.format(output_d), sample=config['samples']),
+        expand('{}/freddie.{{sample}}.cluster.tsv'.format(output_d), sample=config['samples']),
+        expand('{}/freddie.{{sample}}.isoforms.gtf'.format(output_d), sample=config['samples']),
+        expand('{}/freddie.{{sample}}.plot/'.format(output_d), sample=config['samples']),
 
 rule align:
     input:
@@ -66,6 +74,7 @@ rule segment:
 
 rule cluster:
     input:
+        license = config['gurobi']['license'],
         script  = config['exec']['segment'],
         segment ='{}/freddie.{{sample}}.segment.tsv'.format(output_d),
     output:
@@ -73,12 +82,11 @@ rule cluster:
     conda:
         'freddie.env'
     params:
-        license = config['gurobi']['license'],
         timeout = config['gurobi']['timeout'],
     threads:
         32
     shell:
-        'export GRB_LICENSE_FILE={params.license}; '
+        'export GRB_LICENSE_FILE={input.license}; '
         '{input.script} -s {input.segment} -o {output.cluster} -t {threads} -to {params.timeout}'
 
 rule isoforms:
