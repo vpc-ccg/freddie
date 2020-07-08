@@ -20,8 +20,9 @@ outpath = get_abs_path(config['outpath'])
 make_slurm()
 
 output_d = '{}/results'.format(outpath)
-plots_d = '{}/plots'.format(outpath)
+plots_d  = '{}/plots'.format(outpath)
 mapped_d = '{}/mapped'.format(outpath)
+logs_d   = '{}/logs'.format(outpath)
 
 rule all:
     input:
@@ -84,11 +85,12 @@ rule cluster:
         'environment.env'
     params:
         timeout = config['gurobi']['timeout'],
+        logs    = '{}/freddie.{{sample}}.cluster'.format(logs_d)
     threads:
         32
     shell:
         'export GRB_LICENSE_FILE={input.license}; '
-        '{input.script} -s {input.segment} -o {output.cluster} -t {threads} -to {params.timeout}'
+        '{input.script} -s {input.segment} -o {output.cluster} -l {params.logs} -t {threads} -to {params.timeout}'
 
 rule isoforms:
     input:
