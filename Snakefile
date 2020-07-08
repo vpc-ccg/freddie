@@ -45,7 +45,7 @@ rule align:
     threads:
         32
     shell:
-        '{input.script} -r {input.reads} -i {input.index} -s {params.seq_type} -o {output.sam} -t {threads}'
+        '{input.script} -r {input.reads} -i {input.index}/ -s {params.seq_type} -o {output.sam} -t {threads}'
 
 rule split:
     input:
