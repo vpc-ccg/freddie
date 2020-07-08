@@ -49,7 +49,7 @@ rule align:
 
 rule split:
     input:
-        script = config['exec']['segment'],
+        script = config['exec']['split'],
         sam    = '{}/freddie.{{sample}}.sam'.format(mapped_d),
     output:
         split = protected('{}/freddie.{{sample}}.split.tsv'.format(output_d)),
@@ -75,7 +75,7 @@ rule segment:
 rule cluster:
     input:
         license = config['gurobi']['license'],
-        script  = config['exec']['segment'],
+        script  = config['exec']['cluster'],
         segment ='{}/freddie.{{sample}}.segment.tsv'.format(output_d),
     output:
         cluster = protected('{}/freddie.{{sample}}.cluster.tsv'.format(output_d)),
