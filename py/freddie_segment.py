@@ -357,7 +357,7 @@ def optimize(candidate_y_idxs, C, start, end, smoothed_threshold, low, high, rea
     for i in range(start, end):
         for j in range(i, end+1):
             seg_len = (candidate_y_idxs[j]-candidate_y_idxs[i]+1)
-            cov_mem[(i,j)] = (C[j]-C[i])/seg_l
+            cov_mem[(i,j)] = (C[j]-C[i])/seg_len
             if seg_len < len(smoothed_threshold):
                 h = smoothed_threshold[seg_len]
                 l = 1-h
