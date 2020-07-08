@@ -19,7 +19,8 @@ def make_slurm():
 outpath = get_abs_path(config['outpath'])
 make_slurm()
 
-output_d = '{}'.format(outpath)
+output_d = '{}/results'.format(outpath)
+plots_d = '{}/plots'.format(outpath)
 mapped_d = '{}/mapped'.format(outpath)
 
 rule all:
@@ -29,7 +30,7 @@ rule all:
         expand('{}/freddie.{{sample}}.segment.tsv'.format(output_d), sample=config['samples']),
         expand('{}/freddie.{{sample}}.cluster.tsv'.format(output_d), sample=config['samples']),
         expand('{}/freddie.{{sample}}.isoforms.gtf'.format(output_d), sample=config['samples']),
-        expand('{}/freddie.{{sample}}.plot/'.format(output_d), sample=config['samples']),
+        expand('{}/freddie.{{sample}}.plot/'.format(plots_d), sample=config['samples']),
 
 rule align:
     input:
@@ -41,7 +42,7 @@ rule align:
     params:
         seq_type = lambda wildcards: config['samples'][wildcards.sample]['seq_type'],
     conda:
-        'freddie.env'
+        'environment.env'
     threads:
         32
     shell:
@@ -54,7 +55,7 @@ rule split:
     output:
         split = protected('{}/freddie.{{sample}}.split.tsv'.format(output_d)),
     conda:
-        'freddie.env'
+        'environment.env'
     shell:
         '{input.script} -s {input.sam} -o {output.split}'
 
@@ -66,7 +67,7 @@ rule segment:
     output:
         segment = protected('{}/freddie.{{sample}}.segment.tsv'.format(output_d)),
     conda:
-        'freddie.env'
+        'environment.env'
     threads:
         32
     shell:
@@ -80,7 +81,7 @@ rule cluster:
     output:
         cluster = protected('{}/freddie.{{sample}}.cluster.tsv'.format(output_d)),
     conda:
-        'freddie.env'
+        'environment.env'
     params:
         timeout = config['gurobi']['timeout'],
     threads:
@@ -103,12 +104,14 @@ rule isoforms:
 rule plot:
     input:
         script = config['exec']['plot'],
-        segment = '{}/freddie.{{sample}}.segment.tsv'.format(output_d),
-        cluster = '{}/freddie.{{sample}}.cluster.tsv'.format(output_d),
+        segment = '{}/freddie.{{sample}}.segment.tsv'.format(plots_d),
+        cluster = '{}/freddie.{{sample}}.cluster.tsv'.format(plots_d),
         annotation = config['annotations']['gtf']
     output:
-        plot_dir = directory('{}/freddie.{{sample}}.plot/'.format(output_d)),
+        plot_dir = directory('{}/freddie.{{sample}}.plot/'.format(plots_d)),
     threads:
         32
+    conda:
+        'environment.env'
     shell:
         '{input.script} -a {input.annotation} -c {input.cluster} -s {input.segment} -od {output.plot_dir} -t {threads}'

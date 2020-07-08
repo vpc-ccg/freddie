@@ -584,7 +584,7 @@ def main():
     with Pool(args.threads) as p:
         if args.threads == 1:
             p.close()
-        for idx,tint in enumerate(p.imap_unordered(segment, segment_args, chunksize=20)) if args.threads>1 else enumerate(map(segment, segment_args)):
+        for idx,tint in enumerate(p.imap_unordered(segment, segment_args, chunksize=10)) if args.threads>1 else enumerate(map(segment, segment_args)):
             tints[tint['id']]=tint
             record = list()
             record.append('#{}'.format(tint['chr']))
