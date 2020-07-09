@@ -43,16 +43,14 @@ samples:
     #     seq_type: ont1d
 
 exec:
-    align    : py/freddie_align.py
-    split    : py/freddie_split.py
-    segment  : py/freddie_segment.py
-    cluster  : py/freddie_cluster.py
-    isoforms : py/freddie_isoforms.py
-    plot     : py/freddie_plot.py
-
-mapping_settings:
-    dna  : splice
-    cdna : map-ont
+    align      : py/freddie_align.py
+    split      : py/freddie_split.py
+    segment    : py/freddie_segment.py
+    cluster    : py/freddie_cluster.py
+    isoforms   : py/freddie_isoforms.py
+    beds       : py/freddie_beds.py
+    similarity : py/freddie_similarity.py
+    plot       : py/freddie_plot.py
 
 references:
     dna_desalt : test/data/Homo_sapiens.chr21.GRCh38.dna.97.deSALT.index
