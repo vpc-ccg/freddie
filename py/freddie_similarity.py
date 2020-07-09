@@ -30,7 +30,7 @@ def parse_args():
     parser.add_argument("-c",
                         "--min-cov",
                         type=int,
-                        default=30,
+                        default=5,
                         help="Mininum coverage to not discard a transcript. Default: 3")
     parser.add_argument("-o",
                         "--output",
@@ -141,9 +141,9 @@ def print_unpaired_stats(outfile, name, unpaired, above_sim):
 def print_stats(outfile, pairings,unpaired_iids,unpaired_tids,iid_above_sim,tid_above_sim):
     print('Pairings # = {},\n\tmed = {:2.2f}%,\n\tmean = {:2.2f}%,\n\tstd = {:2.2f}%'.format(
         len(pairings),
+        100*np.median([x[0] for x in pairings]),
         100*np.mean([x[0] for x in pairings]),
         100*np.std([x[0] for x in pairings]),
-        100*np.median([x[0] for x in pairings]),
     ), file=outfile)
     print_unpaired_stats(outfile, 'iid', unpaired_iids, iid_above_sim)
     print_unpaired_stats(outfile, 'tid', unpaired_tids, tid_above_sim)
