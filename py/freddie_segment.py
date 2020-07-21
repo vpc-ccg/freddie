@@ -70,7 +70,7 @@ def parse_args():
     return args
 
 def read_split(split_tsv):
-    tints = list()
+    tints = dict()
 
     cinterval_re   = '([0-9]+)-([0-9]+)'
     cigar_op_re = '([0-9]+)([MIDNSHPX=])'
@@ -103,9 +103,7 @@ def read_split(split_tsv):
                 read_count = int(re_dict['read_count']),
                 reads      = list()
             )
-            if tint['id'] >= len(tints):
-                tints.extend([None]*(tint['id']-len(tints)+1))
-            assert tints[tint['id']] == None, 'Transcriptional interval with id {} is repeated!'.format(tint['id'])
+            assert not tint['id'] in tints, 'Transcriptional interval with id {} is repeated!'.format(tint['id'])
             assert all(a[1]<b[0] for a,b in zip(tint['intervals'][:-1],tint['intervals'][1:])),(tint['intervals'])
             assert all(s<e for s,e in tint['intervals'])
             tints[tint['id']] = tint
@@ -128,9 +126,8 @@ def read_split(split_tsv):
             assert all(aet<=bst and aer<=bsr for (_,aet,_,aer,_),(bst,_,bsr,_,_) in zip(read['intervals'][:-1],read['intervals'][1:]))
             assert all(st<et and sr<er for (st,et,sr,er,_) in read['intervals'])
             tints[read['tint']]['reads'].append(read)
-    for x in tints:
-        assert x!=None
-        len(x['reads'])==x['read_count']
+    for tint in tints.values():
+        assert len(tint['reads'])==tint['read_count']
     return tints
 
 def read_sequence(tints, read_files):
@@ -147,7 +144,7 @@ def read_sequence(tints, read_files):
         T='T'
     )
     name_to_idx=dict()
-    for tidx,tint in enumerate(tints):
+    for tidx,tint in tints.items():
         for ridx,read in enumerate(tint['reads']):
             name_to_idx[read['name']] = (tidx,ridx)
             tints[tidx]['reads'][ridx]['seq']=''
@@ -178,7 +175,7 @@ def read_sequence(tints, read_files):
                     if name in name_to_idx:
                         tidx,ridx=name_to_idx[name]
                         tints[tidx]['reads'][ridx]['seq'] += line.rstrip()
-    for tint in tints:
+    for tint in tints.values():
         for read in tint['reads']:
             assert read['seq'] != ''
             read['length']=len(read['seq'])
@@ -528,15 +525,16 @@ def segment(segment_args):
         final_y_idxs = [candidate_y_idxs[c_idx] for c_idx in final_c_idxs]
         tint['final_positions'].extend([Yy_idx_to_pos[Y_idx][y_idx] for y_idx in final_y_idxs])
         for r_idx,read in enumerate(tint['reads']):
-            for s,e in zip(final_c_idxs[:-1],final_c_idxs[1:]):
-                seg_len = e-s+1
-                if seg_len < len(smoothed_threshold):
+            for s,e,s_yidx,e_yidx in zip(final_c_idxs[:-1],final_c_idxs[1:],final_y_idxs[:-1],final_y_idxs[1:]):
+                seg_len = Yy_idx_to_pos[Y_idx][e_yidx]-Yy_idx_to_pos[Y_idx][s_yidx]+1
+                if seg_len > len(smoothed_threshold):
                     ht = high_threshold
                     lt = low_threshold
                 else:
                     ht = smoothed_threshold[seg_len]
                     lt = 1-ht
                 cov_ratio = (cumulative_coverage[e][r_idx]-cumulative_coverage[s][r_idx])/seg_len
+                assert  0<=cov_ratio<=1
                 if cov_ratio > ht:
                     read['data'].append(1)
                 elif cov_ratio < lt:
@@ -570,7 +568,7 @@ def main():
     read_sequence(tints, args.reads)
 
     segment_args = list()
-    for tint in tints[:]:
+    for tint in tints.values():
         segment_args.append((
             tint,
             args.sigma,
