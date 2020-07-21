@@ -1,4 +1,4 @@
-name: freddie-conda
+name: freddie
 channels:
   - conda-forge
   - bioconda
@@ -13,6 +13,7 @@ dependencies:
   - numpy>=1.16
   - scikit-learn>=0.20
   - scipy>=1.2.1
+  - networkx>=2
   - gurobi>=9.0
   - matplotlib>=3
   - pypdf2>=1.26

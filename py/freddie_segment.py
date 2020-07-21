@@ -4,7 +4,7 @@ from multiprocessing import Pool
 from itertools import chain,groupby
 import argparse
 import re
-from math import ceil,exp
+from math import exp
 
 import numpy as np
 from scipy.ndimage import gaussian_filter1d

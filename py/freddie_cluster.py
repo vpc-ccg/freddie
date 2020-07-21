@@ -5,6 +5,8 @@ from multiprocessing import Pool
 import argparse
 import re
 
+from networkx.algorithms import components
+from networkx import Graph
 from gurobipy import *
 
 
@@ -152,6 +154,38 @@ def garbage_cost_exons(I):
     return(max(sum(I.values())-0.5,1))
 # TO DO: think about better ways to define the cost to assign to the garbagte isoform
 
+def partition_reads(tint):
+    I = tint['ilp_data']['I']
+    FL = tint['ilp_data']['FL']
+    rids = sorted(I.keys())
+    edges = list()
+    for idx,i in enumerate(rids):
+        for j in rids[idx+1:]:
+            f = max(FL[i][0],FL[j][0])
+            l = min(FL[i][1],FL[j][1])
+            o = l-f+1
+            d = sum(x!=y for x,y in zip(I[i][f:l+1],I[j][f:l+1]))
+            w = sum(x==y for x,y in zip(I[i][f:l+1],I[j][f:l+1]))
+            if w < 1:
+                continue
+            if (o > 3 and d < 3) or (1<=o<=3 and d==0):
+                edges.append((i,j))
+    G = Graph()
+    G.add_nodes_from(rids)
+    G.add_edges_from(edges)
+    while True:
+        edges_to_remove = list()
+        for i,j in G.edges:
+            n1 = set(G.neighbors(i))
+            n2 = set(G.neighbors(j))
+            if len(n1)==1 or len(n2)==1 or len(n1 & n2) > 0:
+                continue
+            edges_to_remove.append((i,j))
+        G.remove_edges_from(edges_to_remove)
+        if len(edges_to_remove) == 0:
+            break
+    tint['partitions'] = list(components.connected_components(G))
+
 def preprocess_ilp(tint, ilp_settings):
     print('Preproessing ILP with {} reads and the following settings:\n{}'.format(len(tint['reads']), ilp_settings))
     reads = tint['reads']
@@ -159,16 +193,17 @@ def preprocess_ilp(tint, ilp_settings):
     M = len(tint['segs'])
     I = dict()
     C = dict()
+    FL = dict()
     tail_s_rids = list()
     tail_e_rids = list()
 
     for i,read in enumerate(reads):
-        I[i] = dict()
+        I[i] = [0 for _ in range(M)]
         for j in range(0,M):
             I[i][j] = read['data'][j]%2
-        C[i] = dict()
-        (min_i,max_i) = find_segment_read(I,i)
 
+        C[i] = [0 for _ in range(M)]
+        (min_i,max_i) = find_segment_read(I,i)
         if len(read['poly_tail'])==1:
             tail_key = next(iter(read['poly_tail']))
             tail_val = read['poly_tail'][tail_key]
@@ -180,6 +215,7 @@ def preprocess_ilp(tint, ilp_settings):
                 tail_e_rids.append(i)
                 read['gaps'][(max_i,M)] = tail_val[1]
                 max_i = M-1
+        FL[i] = (min_i,max_i)
         for j in range(0,M):
             if min_i <= j <= max_i and reads[i]['data'][j]==0:
                 C[i][j]   = 1
@@ -215,8 +251,9 @@ def preprocess_ilp(tint, ilp_settings):
         elif ilp_settings['recycle_model'] == 'introns':
             garbage_cost[i] = garbage_cost_introns(C=C[i])
         elif ilp_settings['recycle_model'] == 'constant':
-            garbage_cost[i] = 1
+            garbage_cost[i] = 3
     tint['ilp_data']=dict(
+        FL=FL,
         I=I,
         C=C,
         incomp_rids=incomp_rids,
@@ -554,35 +591,38 @@ def cluster_tint(cluster_args):
 
     os.makedirs('{}/{}'.format(logs_dir, tint['id']), exist_ok=True)
     preprocess_ilp(tint, ilp_settings)
+    partition_reads(tint)
+    print('# Paritions ({}) sizes: {}\n'.format(len(tint['partitions']), [len(p) for p in tint['partitions']]))
     tint['isoforms'] = list()
-    remaining_rids = set(range(len(tint['reads'])))
-
-    for round in range(ilp_settings['max_rounds']):
-        print('==========\ntint {}: Running {}-th round with {} reads...'.format(tint['id'], round, len(remaining_rids)))
-        if len(remaining_rids) < min_isoform_size:
-            break
-        status,round_isoforms = run_ilp(
-            tint          = tint,
-            remaining_rids = remaining_rids,
-            ilp_settings   = ilp_settings,
-            log_prefix     = '{}/{}/round.{}'.format(logs_dir, tint['id'], round),
-        )
-        if status != 'OPTIMAL' or max([0]+[len(i['rid_to_corrections']) for i in round_isoforms.values()]) < min_isoform_size:
-            break
-        for k,isoform in round_isoforms.items():
-            print('Isoform {} size: {}'.format(k, len(isoform['rid_to_corrections'])))
-            if len(isoform['rid_to_corrections']) < min_isoform_size:
-                continue
-            tint['isoforms'].append(isoform)
-            for rid,corrections in isoform['rid_to_corrections'].items():
-                assert rid in remaining_rids
-                remaining_rids.remove(rid)
-                tint['reads'][rid]['corrections']=corrections
-                tint['reads'][rid]['isoform']=len(tint['isoforms'])-1
-        print('------->')
-        print('Remaining reads: {}\n'.format(len(remaining_rids)))
-        print('<-------')
-    tint['garbage_rids'] = sorted(remaining_rids)
+    tint['garbage_rids'] = list()
+    for partition,remaining_rids in enumerate(tint['partitions']):
+        print('==========\ntint {}: Running {}-th partition...'.format(tint['id'], partition))
+        for round in range(ilp_settings['max_rounds']):
+            print('==========\ntint {}: Running {}-th round with {} reads...'.format(tint['id'], round, len(remaining_rids)))
+            if len(remaining_rids) < min_isoform_size:
+                break
+            status,round_isoforms = run_ilp(
+                tint          = tint,
+                remaining_rids = remaining_rids,
+                ilp_settings   = ilp_settings,
+                log_prefix     = '{}/{}/round.{}'.format(logs_dir, tint['id'], round),
+            )
+            if status != 'OPTIMAL' or max([0]+[len(i['rid_to_corrections']) for i in round_isoforms.values()]) < min_isoform_size:
+                break
+            for k,isoform in round_isoforms.items():
+                print('Isoform {} size: {}'.format(k, len(isoform['rid_to_corrections'])))
+                if len(isoform['rid_to_corrections']) < min_isoform_size:
+                    continue
+                tint['isoforms'].append(isoform)
+                for rid,corrections in isoform['rid_to_corrections'].items():
+                    assert rid in remaining_rids
+                    remaining_rids.remove(rid)
+                    tint['reads'][rid]['corrections']=corrections
+                    tint['reads'][rid]['isoform']=len(tint['isoforms'])-1
+            print('------->')
+            print('Remaining reads: {}\n'.format(len(remaining_rids)))
+            print('<-------')
+        tint['garbage_rids'].extend(sorted(remaining_rids))
     for rid in tint['garbage_rids']:
         tint['reads'][rid]['isoform']     = None
         tint['reads'][rid]['corrections'] = None

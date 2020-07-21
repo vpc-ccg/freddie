@@ -3,6 +3,7 @@ import argparse
 from os import listdir
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -14,9 +15,10 @@ def parse_args():
                         help="Path to GTF file of annotations")
     parser.add_argument("-r",
                         "--reads",
+                        nargs="+",
                         type=str,
                         required=True,
-                        help="Path to reads FASTQ")
+                        help="Space separated paths to reads in FASTQ or FASTA format")
     parser.add_argument("-sd",
                         "--seqpare-dir",
                         type=str,
@@ -40,6 +42,35 @@ def parse_args():
     args = parser.parse_args()
     return args
 
+def plot_heatmap(old_A, iids, old_tids, tint, tid_cov, min_cov, prefix):
+    low_cov_tids_idxs = list()
+    tids = list()
+    for idx,tid in enumerate(old_tids):
+        if tid_cov.get(tid.split(':')[-1], 0)<min_cov:
+            low_cov_tids_idxs.append(idx)
+        else:
+            tids.append(tid)
+    A = np.delete(old_A,low_cov_tids_idxs,axis=1)
+    if min(A.shape)==0:
+        return
+    fig, ax = plt.subplots(figsize=(30,20))
+    im = ax.imshow(A, cmap=plt.get_cmap('Greys'),vmin=0.0, vmax=1.0)
+
+    ax.set_xticks(np.arange(A.shape[1]))
+    ax.set_yticks(np.arange(A.shape[0]))
+    ax.set_xticklabels(tids)
+    ax.set_yticklabels(iids)
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+
+    print(len(iids),len(tids),A.shape)
+    for j in range(len(tids)):
+            for i in range(len(iids)):
+                text = ax.text(j, i, '{:2.2f}%'.format(A[i, j]*100), ha="center", va="center", color='w')
+
+    ax.set_title("Predicted vs ground truth for tint {}".format(tint))
+    fig.tight_layout()
+    plt.savefig('{}{}.png'.format(prefix,tint))
+
 def get_tid_to_tid(gtf):
     tid_to_tid = dict()
     c=0
@@ -56,7 +87,7 @@ def get_tid_to_tid(gtf):
     assert len(set(tid_to_tid.values()))==len(tid_to_tid)==c
     return tid_to_tid
 
-def get_pairings(seqpare_dir,sim_threshold):
+def get_pairings(seqpare_dir,sim_threshold, tid_cov, min_cov):
     pairings = list()
     unpaired_iids = list()
     unpaired_tids = list()
@@ -98,6 +129,11 @@ def get_pairings(seqpare_dir,sim_threshold):
                 iid_above_sim[iid]+=1
                 tid_above_sim[tid]+=1
         A = np.array([v for k,v in sorted(A.items())]).reshape((len(iids),len(tids)))
+        plot_heatmap(A, iids, tids, tint, tid_cov, min_cov, seqpare_dir)
+        # print('\n'.join('{:2d}:{}'.format(idx,tid) for idx,tid in enumerate(tids)))
+        # print('\t'.join(['\\']+list(map(str,range(len(tids))))))
+        # for idx in range(A.shape[0]):
+        #     print('\t'.join([iids[idx]]+['{:5.2f}%'.format(s*100) for s in A[idx]]))
         while min(A.shape)>0:
             iidx,tidx = np.unravel_index(A.argmax(), A.shape)
             iid=iids[iidx]
@@ -116,16 +152,17 @@ def get_pairings(seqpare_dir,sim_threshold):
     return pairings,unpaired_iids,unpaired_tids,iid_above_sim,tid_above_sim
 
 
-def get_tid_cov(reads, tid_to_tid):
+def get_tid_cov(read_files, tid_to_tid):
     tid_cov = dict()
-    for line in open(reads):
-        if line[0] != '@':
-            continue
-        tid=line[1:].split()[0].split('_')[0]
-        if not tid in tid_to_tid:
-            continue
-        tid=tid_to_tid[tid]
-        tid_cov[tid] = tid_cov.get(tid, 0) + 1
+    for reads in read_files:
+        for line in open(reads):
+            if line[0] != '@':
+                continue
+            tid=line[1:].split()[0].split('_')[0]
+            if not tid in tid_to_tid:
+                continue
+            tid=tid_to_tid[tid]
+            tid_cov[tid] = tid_cov.get(tid, 0) + 1
     return tid_cov
 
 def print_unpaired_stats(outfile, name, unpaired, above_sim):
@@ -166,7 +203,7 @@ def main():
     args = parse_args()
     tid_to_tid = get_tid_to_tid(args.annotation_gtf)
     tid_cov = get_tid_cov(args.reads, tid_to_tid)
-    pairings,unpaired_iids,unpaired_tids,iid_above_sim,tid_above_sim = get_pairings(args.seqpare_dir, args.similarity_threshold)
+    pairings,unpaired_iids,unpaired_tids,iid_above_sim,tid_above_sim = get_pairings(args.seqpare_dir, args.similarity_threshold, tid_cov, args.min_cov)
     output_similarity(args.output, pairings,unpaired_iids,unpaired_tids,iid_above_sim,tid_above_sim, args.min_cov, tid_cov)
 
 
