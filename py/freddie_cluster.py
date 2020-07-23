@@ -155,23 +155,39 @@ def garbage_cost_exons(I):
 # TO DO: think about better ways to define the cost to assign to the garbagte isoform
 
 def partition_reads(tint):
-    I = tint['ilp_data']['I']
+    reads = tint['reads']
+    I  = tint['ilp_data']['I']
     FL = tint['ilp_data']['FL']
+    tint['partitions'] = list()
+
     rids = sorted(I.keys())
+    unique_data = dict()
     edges = list()
-    for idx,i in enumerate(rids):
-        for j in rids[idx+1:]:
-            f = max(FL[i][0],FL[j][0])
-            l = min(FL[i][1],FL[j][1])
+    for i in rids:
+        d = (tuple(I[i]),(FL[i][0], FL[i][1], reads[i]['poly_tail_category']))
+        if d in unique_data:
+            unique_data[d].append(i)
+        else:
+            unique_data[d] = [i]
+    unique_data = list(unique_data.items())
+    N = len(unique_data)
+    for i in range(N):
+        for j in range(i+1, N):
+            d1,(f1,l1,t1) = unique_data[i][0]
+            d2,(f2,l2,t2) = unique_data[j][0]
+            f = max(f1,f2)
+            l = min(l1,l2)
             o = l-f+1
-            d = sum(x!=y for x,y in zip(I[i][f:l+1],I[j][f:l+1]))
-            w = sum(x==y for x,y in zip(I[i][f:l+1],I[j][f:l+1]))
+            d = sum(x!=y      for x,y in zip(d1[f:l+1],d2[f:l+1]))
+            w = sum(x==y==1 for x,y in zip(d1[f:l+1],d2[f:l+1]))
+            if t1!='N' and t2!='N' and t1!=t2:
+                continue
             if w < 1:
                 continue
             if (o > 3 and d < 3) or (1<=o<=3 and d==0):
                 edges.append((i,j))
     G = Graph()
-    G.add_nodes_from(rids)
+    G.add_nodes_from(range(N))
     G.add_edges_from(edges)
     while True:
         edges_to_remove = list()
@@ -184,7 +200,19 @@ def partition_reads(tint):
         G.remove_edges_from(edges_to_remove)
         if len(edges_to_remove) == 0:
             break
-    tint['partitions'] = list(components.connected_components(G))
+    for c in components.connected_components(G):
+        rids   = list()
+        incomp = list()
+        c = list(c)
+        for idx,i in enumerate(c):
+            rids.extend(unique_data[i][1])
+            for j in c[idx+1:]:
+                i,j = min(i,j),max(i,j)
+                assert i<j
+                if G.has_edge(i,j):
+                    continue
+                incomp.append((i,j))
+        tint['partitions'].append((rids,incomp))
 
 def preprocess_ilp(tint, ilp_settings):
     print('Preproessing ILP with {} reads and the following settings:\n{}'.format(len(tint['reads']), ilp_settings))
@@ -204,14 +232,17 @@ def preprocess_ilp(tint, ilp_settings):
 
         C[i] = [0 for _ in range(M)]
         (min_i,max_i) = find_segment_read(I,i)
+        read['poly_tail_category'] = 'N'
         if len(read['poly_tail'])==1:
             tail_key = next(iter(read['poly_tail']))
             tail_val = read['poly_tail'][tail_key]
             if tail_key in ['SA','ST'] and tail_val[0] > 10:
                 tail_s_rids.append(i)
+                read['poly_tail_category'] = 'S'
                 read['gaps'][(-1,min_i)] = tail_val[1]
                 min_i = 0
             elif tail_key in ['EA','ET'] and tail_val[0] > 10:
+                read['poly_tail_category'] = 'E'
                 tail_e_rids.append(i)
                 read['gaps'][(max_i,M)] = tail_val[1]
                 max_i = M-1
@@ -221,28 +252,6 @@ def preprocess_ilp(tint, ilp_settings):
                 C[i][j]   = 1
             else:
                 C[i][j]   = 0
-    # If r1 and r2 don't have any 1 in common, then they are incompatible
-    incomp_rids = list()
-    for i1 in range(N):
-        for i2 in range(i1+1,N):
-            incomp = True
-            for j in range(M):
-                if reads[i1]['data'][j]*reads[i2]['data'][j]==1:
-                    incomp=False
-                    break
-            if incomp:
-                incomp_rids.append((i1,i2))
-    print('# Number of incompatible read pairs due to not having any common exons: {}\n'.format(len(incomp_rids)))
-    for i1 in tail_s_rids:
-        for i2 in tail_e_rids:
-            if i1 < i2:
-                incomp_rids.append((i1,i2))
-            else:
-                incomp_rids.append((i2,i1))
-
-    incomp_rids = list(set(incomp_rids))
-    print('# Total number of incompatible read pairs: {}\n'.format(len(incomp_rids)))
-
     # Assigning a cost to the assignment of reads to the garbage isoform
     garbage_cost = {}
     for i in range(N):
@@ -256,11 +265,27 @@ def preprocess_ilp(tint, ilp_settings):
         FL=FL,
         I=I,
         C=C,
-        incomp_rids=incomp_rids,
         garbage_cost=garbage_cost,
     )
 
-def run_ilp(tint, remaining_rids, ilp_settings, log_prefix):
+def informative_segs(tint, remaining_rids):
+    M = len(tint['segs'])
+    I = tint['ilp_data']['I']
+    seg_content = [set() for _ in range(M)]
+    informative = [True for _ in range(M)]
+    for j in range(M):
+        for i in remaining_rids:
+            seg_content[j].add(I[i][j])
+            if seg_content[j] == {0,1}:
+                break
+    for j in range(1,M-1):
+        if len(seg_content[j])==1 and (seg_content[j-1]==seg_content[j]==seg_content[j+1]):
+            informative[j]=False
+    # for j in range(M):
+    #     print(informative[j], seg_content[j])
+    return informative
+
+def run_ilp(tint, remaining_rids, incomp_rids, ilp_settings, log_prefix):
     # Variables directly based on the input ------------------------------------
     # I[i,j] = 1 if reads[i]['data'][j]==1 and 0 if reads[i]['data'][j]==0 or 2
     # C[i,j] = 1 if exon j is between the first and last exons (inclusively)
@@ -270,8 +295,9 @@ def run_ilp(tint, remaining_rids, ilp_settings, log_prefix):
     MAX_ISOFORM_LG = sum(seg[2] for seg in tint['segs'])
     I                 = tint['ilp_data']['I']
     C                 = tint['ilp_data']['C']
-    INCOMP_READ_PAIRS = tint['ilp_data']['incomp_rids']
+    INCOMP_READ_PAIRS = incomp_rids
     GARBAGE_COST      = tint['ilp_data']['garbage_cost']
+    informative = informative_segs(tint, remaining_rids)
 
     # ILP model ------------------------------------------------------
     ILP_ISOFORMS = Model('isoforms_v7_20200608')
@@ -310,6 +336,8 @@ def run_ilp(tint, remaining_rids, ilp_settings, log_prefix):
     E2IR    = {}
     E2IR_C1 = {}
     for j in range(0,M):
+        if not informative[j]:
+            continue
         E2I[j]     = {}
         E2I_C1[j]  = {}
         E2I_min[j]     = {}
@@ -373,10 +401,11 @@ def run_ilp(tint, remaining_rids, ilp_settings, log_prefix):
     GAPR_C2 = {} # Constraint ensuring that the unaligned gap is not too long for every isoform and gap
     for i in remaining_rids:
         for ((j1,j2),l) in tint['reads'][i]['gaps'].items():
-            if l ==62:
-                print((j1,j2),l)
             for k in range(ISOFORM_INDEX_START,ilp_settings['K']): # No such constraint on the garbage isoform if any
                 if not (j1,j2,k) in GAPI:
+                    assert informative[j1%M]
+                    assert informative[j2%M]
+                    assert not any(informative[j+1:j2])
                     GAPI[(j1,j2,k)]      = ILP_ISOFORMS.addVar(
                         vtype = GRB.INTEGER,
                         name  = 'GAPI[({j1},{j2},{k})]'.format(j1=j1,j2=j2,k=k)
@@ -384,7 +413,7 @@ def run_ilp(tint, remaining_rids, ilp_settings, log_prefix):
                     GAPI_C1[(j1,j2,k)]   = ILP_ISOFORMS.addLConstr(
                         lhs   = GAPI[(j1,j2,k)],
                         sense = GRB.EQUAL,
-                        rhs   = quicksum(E2I[j][k]*tint['segs'][j][2] for j in range(j1+1,j2)),
+                        rhs   = quicksum(E2I[j][k]*tint['segs'][j][2] for j in range(j1+1,j2) if informative[j]),
                         name  = 'GAPI_C1[({j1},{j2},{k})]'.format(j1=j1,j2=j2,k=k)
                     )
                 GAPR_C1[(i,j1,j2,k)] = ILP_ISOFORMS.addLConstr(
@@ -445,6 +474,8 @@ def run_ilp(tint, remaining_rids, ilp_settings, log_prefix):
         OBJ[i]    = {}
         OBJ_C1[i] = {}
         for j in range(0,M):
+            if not informative[j]:
+                continue
             if C[i][j]==1: # 1 if exon j not in read i but can be added to it
                 OBJ[i][j]    = {}
                 OBJ_C1[i][j] = {}
@@ -472,6 +503,8 @@ def run_ilp(tint, remaining_rids, ilp_settings, log_prefix):
             GAR_OBJ[i]   = {}
             GAR_OBJ_C[i] = {}
             for j in range(0,M):
+                if not informative[j]:
+                    continue
                 GAR_OBJ[i][j]   = {}
                 GAR_OBJ_C[i][j] = {}
                 for k in range(ISOFORM_INDEX_START,ilp_settings['K']):
@@ -518,7 +551,12 @@ def run_ilp(tint, remaining_rids, ilp_settings, log_prefix):
         solution_file.close()
         # Isoform id to isoform structure
         for k in range(ISOFORM_INDEX_START,ilp_settings['K']):
-            isoforms[k]['exons'] = [int(E2I[j][k].getAttr(GRB.Attr.X)>0.9) for j in range(0,M)]
+            isoforms[k]['exons'] = list()
+            for j in range(0,M):
+                if informative[j]:
+                    isoforms[k]['exons'].append(int(E2I[j][k].getAttr(GRB.Attr.X)>0.9))
+                else:
+                    isoforms[k]['exons'].append(I[next(iter(remaining_rids))][j])
             isoforms[k]['rid_to_corrections'] = dict()
         # Isoform id to read ids set
         for i in remaining_rids:
@@ -536,7 +574,9 @@ def run_ilp(tint, remaining_rids, ilp_settings, log_prefix):
             for i in isoforms[k]['rid_to_corrections'].keys():
                 isoforms[k]['rid_to_corrections'][i] = [str(tint['reads'][i]['data'][j]) for j in range(M)]
                 for j in range(0,M):
-                    if C[i][j] == 1 and OBJ[i][j][k].getAttr(GRB.Attr.X) > 0.9:
+                    if not informative[j]:
+                        isoforms[k]['rid_to_corrections'][i][j] = '-'
+                    elif C[i][j] == 1 and OBJ[i][j][k].getAttr(GRB.Attr.X) > 0.9:
                         isoforms[k]['rid_to_corrections'][i][j] = 'X'
     return status,isoforms
 
@@ -560,6 +600,8 @@ def output_isoforms(tint, out_file):
             output.append(reads[i]['chr'])
             output.append(reads[i]['strand'])
             output.append(str((reads[i]['tint'])))
+            output.append(str((reads[i]['partition'])))
+            output.append(str((reads[i]['poly_tail_category'])))
             output.append(str(iid))
             output.append(''.join(map(str,corrections)))
             exon_strs = [str(x) for x in corrections]
@@ -576,6 +618,8 @@ def output_isoforms(tint, out_file):
         output.append(reads[i]['chr'])
         output.append(reads[i]['strand'])
         output.append(str((reads[i]['tint'])))
+        output.append(str((reads[i]['partition'])))
+        output.append(str((reads[i]['poly_tail_category'])))
         output.append('*')
         output.append('*')
         exon_strs = [str(x) for x in reads[i]['data']]
@@ -588,6 +632,7 @@ def output_isoforms(tint, out_file):
 
 def cluster_tint(cluster_args):
     tint, ilp_settings, min_isoform_size, logs_dir=cluster_args
+    print('# Clustering tint {}'.format(tint['id']))
 
     os.makedirs('{}/{}'.format(logs_dir, tint['id']), exist_ok=True)
     preprocess_ilp(tint, ilp_settings)
@@ -595,17 +640,20 @@ def cluster_tint(cluster_args):
     print('# Paritions ({}) sizes: {}\n'.format(len(tint['partitions']), [len(p) for p in tint['partitions']]))
     tint['isoforms'] = list()
     tint['garbage_rids'] = list()
-    for partition,remaining_rids in enumerate(tint['partitions']):
+    for partition,(remaining_rids,incomp_rids) in enumerate(tint['partitions']):
+        for rid in remaining_rids:
+            tint['reads'][rid]['partition']=partition
         print('==========\ntint {}: Running {}-th partition...'.format(tint['id'], partition))
         for round in range(ilp_settings['max_rounds']):
             print('==========\ntint {}: Running {}-th round with {} reads...'.format(tint['id'], round, len(remaining_rids)))
             if len(remaining_rids) < min_isoform_size:
                 break
             status,round_isoforms = run_ilp(
-                tint          = tint,
+                tint           = tint,
                 remaining_rids = remaining_rids,
+                incomp_rids    = incomp_rids,
                 ilp_settings   = ilp_settings,
-                log_prefix     = '{}/{}/round.{}'.format(logs_dir, tint['id'], round),
+                log_prefix     = '{}/{}/partition.{}.round.{}'.format(logs_dir, tint['id'], partition, round),
             )
             if status != 'OPTIMAL' or max([0]+[len(i['rid_to_corrections']) for i in round_isoforms.values()]) < min_isoform_size:
                 break
@@ -642,7 +690,7 @@ def main():
     )
     tints = read_segment(segment_tsv=args.segment_tsv)
     cluster_args = [
-        (tint, ilp_settings, args.min_isoform_size, args.logs_dir) for _,tint in sorted(tints.items())
+        (tint, ilp_settings, args.min_isoform_size, args.logs_dir) for _,tint in sorted(tints.items()) if tint['id']==243
     ]
     print(ilp_settings)
     out_file = open(args.output, 'w')

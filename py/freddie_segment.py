@@ -527,7 +527,7 @@ def segment(segment_args):
         for r_idx,read in enumerate(tint['reads']):
             for s,e,s_yidx,e_yidx in zip(final_c_idxs[:-1],final_c_idxs[1:],final_y_idxs[:-1],final_y_idxs[1:]):
                 seg_len = Yy_idx_to_pos[Y_idx][e_yidx]-Yy_idx_to_pos[Y_idx][s_yidx]+1
-                if seg_len > len(smoothed_threshold):
+                if seg_len >= len(smoothed_threshold):
                     ht = high_threshold
                     lt = low_threshold
                 else:
