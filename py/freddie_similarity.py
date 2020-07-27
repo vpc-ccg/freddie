@@ -166,13 +166,13 @@ def get_tid_cov(read_files, tid_to_tid):
     return tid_cov
 
 def print_unpaired_stats(outfile, name, unpaired, above_sim):
-    print('Unpaired {} # = {},\n\tof which {} have at least one match,\n\tmed= {:2.2f},\n\tmean = {:2.2f},\n\tstd = {:2.2f}'.format(
+    print('Unpaired {} # = {},\n\tof which {} have at least one match. Stats for ones with at least on match:\n\tmed= {:2.2f},\n\tmean = {:2.2f},\n\tstd = {:2.2f}'.format(
         name,
         len(unpaired),
         len([i for i in unpaired if above_sim[i]>0]),
-        np.median([above_sim[i] for i in unpaired]),
-        np.mean([above_sim[i] for i in unpaired]),
-        np.std([above_sim[i] for i in unpaired]),
+        np.median([above_sim[i] for i in unpaired if above_sim[i] > 0]),
+        np.mean([above_sim[i] for i in unpaired if above_sim[i] > 0]),
+        np.std([above_sim[i] for i in unpaired if above_sim[i] > 0]),
     ), file=outfile)
 
 def print_stats(outfile, pairings,unpaired_iids,unpaired_tids,iid_above_sim,tid_above_sim):
