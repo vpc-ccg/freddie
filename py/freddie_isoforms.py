@@ -46,6 +46,8 @@ def output_gtf(tints, outpath):
     out_file=open(outpath, 'w+')
     for tint in tints.values():
         for isoform in tint['isoforms'].values():
+            if not '1' in isoform['data']:
+                continue
             record=list()
             record.append(tint['chr'])
             record.append('freddie')

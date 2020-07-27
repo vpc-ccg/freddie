@@ -209,9 +209,9 @@ def partition_reads(tint):
             for j in c[idx+1:]:
                 i,j = min(i,j),max(i,j)
                 assert i<j
-                if G.has_edge(i,j):
-                    continue
-                incomp.append((i,j))
+                # if G.has_edge(i,j):
+                #     continue
+                # incomp.append((i,j))
         tint['partitions'].append((rids,incomp))
 
 def preprocess_ilp(tint, ilp_settings):
@@ -690,7 +690,7 @@ def main():
     )
     tints = read_segment(segment_tsv=args.segment_tsv)
     cluster_args = [
-        (tint, ilp_settings, args.min_isoform_size, args.logs_dir) for _,tint in sorted(tints.items()) if tint['id']==243
+        (tint, ilp_settings, args.min_isoform_size, args.logs_dir) for tint in tints.values()
     ]
     print(ilp_settings)
     out_file = open(args.output, 'w')

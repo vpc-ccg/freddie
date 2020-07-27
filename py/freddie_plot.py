@@ -218,6 +218,12 @@ def plot_isoform(isoform, transcripts, plot_settings, outpath):
         #             height = 1,
         #             color  = color,
         #         ))
+        if read['poly_tail_category'] == 'S':
+            r_axes[0].arrow(0.1,p,0.9,p,color='black')
+        if read['poly_tail_category'] == 'E':
+            r_axes[0].arrow(0.1,p,0.9,p,color='black')
+        if read['poly_tail_category'] == 'N':
+            r_axes[0].arrow(0.1,p,0.9,p,color='black')
         for aid,ax in enumerate(r_axes):
             if read['data'][aid]=='0':
                 continue
@@ -298,7 +304,7 @@ def get_tints(cluster_tsv, segment_tsv):
                 id=tint_id,
                 chrom=chrom,
                 segs=segs,
-                isoforms={'garbage': dict(id='garbage', data='', reads=list())}
+                isoforms={'garbage': dict(id='garbage', data='', reads=list(), partition=-1)}
             )
         elif line.startswith('isoform_'):
             iid,tint_id,data = line.rstrip()[8:].split('\t')
@@ -312,7 +318,7 @@ def get_tints(cluster_tsv, segment_tsv):
             line=line.rstrip().split('\t')
             rid=int(line[0])
             tint=int(line[4])
-            iid=line[5]
+            iid=line[7]
             if iid =='*':
                 iid = 'garbage'
             data=rid_to_data[rid]
@@ -323,15 +329,22 @@ def get_tints(cluster_tsv, segment_tsv):
                 chrom=line[2],
                 strand=line[3],
                 tint=tint,
+                partition=int(line[5]),
+                poly_tail_category=line[6],
                 iid=iid,
                 data=data,
-                poly_tail=line[6+1+len(data):],
+                poly_tail=line[8+1+len(data):],
             ))
     for tint_id in tints.keys():
         tints[tint_id]['tids'] = set()
         for isoform in tints[tint_id]['isoforms'].values():
+            partitions = set()
             for read in isoform['reads']:
                 tints[tint_id]['tids'].add(read['tid'])
+                partitions.add(read['partition'])
+            if isoform['id'] != 'garbage':
+                assert len(partitions)==1
+                isoform['partition'] = next(iter(partitions))
     return tints
 
 def plot_tint(plot_args):

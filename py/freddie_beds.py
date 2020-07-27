@@ -12,6 +12,11 @@ def parse_args():
                         type=str,
                         required=True,
                         help="Path to GTF file of annotations")
+    parser.add_argument("-t",
+                        "--tid-tint",
+                        type=str,
+                        required=True,
+                        help="Path to TXT with TID and TINT ID in each line")
     parser.add_argument("-s",
                         "--segment-tsv",
                         type=str,
@@ -50,7 +55,7 @@ def get_transcripts(gtf):
         transcripts[tid]['intervals'].append(interval)
     return transcripts
 
-def get_tints(cluster_tsv, segment_tsv):
+def get_tints(cluster_tsv, segment_tsv, tid_tint_tsv):
     tints = dict()
     rid_to_data=dict()
     for line in open(segment_tsv):
@@ -68,6 +73,7 @@ def get_tints(cluster_tsv, segment_tsv):
                 id=tint_id,
                 chrom=chrom,
                 segs=segs,
+                intersecting_tids=set(),
                 isoforms={'garbage': dict(id='garbage', data='', reads=list())}
             )
         elif line.startswith('isoform_'):
@@ -82,7 +88,7 @@ def get_tints(cluster_tsv, segment_tsv):
             line=line.rstrip().split('\t')
             rid=int(line[0])
             tint=int(line[4])
-            iid=line[5]
+            iid=line[7]
             if iid =='*':
                 iid = 'garbage'
             data=rid_to_data[rid]
@@ -93,15 +99,21 @@ def get_tints(cluster_tsv, segment_tsv):
                 chrom=line[2],
                 strand=line[3],
                 tint=tint,
+                partition=int(line[5]),
+                poly_tail_category=line[6],
                 iid=iid,
                 data=data,
-                poly_tail=line[6+1+len(data):],
+                poly_tail=line[8+1+len(data):],
             ))
-    for tint_id in tints.keys():
-        tints[tint_id]['tids'] = set()
-        for isoform in tints[tint_id]['isoforms'].values():
-            for read in isoform['reads']:
-                tints[tint_id]['tids'].add(read['tid'])
+    for line in open(tid_tint_tsv):
+        tid,tint = line.rstrip().split()
+        tint = int(tint)
+        tints[tint]['intersecting_tids'].add(tid)
+    # for tint_id in tints.keys():
+    #     tints[tint_id]['tids'] = set()
+    #     for isoform in tints[tint_id]['isoforms'].values():
+    #         for read in isoform['reads']:
+    #             tints[tint_id]['tids'].add(read['tid'])
     return tints
 
 def add_intersecting_tids(tint, transcripts):
@@ -157,9 +169,9 @@ def main():
     #     print(tid)
     #     print(transcript['intervals'])
     #     print(transcript['name'])
-    tints =  get_tints(cluster_tsv=args.cluster_tsv, segment_tsv=args.segment_tsv)
+    tints =  get_tints(cluster_tsv=args.cluster_tsv, segment_tsv=args.segment_tsv, tid_tint_tsv=args.tid_tint)
     for tint in tints.values():
-        add_intersecting_tids(tint, transcripts)
+        # add_intersecting_tids(tint, transcripts)
         output_beds(
             tint=tint,
             transcripts=transcripts,

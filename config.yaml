@@ -10,18 +10,18 @@ samples:
         reads:
             - test/data/N_sim.chr21.fastq
         seq_type: ont1d
-    L_sim.chr21:
-        reads:
-            - test/data/L_sim.chr21.fastq
-        seq_type: ont1d
-    P000S000.chr21:
-        reads:
-            - test/data/P000S000.chr21.fastq
-        seq_type: ont1d
-    P001S000.chr21:
-        reads:
-            - test/data/P001S000.chr21.fastq
-        seq_type: ont1d
+    # L_sim.chr21:
+    #     reads:
+    #         - test/data/L_sim.chr21.fastq
+    #     seq_type: ont1d
+    # P000S000.chr21:
+    #     reads:
+    #         - test/data/P000S000.chr21.fastq
+    #     seq_type: ont1d
+    # P001S000.chr21:
+    #     reads:
+    #         - test/data/P001S000.chr21.fastq
+    #     seq_type: ont1d
     # P001S000:
     #     reads:
     #         - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R410/P001R410.pass.fastq
@@ -50,6 +50,7 @@ exec:
     isoforms   : py/freddie_isoforms.py
     beds       : py/freddie_beds.py
     similarity : py/freddie_similarity.py
+    summarize  : py/freddie_summarize.py
     plot       : py/freddie_plot.py
 
 references:

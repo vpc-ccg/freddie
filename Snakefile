@@ -31,10 +31,11 @@ rule all:
         expand('{}/freddie.{{sample}}.segment.tsv'.format(output_d), sample=config['samples']),
         expand('{}/freddie.{{sample}}.cluster.tsv'.format(output_d), sample=config['samples']),
         expand('{}/freddie.{{sample}}.isoforms.gtf'.format(output_d), sample=config['samples']),
-        expand('{}/freddie.{{sample}}.plot/'.format(plots_d), sample=config['samples']),
         expand('{}/freddie.{{sample}}.beds/'.format(logs_d), sample=config['samples']),
         expand('{}/freddie.{{sample}}.seqpare/'.format(logs_d), sample=config['samples']),
         expand('{}/freddie.{{sample}}.similarity.txt'.format(logs_d), sample=config['samples']),
+        expand('{}/freddie.{{sample}}.summarize.tsv'.format(logs_d), sample=config['samples']),
+        # expand('{}/freddie.{{sample}}.plot/'.format(plots_d), sample=config['samples']),
 
 rule align:
     input:
@@ -109,15 +110,16 @@ rule beds:
         script  = config['exec']['beds'],
         segment ='{}/freddie.{{sample}}.segment.tsv'.format(output_d),
         cluster = '{}/freddie.{{sample}}.cluster.tsv'.format(output_d),
+        tid_tint = '/mnt/c/Users/baraa/Documents/freddie-nb/tids.txt',
         annotation = config['annotations']['gtf']
     output:
         beds_dir = directory('{}/freddie.{{sample}}.beds/'.format(logs_d)),
     shell:
-        '{input.script} -a {input.annotation} -c {input.cluster} -s {input.segment} -od {output.beds_dir}'
+        '{input.script} -a {input.annotation} -c {input.cluster} -s {input.segment} -t {input.tid_tint} -od {output.beds_dir}'
 
 rule seqpare:
     input:
-        beds_dir = '{}/freddie.{{sample}}.beds'.format(logs_d),
+        beds_dir = '{}/freddie.{{sample}}.beds/'.format(logs_d),
     output:
         seqpare_dir = directory('{}/freddie.{{sample}}.seqpare/'.format(logs_d)),
     shell:
@@ -134,23 +136,34 @@ rule seqpare:
 
 rule similarity:
     input:
-        script  = config['exec']['similarity'],
+        script      = config['exec']['similarity'],
         seqpare_dir = directory('{}/freddie.{{sample}}.seqpare/'.format(logs_d)),
-        reads  = lambda wildcards: config['samples'][wildcards.sample]['reads'],
-        annotation = config['annotations']['gtf'],
+        reads       = lambda wildcards: config['samples'][wildcards.sample]['reads'],
+        annotation  = config['annotations']['gtf'],
     output:
         similarity = protected('{}/freddie.{{sample}}.similarity.txt'.format(logs_d)),
     params:
         sim_threshold = 0.5,
-        min_cov = 3,
+        min_cov       = 3,
     shell:
         '{input.script} -a {input.annotation} -r {input.reads} -sd {input.seqpare_dir} -o {output.similarity}'
 
+rule summarize:
+    input:
+        script      = config['exec']['summarize'],
+        annotation  = config['annotations']['gtf'],
+        segment ='{}/freddie.{{sample}}.segment.tsv'.format(output_d),
+        cluster = '{}/freddie.{{sample}}.cluster.tsv'.format(output_d),
+    output:
+        summarize = protected('{}/freddie.{{sample}}.summarize.tsv'.format(logs_d)),
+    shell:
+        '{input.script} -a {input.annotation} -s {input.segment} -c {input.cluster} -o {output.summarize}'
+
 rule plot:
     input:
-        script = config['exec']['plot'],
-        segment = '{}/freddie.{{sample}}.segment.tsv'.format(output_d),
-        cluster = '{}/freddie.{{sample}}.cluster.tsv'.format(output_d),
+        script     = config['exec']['plot'],
+        segment    = '{}/freddie.{{sample}}.segment.tsv'.format(output_d),
+        cluster    = '{}/freddie.{{sample}}.cluster.tsv'.format(output_d),
         annotation = config['annotations']['gtf']
     output:
         plot_dir = directory('{}/freddie.{{sample}}.plot/'.format(plots_d)),

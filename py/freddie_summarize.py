@@ -84,6 +84,7 @@ def get_tints(cluster_tsv, segment_tsv):
         elif line.startswith('isoform_'):
             iid,tint_id,data = line.rstrip()[8:].split('\t')
             tint_id=int(tint_id)
+            assert tint_id in tints
             tints[tint_id]['isoforms'][iid]=dict(
                 id=iid,
                 data=data,
@@ -92,18 +93,22 @@ def get_tints(cluster_tsv, segment_tsv):
         else:
             line=line.rstrip().split('\t')
             rid=int(line[0])
-            tint=int(line[4])
-            iid=line[5]
+            tint_id=int(line[4])
+            iid=line[7]
             if iid =='*':
                 iid = 'garbage'
             data=rid_to_data[rid]
-            tints[tint]['isoforms'][iid]['reads'].append(dict(
+            assert tint_id in tints
+            assert iid in tints[tint_id]['isoforms'], (line,tint_id,iid,tints[tint_id]['isoforms'].keys())
+            tints[tint_id]['isoforms'][iid]['reads'].append(dict(
                 rid=rid,
                 name=line[1],
                 tid=line[1].split('_')[0],
                 chrom=line[2],
                 strand=line[3],
-                tint=tint,
+                tint=tint_id,
+                partition=int(line[5]),
+                poly_tail_category=line[6],
                 iid=iid,
                 data=data,
                 poly_tail=line[6+1+len(data):],
