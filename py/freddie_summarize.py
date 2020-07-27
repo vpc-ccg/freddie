@@ -111,7 +111,7 @@ def get_tints(cluster_tsv, segment_tsv):
                 poly_tail_category=line[6],
                 iid=iid,
                 data=data,
-                poly_tail=line[6+1+len(data):],
+                poly_tail=line[8+1+len(data):],
             ))
     return tints
 
