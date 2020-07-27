@@ -189,16 +189,14 @@ def output_similarity(outpath, pairings,unpaired_iids,unpaired_tids,iid_above_si
     outfile = open(outpath, 'w+')
     print_stats(outfile, pairings, unpaired_iids,unpaired_tids,iid_above_sim,tid_above_sim)
     for s,iid,tid in pairings:
-        print('{}\t{}\t{:2.2f}%'.format(tid,iid,s*100))
-    # for s,iid,tid in pairings:
-    #     if tid_cov.get(tid,0) < min_cov:
-    #         pairings.remove((s,iid,tid))
-    #         unpaired_iids.append(iid)
-    # for tid in unpaired_tids:
-    #     if tid_cov.get(tid,0) < min_cov:
-    #         unpaired_tids.remove(tid)
-    # print('\nIf we remove transcripts with coverage < {}'.format(min_cov), file=outfile)
-    # print_stats(outfile, pairings,unpaired_iids,unpaired_tids,iid_above_sim,tid_above_sim)
+        if tid_cov.get(tid,0) < min_cov:
+            pairings.remove((s,iid,tid))
+            unpaired_iids.append(iid)
+    for tid in unpaired_tids:
+        if tid_cov.get(tid,0) < min_cov:
+            unpaired_tids.remove(tid)
+    print('\nIf we remove transcripts with coverage < {}'.format(min_cov), file=outfile)
+    print_stats(outfile, pairings,unpaired_iids,unpaired_tids,iid_above_sim,tid_above_sim)
     outfile.close()
 
 def main():
