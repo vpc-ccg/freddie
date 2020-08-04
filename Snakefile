@@ -146,7 +146,7 @@ rule similarity:
         sim_threshold = 0.5,
         min_cov       = 3,
     shell:
-        '{input.script} -a {input.annotation} -r {input.reads} -sd {input.seqpare_dir} -o {output.similarity}'
+        '{input.script} -a {input.annotation} -r {input.reads} -sd {input.seqpare_dir} -st {params.sim_threshold} -o {output.similarity}'
 
 rule summarize:
     input:
