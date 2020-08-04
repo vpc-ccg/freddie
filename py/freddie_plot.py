@@ -219,14 +219,18 @@ def plot_isoform(isoform, transcripts, plot_settings, outpath):
         #             color  = color,
         #         ))
         if read['poly_tail_category'] == 'S':
-            r_axes[0].arrow(0.1,p,0.9,p,color='black')
-        if read['poly_tail_category'] == 'E':
-            r_axes[0].arrow(0.1,p,0.9,p,color='black')
-        if read['poly_tail_category'] == 'N':
-            r_axes[0].arrow(0.1,p,0.9,p,color='black')
+            r_axes[0].arrow(p,0.1,p,0.9,color='black')
+        # if read['poly_tail_category'] == 'E':
+        #     r_axes[-1].arrow(p,0.9,p,0.1,color='black')
+        # if read['poly_tail_category'] == 'N':
+        #     r_axes[0].arrow(p,0.1,p,0.9,color='red')
+        # if read['poly_tail_category'] == 'N':
+            r_axes[-1].arrow(p,0.9,p,0.1,color='red')
         for aid,ax in enumerate(r_axes):
+            if read['gaps'][aid] > 0:
+                ax.text(0.9,p+0.5,s='{}'.format(read['gaps'][aid]), size='xx-small', ha='right', color='red' if read['gaps'][aid]>99 else 'black')
             if read['data'][aid]=='0':
-                continue
+                pass
             if read['data'][aid]=='1':
                 ax.add_patch(patches.Rectangle(
                     xy     = (0,p),
@@ -333,6 +337,7 @@ def get_tints(cluster_tsv, segment_tsv):
                 poly_tail_category=line[6],
                 iid=iid,
                 data=data,
+                gaps=[int(x[:-1].split('(')[1]) if '(' in x else 0 for x in line[8+1:8+1+len(data)]],
                 poly_tail=line[8+1+len(data):],
             ))
     for tint_id in tints.keys():
@@ -391,7 +396,10 @@ def plot_tint(plot_args):
             plot_settings=plot_settings,
             outpath='{}/{}.pdf'.format(out_dir, isoform['id']),
         )
-
+    mergedObject = PdfFileMerger()
+    for isoform in tint['isoforms'].values():
+        mergedObject.append(PdfFileReader('{}/{}.pdf'.format(out_dir, isoform['id']), 'rb'))
+    mergedObject.write('{}.pdf'.format(out_dir))
 
 def main():
     args = parse_args()

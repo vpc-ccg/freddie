@@ -23,6 +23,11 @@ def parse_args():
                         type=str,
                         required=True,
                         help="Path to GTF file of annotations")
+    parser.add_argument("-p",
+                        "--split-tsv",
+                        type=str,
+                        required=True,
+                        help="Path to TSV file of Freddie split")
     parser.add_argument("-s",
                         "--segment-tsv",
                         type=str,
@@ -36,8 +41,13 @@ def parse_args():
     parser.add_argument("-o",
                         "--output",
                         type=str,
-                        default='freddie_summarize',
+                        default='freddie_summarize.tsv',
                         help="Output file. Default: freddie_summarize.tsv")
+    parser.add_argument("-ob",
+                        "--beds-dir",
+                        type=str,
+                        default='freddie_beds/',
+                        help="Output directory. Will be created if does not exist. Default: freddie_beds/")
     args = parser.parse_args()
     return args
 
@@ -61,7 +71,7 @@ def get_transcripts(gtf):
         transcripts[tid]['tints'] = dict()
     return transcripts
 
-def get_tints(cluster_tsv, segment_tsv):
+def get_tints(split_tsv, cluster_tsv, segment_tsv):
     tints = dict()
     rid_to_data=dict()
     for line in open(segment_tsv):
@@ -113,47 +123,66 @@ def get_tints(cluster_tsv, segment_tsv):
                 data=data,
                 poly_tail=line[8+1+len(data):],
             ))
+    cinterval_re   = '([0-9]+)-([0-9]+)'
+    tint_prog   = re.compile(r'#%(chr_re)s\t%(cid_re)s\t%(intervals_re)s\t%(read_count_re)s\n$' % {
+        'chr_re'        : '(?P<chr>[0-9A-Za-z!#$%&+./:;?@^_|~-][0-9A-Za-z!#$%&*+./:;=?@^_|~-]*)',
+        'cid_re'        : '(?P<cid>[0-9]+)',
+        'intervals_re'  : '(?P<intervals>%(i)s(,%(i)s)*)' % {'i':cinterval_re},
+        'read_count_re' : '(?P<read_count>[0-9]+)',
+    })
+    cinterval_prog  = re.compile(cinterval_re)
+    for line in open(split_tsv):
+        if not line[0]=='#':
+            continue
+        re_dict = tint_prog.match(line).groupdict()
+        tint_id = int(re_dict['cid'])
+        tints[tint_id]['intervals']  = [(int(x[0]),int(x[1])) for x in cinterval_prog.findall(re_dict['intervals'])]
     return tints
 
 def process_tint(tint, transcripts):
     tint['tids'] = list()
+    tids=dict()
 
-    tids=set()
     tint_id =tint['id']
     for isoform in tint['isoforms'].values():
         for read in isoform['reads']:
             tid = read['tid']
             if not tid in transcripts:
                 continue
-            tids.add(tid)
             transcript=transcripts[tid]
-            if not tint_id in transcript['tints']:
-                 transcript['tints'][tint_id]=dict(
-                    cov=0,
+            if not tid in tids:
+                tids[tid]=dict(
+                    read_cov=0,
                     data=[0 for _ in tint['segs']],
+                    covered=0,
                     missed=0,
                  )
-            transcript['tints'][tint_id]['cov'] += 1
-    pos_to_seg = list()
+            tids[tid]['read_cov'] += 1
+    pos_to_seg = dict()
+    tint_skips = {(e1,s2):False for (s1,e1),(s2,e2) in zip(tint['intervals'][:-1],tint['intervals'][1:])}
     for idx,(s,e) in enumerate(tint['segs']):
+        if (s,e) in tint_skips:
+            assert tint_skips[(s,e)]==False
+            tint_skips[(s,e)]=True
         for i in range(s,e):
-            pos_to_seg.append(idx)
-    tint_s,tint_e = tint['segs'][0][0],tint['segs'][-1][-1]
+            pos_to_seg[i]=idx
+    assert all(tint_skips.values()),(tint_skips,tint['intervals'])
+
     for tid in tids:
         transcript=transcripts[tid]
-        # if transcript['tints'][tint_id]['cov'] < 0:
-        #     continue
-        tint['tids'].append(tid)
+        if transcript['chrom'] != tint['chrom']:
+            continue
         for s,e in transcript['intervals']:
             for i in range(s,e):
-                if tint_s<=i<tint_e:
-                    seg_idx = pos_to_seg[i-tint_s]
-                    transcript['tints'][tint_id]['data'][seg_idx]+=1
+                if i in pos_to_seg:
+                    seg_idx = pos_to_seg[i]
+                    tids[tid]['data'][seg_idx]+=1
+                    tids[tid]['covered']+=1
                 else:
-                    transcript['tints'][tint_id]['missed']+=1
+                    tids[tid]['missed']+=1
         for idx,(s,e) in enumerate(tint['segs']):
             l=e-s+1
-            c=transcript['tints'][tint_id]['data'][idx]
+            c=tids[tid]['data'][idx]
             t=threshold
             if l < len(smooth):
                 t = smooth[l]
@@ -162,23 +191,20 @@ def process_tint(tint, transcripts):
                 d = '1'
             elif c/l < 1-t:
                 d = '0'
-            transcript['tints'][tint_id]['data'][idx]=d
-        transcript['tints'][tint_id]['data'] = ''.join(transcript['tints'][tint_id]['data'])
-
-def process_overlaps(tint, transcripts):
-    pos_to_seg = list()
-    # for tid in tint['tids']:
-    #     data = [0 for _ in tint['segs']]
-    #     for s,e in transcripts[tid]['intervals']
-
-
+            tids[tid]['data'][idx]=d
+        tids[tid]['data'] = ''.join(tids[tid]['data'])
+    for tid in tids:
+        if tids[tid]['covered'] < 20:
+            continue
+        tint['tids'].append(tid)
+        transcripts[tid]['tints'][tint['id']]=tids[tid]
 
 def output_beds(tint, transcripts, tid_dir, iso_dir):
     os.makedirs(tid_dir, exist_ok=True)
     os.makedirs(iso_dir, exist_ok=True)
 
     chrom = tint['chrom']
-    for tid in tint['intersecting_tids']:
+    for tid in tint['tids']:
         name = transcripts[tid]['name']
         bed_file = open('{}/{}.bed'.format(tid_dir,name), 'w+')
         for s,e in transcripts[tid]['intervals']:
@@ -226,7 +252,7 @@ def output_tint(tint, transcripts, outfile):
         record.append(tid)
         record.append(transcript['name'])
         record.append(transcript['tints'][tint['id']]['data'])
-        record.append(str(transcript['tints'][tint['id']]['cov']))
+        record.append(str(transcript['tints'][tint['id']]['read_cov']))
         record.append(str(transcript['tints'][tint['id']]['missed']))
         record.append(','.join(list(map(str,transcript['tints'].keys()))))
         print('\t'.join(record), file=outfile)
@@ -253,11 +279,21 @@ def main():
     args = parse_args()
 
     transcripts = get_transcripts(gtf=args.annotation_gtf)
-    tints =  get_tints(cluster_tsv=args.cluster_tsv, segment_tsv=args.segment_tsv)
+    tints =  get_tints(split_tsv=args.split_tsv, cluster_tsv=args.cluster_tsv, segment_tsv=args.segment_tsv)
     for idx,tint in enumerate(tints.values()):
         process_tint(tint, transcripts)
     outfile = open(args.output, 'w+')
     for tint_id,tint in sorted(tints.items()):
-        output_tint(tint, transcripts, outfile)
+        output_tint(
+            tint        = tint,
+            transcripts = transcripts,
+            outfile     = outfile,
+        )
+        output_beds(
+            tint        = tint,
+            transcripts = transcripts,
+            tid_dir     = '{}/{}/tids'.format(args.beds_dir, tint['id']),
+            iso_dir     = '{}/{}/isos'.format(args.beds_dir, tint['id']),
+        )
 if __name__ == "__main__":
     main()

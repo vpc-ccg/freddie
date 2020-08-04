@@ -9,7 +9,6 @@ from networkx.algorithms import components
 from networkx import Graph
 from gurobipy import *
 
-
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Cluster aligned reads into isoforms")
@@ -28,12 +27,12 @@ def parse_args():
                         "--gap-offset",
                         type=int,
                         default=20,
-                        help="Slack +- value for exons and the unaligned gaps")
+                        help="Slack +- value for exons and the unaligned gaps. Default: 20")
     parser.add_argument("-e",
                         "--epsilon",
                         type=float,
                         default=0.2,
-                        help="Epsilon value for how much can unaligned gaps can cover")
+                        help="Epsilon percent value for how much can unaligned gaps can cover. Default: 0.2")
     parser.add_argument("-mr",
                         "--max-rounds",
                         type=int,
@@ -58,17 +57,13 @@ def parse_args():
                         "--logs-dir",
                         type=str,
                         default=None,
-                        help="Directory path where logs will be outputted. Default: <--output>.logs")
+                        help="Directory path where logs will be outputted. Default: No log")
     parser.add_argument("-o",
                         "--output",
                         type=str,
                         default='freddie_cluster.tsv',
                         help="Path to output file. Default: freddie_cluster.tsv")
     args = parser.parse_args()
-
-    if args.logs_dir == None:
-        args.logs_dir = args.output + '.logs'
-    args.logs_dir = args.logs_dir.rstrip('/')
 
     assert args.recycle_model in recycle_models
     assert args.gap_offset       >= 0
@@ -527,12 +522,14 @@ def run_ilp(tint, remaining_rids, incomp_rids, ilp_settings, log_prefix):
         sense = GRB.MINIMIZE
     )
 
-    ILP_ISOFORMS.write('{}.lp'.format(log_prefix))
 
     # Optimization
     #ILP_ISOFORMS.Params.PoolSearchMode=2
     #ILP_ISOFORMS.Params.PoolSolutions=5
-    ILP_ISOFORMS.setParam('LogFile', '{}.glog'.format(log_prefix))
+    ILP_ISOFORMS.setParam('TuneOutput', 1)
+    if not log_prefix == None:
+        ILP_ISOFORMS.setParam('LogFile', '{}.glog'.format(log_prefix))
+        ILP_ISOFORMS.write('{}.lp'.format(log_prefix))
     ILP_ISOFORMS.setParam('TimeLimit', ilp_settings['timeout']*60)
     ILP_ISOFORMS.optimize()
 
@@ -545,10 +542,11 @@ def run_ilp(tint, remaining_rids, incomp_rids, ilp_settings, log_prefix):
     else:
         status = 'OPTIMAL'
         # Writing the optimal solution to disk
-        solution_file = open('{}.sol'.format(log_prefix), 'w+')
-        for v in ILP_ISOFORMS.getVars():
-            solution_file.write('{}\t{}\n'.format(v.VarName, v.X))
-        solution_file.close()
+        if not log_prefix == None:
+            solution_file = open('{}.sol'.format(log_prefix), 'w+')
+            for v in ILP_ISOFORMS.getVars():
+                solution_file.write('{}\t{}\n'.format(v.VarName, v.X))
+            solution_file.close()
         # Isoform id to isoform structure
         for k in range(ISOFORM_INDEX_START,ilp_settings['K']):
             isoforms[k]['exons'] = list()
@@ -633,8 +631,8 @@ def output_isoforms(tint, out_file):
 def cluster_tint(cluster_args):
     tint, ilp_settings, min_isoform_size, logs_dir=cluster_args
     print('# Clustering tint {}'.format(tint['id']))
-
-    os.makedirs('{}/{}'.format(logs_dir, tint['id']), exist_ok=True)
+    if not logs_dir == None:
+        os.makedirs('{}/{}'.format(logs_dir, tint['id']), exist_ok=True)
     preprocess_ilp(tint, ilp_settings)
     partition_reads(tint)
     print('# Paritions ({}) sizes: {}\n'.format(len(tint['partitions']), [len(p) for p in tint['partitions']]))
@@ -653,7 +651,7 @@ def cluster_tint(cluster_args):
                 remaining_rids = remaining_rids,
                 incomp_rids    = incomp_rids,
                 ilp_settings   = ilp_settings,
-                log_prefix     = '{}/{}/partition.{}.round.{}'.format(logs_dir, tint['id'], partition, round),
+                log_prefix     = '{}/{}/partition.{}.round.{}'.format(logs_dir, tint['id'], partition, round) if logs_dir != None else None,
             )
             if status != 'OPTIMAL' or max([0]+[len(i['rid_to_corrections']) for i in round_isoforms.values()]) < min_isoform_size:
                 break
@@ -697,7 +695,7 @@ def main():
     with Pool(args.threads) as p:
         if args.threads == 1:
             p.close()
-        for idx,tint in enumerate(p.imap_unordered(cluster_tint, cluster_args, chunksize=20)) if args.threads>1 else enumerate(map(cluster_tint, cluster_args)):
+        for idx,tint in enumerate(p.imap_unordered(cluster_tint, cluster_args, chunksize=5)) if args.threads>1 else enumerate(map(cluster_tint, cluster_args)):
             output_isoforms(tint, out_file)
             print('Done with {}-th transcriptional multi-intervals ({}/{})'.format(tint['id'], idx+1,len(tints)))
     out_file.close()

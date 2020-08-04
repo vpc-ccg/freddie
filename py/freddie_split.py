@@ -194,14 +194,19 @@ def main():
             args.sam_format = 'bam'
     contigs,reads=read_sam(sam=args.sam, format=args.sam_format)
     outfile = open(args.output, 'w')
+    tind_idx_to_tint_id = dict()
+    tint_id = 0
     for contig in contigs.keys():
+        tind_idx_to_tint_id[contig] = list()
         tints = get_transcriptional_intervals(reads=reads, contig=contig)
-        for idx,tint in enumerate(tints):
+        for tint in tints:
             record = list()
             record.append('#{}'.format(contig))
-            record.append('{}'.format(idx))
+            tind_idx_to_tint_id[contig].append(str(tint_id))
+            record.append('{}'.format(tint_id))
             record.append(','.join('{}-{}'.format(s,e) for s,e in tint['intervals']))
             record.append(str(len(tint['rids'])))
+            tint_id+=1
             outfile.write('\t'.join(record))
             outfile.write('\n')
     for read in sorted(reads, key=lambda x:(x['contig'],x['tint'])):
@@ -210,7 +215,7 @@ def main():
         record.append(read['name'])
         record.append(read['contig'])
         record.append(read['strand'])
-        record.append(str(read['tint']))
+        record.append(tind_idx_to_tint_id[read['contig']][read['tint']])
         for interval in read['intervals']:
             record.append('{}-{}:{}-{}:{}'.format(*interval))
         outfile.write('\t'.join(record))

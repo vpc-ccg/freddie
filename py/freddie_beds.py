@@ -22,8 +22,8 @@ def parse_args():
                         type=str,
                         required=True,
                         help="Path to TSV file of Freddie segment")
-    parser.add_argument("-c",
-                        "--cluster-tsv",
+    parser.add_argument("-s",
+                        "--summarize-tsv",
                         type=str,
                         required=True,
                         help="Path to TSV file of Freddie cluster")

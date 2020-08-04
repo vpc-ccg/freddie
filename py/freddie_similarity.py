@@ -39,8 +39,40 @@ def parse_args():
                         type=str,
                         default='freddie_similarity.txt',
                         help="Output file. Default: freddie_similarity.txt")
+    parser.add_argument("-t",
+                        "--tid-tint",
+                        type=str,
+                        required=True,
+                        help="Path to TXT with TID and TINT ID in each line")
     args = parser.parse_args()
     return args
+
+def order_A(A):
+    remaining_i = set(range(A.shape[0]))
+    remaining_j = set(range(A.shape[1]))
+    i_order = list()
+    j_order = list()
+    while len(remaining_i)>0 and len(remaining_j)>0:
+        max_v = -1
+        for i in remaining_i:
+            for j in remaining_j:
+                if  A[i,j] > max_v:
+                    max_v = A[i,j]
+                    max_i = i
+                    max_j = j
+        i_order.append(max_i)
+        j_order.append(max_j)
+        remaining_i.remove(max_i)
+        remaining_j.remove(max_j)
+
+    remaining_i = [x[1] for x in sorted([(max(A[x,:]),x) for x in remaining_i], reverse=True)]
+    i_order.extend(remaining_i)
+    remaining_j = [x[1] for x in sorted([(max(A[:,x]),x) for x in remaining_j], reverse=True)]
+    j_order.extend(remaining_j)
+
+    assert len(i_order) == A.shape[0]
+    assert len(j_order) == A.shape[1]
+    return A[i_order,:][:,j_order]
 
 def plot_heatmap(old_A, iids, old_tids, tint, tid_cov, min_cov, prefix):
     low_cov_tids_idxs = list()
@@ -53,6 +85,8 @@ def plot_heatmap(old_A, iids, old_tids, tint, tid_cov, min_cov, prefix):
     A = np.delete(old_A,low_cov_tids_idxs,axis=1)
     if min(A.shape)==0:
         return
+    A = order_A(A)
+
     fig, ax = plt.subplots(figsize=(30,20))
     im = ax.imshow(A, cmap=plt.get_cmap('Greys'),vmin=0.0, vmax=1.0)
 
@@ -83,11 +117,13 @@ def get_tid_to_tid(gtf):
         c+=1
         info = {x.strip().split()[0]:x.strip().split()[1].strip('"') for x in line[8].rstrip(';').split(';')}
         assert not info['transcript_id'] in tid_to_tid
+        assert not info['transcript_name'] in tid_to_tid
         tid_to_tid[info['transcript_id']] = info['transcript_name']
-    assert len(set(tid_to_tid.values()))==len(tid_to_tid)==c
+        tid_to_tid[info['transcript_name']] = info['transcript_id']
+    assert len(set(tid_to_tid.values()))/2==len(tid_to_tid)/2==c
     return tid_to_tid
 
-def get_pairings(seqpare_dir,sim_threshold, tid_cov, min_cov):
+def get_pairings(seqpare_dir,sim_threshold, tid_cov, min_cov, valid_tints):
     pairings = list()
     unpaired_iids = list()
     unpaired_tids = list()
@@ -98,6 +134,9 @@ def get_pairings(seqpare_dir,sim_threshold, tid_cov, min_cov):
         if not (len(tint)==2 and tint[0].isdigit() and tint[1]=='tsv'):
             continue
         tint=int(tint[0])
+        if not tint in valid_tints:
+            continue
+        print(tint)
         tids = set()
         iids = set()
         A = dict()
@@ -166,14 +205,22 @@ def get_tid_cov(read_files, tid_to_tid):
     return tid_cov
 
 def print_unpaired_stats(outfile, name, unpaired, above_sim):
-    print('Unpaired {} # = {},\n\tof which {} have at least one match. Stats for ones with at least on match:\n\tmed= {:2.2f},\n\tmean = {:2.2f},\n\tstd = {:2.2f}'.format(
+    print('Unpaired {} # = {}, of which {} have at least one match.'.format(
         name,
         len(unpaired),
         len([i for i in unpaired if above_sim[i]>0]),
+    ), file=outfile)
+    print('\t Stats for # of matches for ones with at least on match:\n\tmed= {:2.2f},\n\tmean = {:2.2f},\n\tstd = {:2.2f}'.format(
         np.median([above_sim[i] for i in unpaired if above_sim[i] > 0]),
         np.mean([above_sim[i] for i in unpaired if above_sim[i] > 0]),
         np.std([above_sim[i] for i in unpaired if above_sim[i] > 0]),
     ), file=outfile)
+    # print('\tStats for # of top match for ones with at least on match:\n\tmed= {:2.2f},\n\tmean = {:2.2f},\n\tstd = {:2.2f}'.format(
+    #     len([i for i in unpaired if above_sim[i]>0]),
+    #     np.median([above_sim[i] for i in unpaired if above_sim[i] > 0]),
+    #     np.mean([above_sim[i] for i in unpaired if above_sim[i] > 0]),
+    #     np.std([above_sim[i] for i in unpaired if above_sim[i] > 0]),
+    # ), file=outfile)
 
 def print_stats(outfile, pairings,unpaired_iids,unpaired_tids,iid_above_sim,tid_above_sim):
     print('Pairings # = {},\n\tmed = {:2.2f}%,\n\tmean = {:2.2f}%,\n\tstd = {:2.2f}%'.format(
@@ -188,24 +235,35 @@ def print_stats(outfile, pairings,unpaired_iids,unpaired_tids,iid_above_sim,tid_
 def output_similarity(outpath, pairings,unpaired_iids,unpaired_tids,iid_above_sim,tid_above_sim, min_cov, tid_cov):
     outfile = open(outpath, 'w+')
     print_stats(outfile, pairings, unpaired_iids,unpaired_tids,iid_above_sim,tid_above_sim)
-    for s,iid,tid in pairings:
-        if tid_cov.get(tid,0) < min_cov:
-            pairings.remove((s,iid,tid))
-            unpaired_iids.append(iid)
-    for tid in unpaired_tids:
-        if tid_cov.get(tid,0) < min_cov:
-            unpaired_tids.remove(tid)
-    print('\nIf we remove transcripts with coverage < {}'.format(min_cov), file=outfile)
-    print_stats(outfile, pairings,unpaired_iids,unpaired_tids,iid_above_sim,tid_above_sim)
+    # for s,iid,tid in pairings:
+    #     if tid_cov.get(tid,0) < min_cov:
+    #         pairings.remove((s,iid,tid))
+    #         unpaired_iids.append(iid)
+    # for tid in unpaired_tids:
+    #     if tid_cov.get(tid,0) < min_cov:
+    #         unpaired_tids.remove(tid)
+    # print('\nIf we remove transcripts with coverage < {}'.format(min_cov), file=outfile)
+    # print_stats(outfile, pairings,unpaired_iids,unpaired_tids,iid_above_sim,tid_above_sim)
     outfile.close()
 
 def main():
     args = parse_args()
     tid_to_tid = get_tid_to_tid(args.annotation_gtf)
     tid_cov = get_tid_cov(args.reads, tid_to_tid)
-    pairings,unpaired_iids,unpaired_tids,iid_above_sim,tid_above_sim = get_pairings(args.seqpare_dir, args.similarity_threshold, tid_cov, args.min_cov)
+    valid_tints = {int(line.rstrip().split()[1]) for line in open(args.tid_tint)}
+    pairings,unpaired_iids,unpaired_tids,iid_above_sim,tid_above_sim = get_pairings(args.seqpare_dir, args.similarity_threshold, tid_cov, args.min_cov, valid_tints)
     output_similarity(args.output, pairings,unpaired_iids,unpaired_tids,iid_above_sim,tid_above_sim, args.min_cov, tid_cov)
 
+
+    out_file = open('{}.log.tsv'.format(args.output), 'w+')
+    for _,iid,tid in pairings:
+        print('paired_iid\t{}\t{}'.format(iid.split(':')[0],iid.split(':')[1]), file=out_file)
+        print('paired_tid\t{}\t{}'.format(tid.split(':')[0],tid_to_tid[tid.split(':')[1]]), file=out_file)
+    for iid in unpaired_iids:
+        print('unpaired_iid\t{}\t{}'.format(iid.split(':')[0],iid.split(':')[1]), file=out_file)
+    for tid in unpaired_tids:
+        print('unpaired_tid\t{}\t{}'.format(tid.split(':')[0],tid_to_tid[tid.split(':')[1]]), file=out_file)
+    out_file.close()
 
 if __name__ == "__main__":
     main()
