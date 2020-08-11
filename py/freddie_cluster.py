@@ -201,14 +201,14 @@ def partition_reads(tint):
         c = list(c)
         for idx,i in enumerate(c):
             rids.extend(unique_data[i][1])
-            for j in c[idx+1:]:
-                i,j = min(i,j),max(i,j)
-                assert i<j
-                if G.has_edge(i,j):
-                    continue
-                for rid_1 in unique_data[i][1]:
-                    for rid_2 in unique_data[j][1]:
-                        incomp.append((rid_1,rid_2))
+            # for j in c[idx+1:]:
+            #     i,j = min(i,j),max(i,j)
+            #     assert i<j
+            #     if G.has_edge(i,j):
+            #         continue
+            #     for rid_1 in unique_data[i][1]:
+            #         for rid_2 in unique_data[j][1]:
+            #             incomp.append((rid_1,rid_2))
         tint['partitions'].append((rids,incomp))
 
 def preprocess_ilp(tint, ilp_settings):
