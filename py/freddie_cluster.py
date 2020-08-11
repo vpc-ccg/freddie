@@ -690,7 +690,7 @@ def main():
     )
     tints = read_segment(segment_tsv=args.segment_tsv)
     cluster_args = [
-        (tint, ilp_settings, args.min_isoform_size, args.logs_dir) for tint in tints.values() if tint['id']==213
+        (tint, ilp_settings, args.min_isoform_size, args.logs_dir) for tint in tints.values()
     ]
     print(ilp_settings)
     out_file = open(args.output, 'w')
