@@ -629,7 +629,7 @@ def segment(segment_args):
         Y_raw,
     ) = process_splicing_data(tint)
 
-    Y = [gaussian_filter1d(y,sigma,truncate=1.0) for y in Y_raw]
+    Y = [gaussian_filter1d(y,sigma,truncate=4.0) for y in Y_raw]
     Y_none_zero_vals = np.array([v for y in Y for v in y if v > 0])
     variance_threhsold = Y_none_zero_vals.mean() + variance_factor*Y_none_zero_vals.std()
 
