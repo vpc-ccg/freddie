@@ -44,20 +44,15 @@ def parse_args():
                         type=float,
                         default=0.90,
                         help="Threshold rate above which the read will be considered as covering a segment. Low threshold is 1-threshold_rate. Anything in between is considered ambigious. Default: 0.9. Note: the stricter threshold for a given segment length will be used.")
-    parser.add_argument("-ta",
-                        "--threshold-abs",
-                        type=int,
-                        default=None,
-                        help="Absolute threshold in bases under which the read will be considered as not covering a segment. High threshold is segment length - threshold_abs. Anything in between is considered ambigious. Default: average(cigar del length) + 3*stdev(cigar del length). Note: the stricter threshold for a given segment length will be used.")
     parser.add_argument("-vf",
                         "--variance-factor",
                         type=float,
-                        default=5.0,
+                        default=3.0,
                         help="The stdev factor to fix a candidate peak. The threshold is set as > mean(non-zero support for splicing postions)+variance_factor*stdev(non-zero support for splicing postions). Default 3.0")
     parser.add_argument("-mps",
                         "--max-problem-size",
                         type=int,
-                        default=15,
+                        default=50,
                         help="Maximum number of candidate breakpoints allowed per segmentation problem")
     parser.add_argument("-lo",
                         "--min-read-support-outside",
@@ -67,7 +62,6 @@ def parse_args():
     args = parser.parse_args()
 
     assert(1 >= args.threshold_rate >= 0.5)
-    assert(args.threshold_abs == None or 50 >= args.threshold_abs >= 0)
     assert(10 > args.variance_factor > 0)
     assert(50 >= args.sigma>0)
     assert(args.max_problem_size>3)
@@ -195,21 +189,33 @@ def get_cumulative_coverage(candidate_y_idxs, y_idx_to_r_idxs):
     C = np.zeros((len(candidate_y_idxs)+1, y_idx_to_r_idxs.shape[1]), dtype=np.uint32)
     for C_idx,(cur_y_idx,nxt_y_idx) in enumerate(zip(candidate_y_idxs[:-1],candidate_y_idxs[1:]), start=1):
         C[C_idx] = y_idx_to_r_idxs[cur_y_idx:nxt_y_idx].sum(axis=0)
-        # print(len(y_idx_to_r_idxs[cur_y_idx:nxt_y_idx]), nxt_y_idx-cur_y_idx, cur_y_idx, nxt_y_idx)
-    # print(C[:,158])
     for C_idx in range(1,len(C)):
         C[C_idx] += C[C_idx-1]
-    # print(C[:,158])
-
     return C
 
-def get_high_threshold(seg_len, smoothed_threshold, threshold_rate, threshold_abs):
+def refine_segmentation(y_raw, y_idxs, sigma, skip=20, min_internal_splice=20):
+    refine_y_idxs = list()
+    for s_yidx,e_yidx in zip(y_idxs[:-1], y_idxs[1:]):
+        if e_yidx-s_yidx <= 2*skip:
+            continue
+        i_vals = [x for x in y_raw[s_yidx:e_yidx]]
+        for i in range(0,skip):
+            i_vals[i]=0.0
+            i_vals[-i-1]=0.0
+        if sum(i_vals) < min_internal_splice:
+            continue
+        i_gauss = gaussian_filter1d(i_vals, sigma, mode='constant', cval=0.0, truncate=1.0)
+        for i in find_peaks(i_gauss, distance=skip)[0]:
+            if sum(i_gauss[int(round(i-sigma)):int(round(i+sigma+1))]) < min_internal_splice:
+                continue
+            refine_y_idxs.append(i+s_yidx)
+    return refine_y_idxs
+
+def get_high_threshold(seg_len, smoothed_threshold, threshold_rate):
     if seg_len < len(smoothed_threshold):
         h = smoothed_threshold[seg_len]
     else:
         h = threshold_rate
-    if threshold_abs<=seg_len:
-        h = max(h, 1-threshold_abs/seg_len)
     return h
 
 def smooth_threshold(threshold):
@@ -389,7 +395,7 @@ def estimate_threshold(tints):
                     d.append(c)
     return np.mean(d) + 3*np.std(d)
 
-def optimize(candidate_y_idxs, C, start, end, smoothed_threshold, threshold_rate, threshold_abs, read_support):
+def optimize(candidate_y_idxs, C, start, end, smoothed_threshold, threshold_rate, read_support):
     cov_mem = dict()
     yea_mem = dict()
     nay_mem = dict()
@@ -400,7 +406,7 @@ def optimize(candidate_y_idxs, C, start, end, smoothed_threshold, threshold_rate
         for j in range(i, end+1):
             seg_len = (candidate_y_idxs[j]-candidate_y_idxs[i]+1)
             cov_mem[(i,j)] = (C[j]-C[i])/seg_len
-            h = get_high_threshold(seg_len, smoothed_threshold, threshold_rate, threshold_abs)
+            h = get_high_threshold(seg_len, smoothed_threshold, threshold_rate)
             l = 1-h
             yea_mem[(i,j)] = cov_mem[(i,j)] > h
             nay_mem[(i,j)] = cov_mem[(i,j)] < l
@@ -431,7 +437,7 @@ def optimize(candidate_y_idxs, C, start, end, smoothed_threshold, threshold_rate
                     ),
                 ))
                 if out_mem[(i,j,k)] < read_support:
-                    out_mem[(i,j,k)] = -float('inf')
+                    out_mem[(i,j,k)] = float('-inf')
         return out_mem[(i,j,k)]
     D = dict()
     B = dict()
@@ -440,14 +446,18 @@ def optimize(candidate_y_idxs, C, start, end, smoothed_threshold, threshold_rate
         if (i,j,k) in D or (i,j,k) in B:
             assert (i,j,k) in D and (i,j,k) in B
             return D[(i,j,k)]
+        max_b = (-1,-1,-1)
+        max_d = float('-inf')
+        # Segment too small: y_idx[j]-y_idx[i] < 5 or
+        if candidate_y_idxs[j]-candidate_y_idxs[i] < 5 or candidate_y_idxs[k]-candidate_y_idxs[j] < 5:
+            D[(i,j,k)] = max_d
+            B[(i,j,k)] = max_b
+            return D[(i,j,k)]
         # Base case: i<j<k=END: k is at the end so no more segmentation
         if k == end:
             D[(i,j,k)] = inside(i,j) + outside(i,j,k) + inside(j,k)
             B[(i,j,k)] = (-1,-1,-1)
             return D[(i,j,k)]
-
-        max_b = (-1,-1,-1)
-        max_d = float('-inf')
         # Does further segmentation give us better score?
         for k_ in range(k+1, end+1):
             cur_b = (j,k,k_)
@@ -471,9 +481,10 @@ def optimize(candidate_y_idxs, C, start, end, smoothed_threshold, threshold_rate
     # print(max_b,max_d)
     return D,B,max_d,max_b,in_mem,out_mem
 
-def run_optimize(candidate_y_idxs, fixed_c_idxs, coverage, smoothed_threshold, threshold_rate, threshold_abs, min_read_support_outside):
+def run_optimize(candidate_y_idxs, fixed_c_idxs, coverage, smoothed_threshold, threshold_rate, min_read_support_outside):
     final_c_idxs = set(fixed_c_idxs)
-    for start,end in zip(fixed_c_idxs[:-1],fixed_c_idxs[1:]):
+    for idx,(start,end) in enumerate(zip(fixed_c_idxs[:-1],fixed_c_idxs[1:])):
+        # print('{}/{}: {}'.format(idx+1, len(fixed_c_idxs)-1, end-start+1))
         D,B,max_d,max_b,in_mem,out_mem = optimize(
             candidate_y_idxs         = candidate_y_idxs,
             C                        = coverage,
@@ -481,7 +492,7 @@ def run_optimize(candidate_y_idxs, fixed_c_idxs, coverage, smoothed_threshold, t
             end                      = end,
             smoothed_threshold       = smoothed_threshold,
             threshold_rate           = threshold_rate,
-            threshold_abs            = threshold_abs,
+            # threshold_abs            = threshold_abs,
             read_support             = min_read_support_outside,
         )
         while max_b != (-1,-1,-1):
@@ -504,23 +515,29 @@ def non_desert(y, jump=10):
         if len(l) == 0:
             l.append([f_idx,l_idx])
         elif l_idx - l[-1][-1] < jump:
-            l[-1]=l_idx
+            l[-1][-1]=l_idx
         else:
             l.append([f_idx,l_idx])
     return l
 
-def candidates(y, f_y_idx, l_y_idx, window=5):
+def candidates_from_peaks(y, f_y_idx, l_y_idx):
+    # print('f_y_idx, l_y_idx',f_y_idx, l_y_idx)
+    c,_ = find_peaks(y[f_y_idx:l_y_idx+1])
+    c = [f_y_idx+y_idx for y_idx in c]
+    return c
+
+def candidates_from_window(y, f_y_idx, l_y_idx, window=5):
     # print('f_y_idx, l_y_idx',f_y_idx, l_y_idx)
     c = list()
     for y_idx in range(f_y_idx, l_y_idx+1, window):
         max_y_idx = y_idx + np.argmax(y[y_idx:y_idx+window])
-        if y[max_y_idx] > 0.01:
+        if y[max_y_idx] > 0.1:
             c.append(max_y_idx)
         peaks = find_peaks(y[y_idx:y_idx+window], distance=window)[0]
         assert len(peaks) <= 1
         if len(peaks) > 0:
             peak_y_idx = peaks[0] + y_idx
-            if peak_y_idx != max_y_idx:
+            if peak_y_idx != max_y_idx and y[peak_y_idx] > 0.1:
                 c.append(peak_y_idx)
     c.sort()
     c_keep = [True for _ in c]
@@ -539,39 +556,32 @@ def candidates(y, f_y_idx, l_y_idx, window=5):
 
 def break_large_problems(candidate_y_idxs, fixed_c_idxs, y, max_problem_size, window=5):
     fixed_c_idxs_pairs = sorted(fixed_c_idxs)
-    fixed_c_idxs_pairs = [(s,e) for s,e in zip(fixed_c_idxs_pairs[1:], fixed_c_idxs_pairs[:-1])]
+    fixed_c_idxs_pairs = [(s,e) for s,e in zip(fixed_c_idxs_pairs[:-1], fixed_c_idxs_pairs[1:])]
+    new_problems_total_count = 0
     for c_idx_s,c_idx_e in fixed_c_idxs_pairs:
         problem_size = c_idx_e-c_idx_s+1
         if problem_size <= max_problem_size:
             continue
         new_problems_count = ceil(problem_size / max_problem_size)
         new_problems_size = problem_size/new_problems_count
+        new_problems_total_count+=new_problems_count-1
         for i in range(1,new_problems_count):
-            mid_anchor = c_idx_s+i*new_problems_size
+            mid_anchor = int(c_idx_s+i*new_problems_size)
             max_c_idx_y_v = float('-inf')
             max_c_idx = None
             for c_idx in range(mid_anchor-window,mid_anchor+window):
-                if y[c[c_idx]] > max_c_idx_y_v:
-                    max_c_idx_y_v = y[c[c_idx]]
+                if y[candidate_y_idxs[c_idx]] > max_c_idx_y_v:
+                    max_c_idx_y_v = y[candidate_y_idxs[c_idx]]
                     max_c_idx = c_idx
             assert max_c_idx_y_v > 0
             fixed_c_idxs.add(max_c_idx)
+    return fixed_c_idxs,new_problems_total_count
 
-def segment(segment_args):
-    (
-        tint,
-        sigma,
-        smoothed_threshold,
-        threshold_rate,
-        threshold_abs,
-        variance_factor,
-        max_problem_size,
-        min_read_support_outside
-    ) = segment_args
+def process_splicing_data(tint):
     pos_to_Yy_idx = dict()
     Yy_idx_to_pos = list()
     Yy_idx_to_r_idxs = list()
-    Y = list()
+    Y_raw = list()
     # print('Generating index for tint {} with {} intervals'.format(tint['id'], tint['intervals']))
     for s,e in tint['intervals']:
         y_idx_to_pos = list()
@@ -581,40 +591,65 @@ def segment(segment_args):
             y_idx_to_pos.append(p)
         Yy_idx_to_pos.append(y_idx_to_pos)
         Yy_idx_to_r_idxs.append(np.zeros((len(y_idx_to_pos), len(tint['reads'])), dtype=bool))
-        Y.append(np.zeros(len(y_idx_to_pos)))
-    assert len(pos_to_Yy_idx)==sum(len(y_idx_to_pos) for y_idx_to_pos in Y)
+        Y_raw.append(np.zeros(len(y_idx_to_pos)))
+    assert len(pos_to_Yy_idx)==sum(len(y_idx_to_pos) for y_idx_to_pos in Y_raw)
     # print('Building per read coverage data for tint {}'.format(tint['id']))
     for r_idx,read in enumerate(tint['reads']):
         read['data']=list()
         for ts,te,_,_,_ in read['intervals']:
             Y_idx,y_idx = pos_to_Yy_idx[ts]
-            Y[Y_idx][y_idx] += 1
+            Y_raw[Y_idx][y_idx] += 1
             Y_idx,y_idx = pos_to_Yy_idx[te]
-            Y[Y_idx][y_idx] += 1
+            Y_raw[Y_idx][y_idx] += 1
             for pos in range(ts,te):
                 Y_idx,y_idx = pos_to_Yy_idx[pos]
                 Yy_idx_to_r_idxs[Y_idx][y_idx][r_idx] = True
+    return (
+        pos_to_Yy_idx,
+        Yy_idx_to_pos,
+        Yy_idx_to_r_idxs,
+        Y_raw,
+    )
 
-    Y = [gaussian_filter1d(y,sigma) for y in Y]
+def segment(segment_args):
+    (
+        tint,
+        sigma,
+        smoothed_threshold,
+        threshold_rate,
+        # threshold_abs,
+        variance_factor,
+        max_problem_size,
+        min_read_support_outside
+    ) = segment_args
+    (
+        pos_to_Yy_idx,
+        Yy_idx_to_pos,
+        Yy_idx_to_r_idxs,
+        Y_raw,
+    ) = process_splicing_data(tint)
+
+    Y = [gaussian_filter1d(y,sigma,truncate=1.0) for y in Y_raw]
+    Y_none_zero_vals = np.array([v for y in Y for v in y if v > 0])
+    variance_threhsold = Y_none_zero_vals.mean() + variance_factor*Y_none_zero_vals.std()
+
     tint['final_positions'] = list()
     for Y_idx,y in enumerate(Y):
         candidate_y_idxs = list()
         fixed_c_idxs = set()
-        for f_y_idx,l_y_idx in non_desert(y):
+        for f_y_idx,l_y_idx in [[0,len(y)-1]]:
             fixed_c_idxs.add(len(candidate_y_idxs))
-            current_candidates = candidates(y,f_y_idx,l_y_idx)
-            # print('current_candidates',current_candidates)
-            if len(candidate_y_idxs)==0 and current_candidates[0]!=0:
-                candidate_y_idxs.append(0)
+            current_candidates = candidates_from_peaks(y,f_y_idx,l_y_idx)
+            current_candidates = sorted(set(current_candidates) | {f_y_idx,l_y_idx})
             candidate_y_idxs.extend(current_candidates)
             fixed_c_idxs.add(len(candidate_y_idxs)-1)
-            # print('candidate_y_idxs',candidate_y_idxs)
-        if candidate_y_idxs[-1] != l_y_idx:
-            candidate_y_idxs.append(l_y_idx)
-            fixed_c_idxs.add(len(candidate_y_idxs)-1)
-
-        break_large_problems(candidate_y_idxs, fixed_c_idxs, y, max_problem_size)
+        for c_idx,y_idx in enumerate(candidate_y_idxs):
+            if y[y_idx] > variance_threhsold:
+                fixed_c_idxs.add(c_idx)
+        fixed_c_idxs,new_problems_total_count = break_large_problems(candidate_y_idxs, fixed_c_idxs, y, max_problem_size)
         fixed_c_idxs = sorted(fixed_c_idxs)
+        for s,e in zip(fixed_c_idxs[:-1],fixed_c_idxs[1:]):
+            assert e-s+1 <= max_problem_size+5
 
         cumulative_coverage = get_cumulative_coverage(candidate_y_idxs, Yy_idx_to_r_idxs[Y_idx])
         # print('Optimizing tint {} with:\n\tcandidate {} locations: {}\n\tfixed {} loations: {}'.format(tint['id'], len(candidate_y_idxs),candidate_y_idxs,len(fixed_c_idxs),[candidate_y_idxs[c_idx] for c_idx in fixed_c_idxs]))
@@ -624,19 +659,22 @@ def segment(segment_args):
             coverage                 = cumulative_coverage,
             smoothed_threshold       = smoothed_threshold,
             threshold_rate           = threshold_rate,
-            threshold_abs            = threshold_abs,
             min_read_support_outside = min_read_support_outside,
         )
         final_y_idxs = [candidate_y_idxs[c_idx] for c_idx in final_c_idxs]
+        refine_y_idxs = refine_segmentation(Y_raw[Y_idx], final_y_idxs, sigma)
+        final_y_idxs.extend(refine_y_idxs)
+        final_y_idxs.sort()
         tint['final_positions'].extend([Yy_idx_to_pos[Y_idx][y_idx] for y_idx in final_y_idxs])
-        for s,e,s_yidx,e_yidx in zip(final_c_idxs[:-1],final_c_idxs[1:],final_y_idxs[:-1],final_y_idxs[1:]):
+        cumulative_coverage = get_cumulative_coverage(final_y_idxs, Yy_idx_to_r_idxs[Y_idx])
+        for seg_idx,(s_yidx,e_yidx) in enumerate(zip(final_y_idxs[:-1],final_y_idxs[1:])):
             seg_len = Yy_idx_to_pos[Y_idx][e_yidx]-Yy_idx_to_pos[Y_idx][s_yidx]+1
-            h = get_high_threshold(seg_len, smoothed_threshold, threshold_rate, threshold_abs)
-            # print('{}\t{:3d}%\t{}'.format('>'*5, int(round(h*100)), seg_len))
+            h = get_high_threshold(seg_len, smoothed_threshold, threshold_rate)
+            l = 1-h
+            assert seg_len == e_yidx-s_yidx+1
             for r_idx,read in enumerate(tint['reads']):
-                cov_ratio = (cumulative_coverage[e][r_idx]-cumulative_coverage[s][r_idx])/seg_len
-                assert 0<=cov_ratio<=1, (r_idx,s,e,s_yidx,e_yidx,seg_len,cov_ratio,read)
-                l = 1-h
+                cov_ratio = (cumulative_coverage[seg_idx+1][r_idx]-cumulative_coverage[seg_idx][r_idx])/seg_len
+                assert 0<=cov_ratio<=1, (r_idx,seg_idx,s_yidx,e_yidx,seg_len,(cumulative_coverage[seg_idx][r_idx]-cumulative_coverage[seg_idx+1][r_idx]),cumulative_coverage[seg_idx][r_idx],cumulative_coverage[seg_idx+1][r_idx],cov_ratio,read)
                 if cov_ratio > h:
                     read['data'].append(1)
                 elif cov_ratio < l:
@@ -658,9 +696,9 @@ def main():
 
     tints = read_split(args.split_tsv)
     read_sequence(tints, args.reads)
-    if args.threshold_abs == None:
-        args.threshold_abs = estimate_threshold(tints)
-        print(args.threshold_abs)
+    # if args.threshold_abs == None:
+    #     args.threshold_abs = estimate_threshold(tints)
+    #     print(args.threshold_abs)
     segment_args = list()
     for tint in tints.values():
         segment_args.append((
@@ -668,12 +706,12 @@ def main():
             args.sigma,
             smooth_threshold(threshold=args.threshold_rate),
             args.threshold_rate,
-            args.threshold_abs,
+            # args.threshold_abs,
             args.variance_factor,
             args.max_problem_size,
             args.min_read_support_outside,
         ))
-    out_file = open(args.output, 'w')
+    out_file = open(args.output, 'w+')
     with Pool(args.threads) as p:
         if args.threads == 1:
             p.close()
