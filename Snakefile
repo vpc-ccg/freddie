@@ -8,15 +8,11 @@ for k in config.keys():
     assert keys[-1] in top_dict
     top_dict[keys[-1]]=config[k]
 
-def get_abs_path(path):
-    import os
-    abs_path = os.popen('readlink -f {}'.format(path)).read()
-    return abs_path.rstrip("\r\n")
 def make_slurm():
     import os
     os.makedirs('slurm'.format(outpath), mode=0o777, exist_ok=True)
 
-outpath = get_abs_path(config['outpath'])
+outpath = config['outpath'].rstrip('/')
 make_slurm()
 
 output_d = '{}/results'.format(outpath)
@@ -26,16 +22,17 @@ logs_d   = '{}/logs'.format(outpath)
 
 rule all:
     input:
-        expand('{}/freddie.{{sample}}.sam'.format(mapped_d), sample=config['samples']),
-        expand('{}/freddie.{{sample}}.split.tsv'.format(output_d), sample=config['samples']),
-        expand('{}/freddie.{{sample}}.segment.tsv'.format(output_d), sample=config['samples']),
-        expand('{}/freddie.{{sample}}.cluster.tsv'.format(output_d), sample=config['samples']),
-        expand('{}/freddie.{{sample}}.isoforms.gtf'.format(output_d), sample=config['samples']),
-        expand('{}/freddie.{{sample}}.beds/'.format(logs_d), sample=config['samples']),
-        expand('{}/freddie.{{sample}}.seqpare/'.format(logs_d), sample=config['samples']),
-        expand('{}/freddie.{{sample}}.similarity.txt'.format(logs_d), sample=config['samples']),
-        expand('{}/freddie.{{sample}}.summarize.tsv'.format(logs_d), sample=config['samples']),
-        # expand('{}/freddie.{{sample}}.plot/'.format(plots_d), sample=config['samples']),
+        expand('{}/{{sample}}.ref_cov.tsv'.format(output_d),           sample=config['samples']),
+        expand('{}/{{sample}}.ref_beds'.format(output_d),             sample=config['samples']),
+        expand('{}/freddie.{{sample}}.sam'.format(mapped_d),           sample=config['samples']),
+        expand('{}/freddie.{{sample}}.split.tsv'.format(output_d),     sample=config['samples']),
+        expand('{}/freddie.{{sample}}.segment.tsv'.format(output_d),   sample=config['samples']),
+        expand('{}/freddie.{{sample}}.cluster.tsv'.format(output_d),   sample=config['samples']),
+        expand('{}/freddie.{{sample}}.isoforms.gtf'.format(output_d),  sample=config['samples']),
+        expand('{}/freddie.{{sample}}.beds'.format(output_d),         sample=config['samples']),
+        expand('{}/freddie.{{sample}}.intersect.tsv'.format(output_d), sample=config['samples']),
+        expand('{}/freddie.{{sample}}.seqpare.tsv'.format(output_d),   sample=config['samples']),
+        expand('{}/freddie.{{sample}}.pairings.tsv'.format(output_d),  sample=config['samples']),
 
 rule align:
     input:
@@ -85,79 +82,17 @@ rule cluster:
         segment ='{}/freddie.{{sample}}.segment.tsv'.format(output_d),
     output:
         cluster = protected('{}/freddie.{{sample}}.cluster.tsv'.format(output_d)),
+        logs    = directory('{}/freddie.{{sample}}.cluster'.format(logs_d)),
+        log     = '{}/freddie.{{sample}}.cluster.log'.format(logs_d),
     conda:
         'environment.env'
     params:
         timeout = config['gurobi']['timeout'],
-        logs    = '{}/freddie.{{sample}}.cluster'.format(logs_d)
     threads:
         32
     shell:
         'export GRB_LICENSE_FILE={input.license}; '
-        '{input.script} -s {input.segment} -o {output.cluster} -l {params.logs} -t {threads} -to {params.timeout}'
-
-rule isoforms:
-    input:
-        script  = config['exec']['isoforms'],
-        cluster = '{}/freddie.{{sample}}.cluster.tsv'.format(output_d),
-    output:
-        isoforms = protected('{}/freddie.{{sample}}.isoforms.gtf'.format(output_d)),
-    shell:
-        '{input.script} -c {input.cluster} -o {output.isoforms}'
-
-rule beds:
-    input:
-        script  = config['exec']['beds'],
-        segment ='{}/freddie.{{sample}}.segment.tsv'.format(output_d),
-        cluster = '{}/freddie.{{sample}}.cluster.tsv'.format(output_d),
-        tid_tint = '/mnt/c/Users/baraa/Documents/freddie-nb/tids.txt',
-        annotation = config['annotations']['gtf']
-    output:
-        beds_dir = directory('{}/freddie.{{sample}}.beds/'.format(logs_d)),
-    shell:
-        '{input.script} -a {input.annotation} -c {input.cluster} -s {input.segment} -t {input.tid_tint} -od {output.beds_dir}'
-
-rule seqpare:
-    input:
-        beds_dir = '{}/freddie.{{sample}}.beds/'.format(logs_d),
-    output:
-        seqpare_dir = directory('{}/freddie.{{sample}}.seqpare/'.format(logs_d)),
-    shell:
-        """
-        for t in {input.beds_dir}/*; do
-            for i in $t/isos/*; do
-                for j in $t/tids/*; do
-                    echo -e "$(basename $i)\\t$(basename $j)";
-                    paste <(seqpare $i $j|head -n1);
-                done;
-            done > {output.seqpare_dir}/"$(basename $t)".tsv;
-        done;
-        """
-
-rule similarity:
-    input:
-        script      = config['exec']['similarity'],
-        seqpare_dir = directory('{}/freddie.{{sample}}.seqpare/'.format(logs_d)),
-        reads       = lambda wildcards: config['samples'][wildcards.sample]['reads'],
-        annotation  = config['annotations']['gtf'],
-    output:
-        similarity = protected('{}/freddie.{{sample}}.similarity.txt'.format(logs_d)),
-    params:
-        sim_threshold = 0.5,
-        min_cov       = 3,
-    shell:
-        '{input.script} -a {input.annotation} -r {input.reads} -sd {input.seqpare_dir} -st {params.sim_threshold} -o {output.similarity}'
-
-rule summarize:
-    input:
-        script      = config['exec']['summarize'],
-        annotation  = config['annotations']['gtf'],
-        segment ='{}/freddie.{{sample}}.segment.tsv'.format(output_d),
-        cluster = '{}/freddie.{{sample}}.cluster.tsv'.format(output_d),
-    output:
-        summarize = protected('{}/freddie.{{sample}}.summarize.tsv'.format(logs_d)),
-    shell:
-        '{input.script} -a {input.annotation} -s {input.segment} -c {input.cluster} -o {output.summarize}'
+        '{input.script} -s {input.segment} -o {output.cluster} -l {output.logs} -t {threads} -to {params.timeout} > {output.log}'
 
 rule plot:
     input:
@@ -173,3 +108,70 @@ rule plot:
         'environment.env'
     shell:
         '{input.script} -a {input.annotation} -c {input.cluster} -s {input.segment} -od {output.plot_dir} -t {threads}'
+
+rule isoforms:
+    input:
+        script  = config['exec']['isoforms'],
+        segment = '{}/freddie.{{sample}}.segment.tsv'.format(output_d),
+        cluster = '{}/freddie.{{sample}}.cluster.tsv'.format(output_d),
+    output:
+        isoforms = protected('{}/freddie.{{sample}}.isoforms.gtf'.format(output_d)),
+    shell:
+        '{input.script} -s {input.segment} -c {input.cluster} -o {output.isoforms}'
+
+rule beds:
+    input:
+        script   = config['exec']['beds'],
+        isoforms = '{}/freddie.{{sample}}.isoforms.gtf'.format(output_d),
+    output:
+        beds = directory('{}/freddie.{{sample}}.beds'.format(output_d)),
+    shell:
+        '{input.script} -g {input.isoforms} -od {output.beds}'
+
+rule ref_beds:
+    input:
+        script_cov = config['exec']['coverage'],
+        script_bed = config['exec']['beds'],
+        annotation = config['annotations']['gtf'],
+        split      = '{}/freddie.{{sample}}.split.tsv'.format(output_d),
+    output:
+        ref_cov    = '{}/{{sample}}.ref_cov.tsv'.format(output_d),
+        ref_beds   = directory('{}/{{sample}}.ref_beds'.format(output_d)),
+    params:
+        prt = lambda wildcards: config['transcript_coverage'][config['samples'][wildcards.sample]['data_type']]['per_read_threshold'],
+        ptt = lambda wildcards: config['transcript_coverage'][config['samples'][wildcards.sample]['data_type']]['per_transcript_threshold'],
+    shell:
+        '{input.script_cov} -g {input.annotation} -s {input.split} -o {output.ref_cov} -prt {params.prt} -ptt {params.ptt}; '
+        '{input.script_bed} -g {input.annotation} -c {output.ref_cov} -od {output.ref_beds}'
+
+rule bed_intersect:
+    input:
+        beds     = '{}/freddie.{{sample}}.beds'.format(output_d),
+        ref_beds = '{}/{{sample}}.ref_beds'.format(output_d),
+    output:
+        intersect = '{}/freddie.{{sample}}.intersect.tsv'.format(output_d),
+    shell:
+        'bedtools intersect -a <(cat {input.ref_beds}/*.bed) -b <(cat {input.beds}/*.bed) -wb'
+        ' | cut -f4,8 | sort -u > "{output.intersect}"; '
+
+rule seqpare:
+    input:
+        script   = config['exec']['seqpare'],
+        beds     = '{}/freddie.{{sample}}.beds'.format(output_d),
+        intersect = '{}/freddie.{{sample}}.intersect.tsv'.format(output_d),
+        ref_beds = '{}/{{sample}}.ref_beds'.format(output_d),
+    output:
+        seqpare   = '{}/freddie.{{sample}}.seqpare.tsv'.format(output_d),
+    shell:
+        '{input.script} {input.beds} {input.ref_beds} {input.intersect} {output.seqpare}'
+
+rule pairing:
+    input:
+        script   = config['exec']['pairing'],
+        seqpare  = '{}/freddie.{{sample}}.seqpare.tsv'.format(output_d),
+        beds     = '{}/freddie.{{sample}}.beds'.format(output_d),
+        ref_beds = '{}/{{sample}}.ref_beds'.format(output_d),
+    output:
+        pairings = '{}/freddie.{{sample}}.pairings.tsv'.format(output_d),
+    shell:
+        '{input.script} -s {input.seqpare} -b {input.beds} -r {input.ref_beds} -o {output.pairings}'

@@ -99,9 +99,15 @@ def output_gtf(tints, outpath):
                 if isoform['id']=='garbage':
                     continue
                 cons = [0 for _ in tint['segs']]
-                for j in range(len(tint['segs'])):
-                    for read in isoform['reads']:
+                poly_tail_categories = {'N':0, 'S':0, 'E':0}
+                for read in isoform['reads']:
+                    for j in range(len(tint['segs'])):
                         cons[j] += read['data'][j]=='1'
+                        poly_tail_categories[read['poly_tail_category']]+=1
+                if poly_tail_categories['S'] > poly_tail_categories['E']:
+                    isoform['strand'] = '-'
+                else:
+                    isoform['strand'] = '+'
                 cons = [x/len(isoform['reads'])>0.3 for x in cons]
                 if not True in cons:
                     continue
@@ -114,7 +120,7 @@ def output_gtf(tints, outpath):
                 l_seg = len(cons)-1 - cons[::-1].index(True)
                 record.append(str(tint['segs'][l_seg][1]))
                 record.append('.')
-                record.append('+')
+                record.append(isoform['strand'])
                 record.append('.')
                 record.append('transcript_id "{chr}_{tint}_{iid}"; read_support "{read_support}";'.format(
                     chr=tint['chrom'],
@@ -135,8 +141,10 @@ def output_gtf(tints, outpath):
                     record.append(tint['chrom'])
                     record.append('freddie')
                     record.append('exon')
-                    record.append(str(tint['segs'][f_seg][0]))
-                    record.append(str(tint['segs'][l_seg][1]))
+                    record.append(str(tint['segs'][f_seg_idx][0]+1))
+                    record.append(str(tint['segs'][l_seg_idx][1]))
+                    record.append('.')
+                    record.append(isoform['strand'])
                     record.append('.')
                     record.append('transcript_id "{chr}_{tint}_{iid}"; exon_number "{eid}"; exon_id "{chr}_{tint}_{iid}_{eid}"; '.format(
                         chr=tint['chrom'],
