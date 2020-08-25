@@ -150,6 +150,8 @@ def get_transcriptional_intervals(reads, contig):
         end = max(end, e)
         rids.append(rid)
         reads[rid]['simple_tints'].append(len(intervals))
+    if (start,end) == (None,None):
+        return list()
     intervals.append(dict(
         tint=-1,
         start=start,

@@ -303,10 +303,15 @@ def get_tints(cluster_tsv, segment_tsv):
                     reads=list(),
                 )
             data=rid_to_data[rid]
+            tid = line[1].split('_')[0]
+            if len(tid) == 15 and tid.startswith('ENST') and tid[4:].isdigit():
+                pass
+            else:
+                tid = None
             tints[tint]['partitions'][pid]['isoforms'][iid]['reads'].append(dict(
                 rid=rid,
                 name=line[1],
-                tid=line[1].split('_')[0],
+                tid=tid,
                 chrom=line[2],
                 strand=line[3],
                 tint=tint,
@@ -368,11 +373,11 @@ def plot_partition(tint, partition, transcripts, out_dir):
     tid_colors = dict()
     color_idx = 0
     for tid in plot_tids:
-        if not tid in partition['tids']:
-            tid_colors[tid]='gray'
-        else:
+        if tid in partition['tids'] or None in partition['tids']:
             tid_colors[tid]=colors[color_idx%len(colors)]
             color_idx+=1
+        else:
+            tid_colors[tid]='gray'
 
     plot_settings['segs']=tint['segs']
     plot_settings['seg_idxs']=partition['seg_idxs']
