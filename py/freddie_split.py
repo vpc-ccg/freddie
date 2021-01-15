@@ -16,6 +16,12 @@ def parse_args():
                         type=str,
                         required=True,
                         help="Path to BAM/SAM file of reads. Assumes splice aligner is used to the genome. Prefers deSALT")
+    parser.add_argument("-r",
+                        "--reads",
+                        nargs="+",
+                        type=str,
+                        required=True,
+                        help="Space separated paths to reads in FASTQ or FASTA format used to extract polyA tail information")
     parser.add_argument("-f",
                         "--sam-format",
                         type=str,
@@ -185,12 +191,62 @@ def get_transcriptional_intervals(reads, contig):
             rids.update(intervals[tint]['rids'])
             group_intervals.append(
                 (intervals[tint]['start'], intervals[tint]['end']))
+        if len(rids)<3:
+            continue
         for rid in rids:
             reads[rid]['tint'] = len(multi_tints)
         multi_tints.append(dict(intervals=sorted(
             group_intervals), rids=sorted(rids)))
     assert all(enqueued)
     return multi_tints
+
+
+def split_reads(read_files, rname_to_tint, contigs, outdir):
+    outfiles = {c: open('{}/{}/reads.csv'.format(outdir, c), 'w+') for c in contigs}
+    for read_file in read_files:
+        for idx, line in enumerate(open(read_file)):
+            if idx == 0:
+                if line[0] == '@':
+                    mod = 4
+                elif line[0] == '>':
+                    mod = 2
+                else:
+                    assert False, 'Invalid fasta/q file ' + read_file
+            if idx % mod == 0:
+                rname = line.rstrip().split()[0][1:]
+                (contig, tint_id, rid) = rname_to_tint.get(
+                    rname, (None, None, None))
+            if idx % mod == 1 and contig != None:
+                seq = line.rstrip()
+                record = list()
+                record.append(str(rid))
+                record.append(str(contig))
+                record.append(str(tint_id))
+                record.append(seq)
+                outfiles[contig].write('\t'.join(record))
+                outfiles[contig].write('\n')
+    for c in contigs:
+        path = '{od}/{c}/reads.csv'.format(od=outdir, c=c)
+        os.system(
+            'sort -k3,3n {} > {}_sorted'.format(path, path))
+        os.system('mv {}_sorted {}'.format(path,path))
+        last_tint = None
+        for line in open(path):
+            line = line.rstrip().split('\t')
+            rid = line[0]
+            contig = line[1]
+            tint_id = line[2]
+            if last_tint == None:
+                last_tint = tint_id
+                outfile = open('{}/{}/reads_{}_{}.csv'.format(outdir, c, c, tint_id), 'w+')
+            if last_tint != tint_id:
+                outfile.close()
+                last_tint = tint_id
+                outfile = open('{}/{}/reads_{}_{}.csv'.format(outdir, c, c, tint_id), 'w+')
+            outfile.write('\t'.join(line))
+            outfile.write('\n')
+        outfile.close()
+        os.remove(path)
 
 
 def run_split(args):
@@ -200,9 +256,10 @@ def run_split(args):
     elif args.sam_format == 'bam':
         sam = pysam.AlignmentFile(args.sam, 'rb')
 
-    contigs = {x['SN']: int(x['LN']) for x in sam.header['SQ']}
-
-    for contig in contigs.keys():
+    rname_to_tint = dict()
+    contigs = {x['SN'] for x in sam.header['SQ']}
+    
+    for contig in contigs:
         print('[freddie_split.py] Splitting contig {}'.format(contig))
         reads = read_sam(sam=sam, contig=contig)
 
@@ -211,7 +268,8 @@ def run_split(args):
         tints = get_transcriptional_intervals(reads=reads, contig=contig)
         for tint_id, tint in enumerate(tints):
             if (100*tint_id)//len(tints) % 10 == 0:
-                print('[freddie_split.py] Done with {}/{}'.format(tint_id, len(tints)))
+                print(
+                    '[freddie_split.py] Done with {}/{}'.format(tint_id, len(tints)))
             outfile = open(
                 '{}/split_{}_{}.tsv'.format(contig_outdir, contig, tint_id), 'w+')
 
@@ -225,6 +283,7 @@ def run_split(args):
             outfile.write('\n')
             for rid in tint['rids']:
                 read = reads[rid]
+                rname_to_tint[read['name']] = (contig, tint_id, rid)
                 record = list()
                 record.append(str(read['id']))
                 record.append(read['name'])
@@ -236,6 +295,8 @@ def run_split(args):
                 outfile.write('\t'.join(record))
                 outfile.write('\n')
             outfile.close()
+    split_reads(read_files=args.reads,
+                rname_to_tint=rname_to_tint, contigs=contigs, outdir=args.outdir)
 
 
 def main():
