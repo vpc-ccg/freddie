@@ -11,21 +11,43 @@ samples:
             - test/data/N_sim.chr21.fastq
         seq_type: ont1d
         data_type: sim
+        gtf: chr21
+    # SGNex_MCF7_directcDNA:
+    #     reads:
+    #         - test/data/SGNex_MCF7_directcDNA.fastq
+    #     seq_type: ont1d
+    #     data_type: real
+    #     gtf: PCan
+    # SGNex_MCF7_directRNA:
+    #     reads:
+    #         - test/data/SGNex_MCF7_directRNA.fastq
+    #     seq_type: ont1d
+    #     data_type: real
+    #     gtf: PCan
+    # 22Rv1_PCan:
+    #     reads:
+    #         - test/data/22RV1.PCan.fastq
+    #     seq_type: ont1d
+    #     data_type: real
+    #     gtf: PCan
     # L_sim.chr21:
     #     reads:
     #         - test/data/L_sim.chr21.fastq
     #     seq_type: ont1d
     #     data_type: sim
+    #     gtf: chr21
     # P000S000.chr21:
     #     reads:
     #         - test/data/P000S000.chr21.fastq
     #     seq_type: ont1d
     #     data_type: real
+    #     gtf: chr21
     # P001S000.chr21:
     #     reads:
     #         - test/data/P001S000.chr21.fastq
     #     seq_type: ont1d
     #     data_type: real
+    #     gtf: chr21
     # P001S000:
     #     reads:
     #         - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R410/P001R410.pass.fastq
@@ -34,21 +56,25 @@ samples:
     #         - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R511/P001R511.pass.fastq
     #     seq_type: ont1d
     #     data_type: real
+    #     gtf: whole_genome
     # N_sim:
     #     reads:
     #         - /groups/hachgrp/projects/dev-ltr-simulator/analysis/ltr-sim-dev/reads/P000S000.L-non.fastq
     #     seq_type: ont1d
     #     data_type: sim
+    #     gtf: whole_genome
     # L_sim:
     #     reads:
     #         - /groups/hachgrp/projects/dev-ltr-simulator/analysis/ltr-sim-dev/reads/P000S000.L-low.fastq
     #     seq_type: ont1d
     #     data_type: sim
+    #     gtf: whole_genome
     # H_sim:
     #     reads:
     #         - /groups/hachgrp/projects/dev-ltr-simulator/analysis/ltr-sim-dev/reads/P000S000.L-high.fastq
     #     seq_type: ont1d
     #     data_type: sim
+    #     gtf: whole_genome
 
 exec:
     align    : py/freddie_align.py
@@ -66,7 +92,8 @@ references:
     dna_desalt : test/data/Homo_sapiens.chr21.GRCh38.dna.97.deSALT.index
 
 annotations:
-    gtf : test/data/Homo_sapiens.chr21.GRCh38.97.gtf
+    chr21 : test/data/Homo_sapiens.chr21.GRCh38.97.gtf
+    PCan  : test/data/Homo_sapiens.PCan.gtf
 
 transcript_coverage:
     sim:

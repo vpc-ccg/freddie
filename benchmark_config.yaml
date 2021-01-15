@@ -1,20 +1,48 @@
 outpath:
-    /mnt/c/Users/baraa/Documents/freddie/test/output/
+    test/benchmark/
 
 gurobi:
-    license: extern/gurobi.lic
+    license: /home/baraa/gurobi.lic
+
+exec:
+    beds     : extern/transcript_beds.py
+    coverage : extern/transcript_coverage.py
+    seqpare  : extern/seqpare.sh
+    pairing  : extern/seqpare_pair.py
+    stats    : extern/seqpare_stats.awk
 
 samples:
-    # P000S000:
-    #     - test/data/H_sim.chr21.fastq
-    P001S000:
-        - test/data/P001S000.chr21.fastq
-    # L_sim:
-    #     - test/data/L_sim.chr21.fastq
-    N_sim:
-        - test/data/N_sim.chr21.fastq
+    # N_sim.chr21:
+    #     seq_type  : ont1d
+    #     data_type : sim
+    #     gtf       : chr21
+    #     reads     :
+    #         - test/data/N_sim.chr21.fastq
+    # N_sim.from_chr21:
+    #     reads:
+    #         - test/data/N_sim.from_chr21.fastq
+    #     seq_type: ont1d
+    #     data_type: sim
+    #     gtf: chr21
+    22RV1_ont:
+        reads:
+            - test/data/22RV1.PCan.fastq
+        seq_type: ont1d
+        data_type: real
+        gtf: chrX
+    # N_sim.chr21.mapping_and_supported:
+    #     reads:
+    #         - test/data/N_sim.chr21.mapping_and_supported.fastq
+    #     seq_type: ont1d
+    #     data_type: sim
+    #     gtf: chr21
 
 references:
-    dna        : /mnt/c/Users/baraa/Documents/freddie/test/data/Homo_sapiens.chr21.GRCh38.dna.97.fasta
-    gtf        : /mnt/c/Users/baraa/Documents/freddie/test/data/Homo_sapiens.chr21.GRCh38.97.gtf
-    dna_desalt : /mnt/c/Users/baraa/Documents/freddie/test/data/Homo_sapiens.chr21.GRCh38.dna.97.deSALT.index/
+    chr21        : test/data/Homo_sapiens.chr21.GRCh38.dna.97.fasta
+    chrX         : test/data/Homo_sapiens.chrX.GRCh38.dna.97.fasta
+    chr21_desalt : test/data/Homo_sapiens.chr21.GRCh38.dna.97.deSALT.index/
+    chr21_desalt : test/data/Homo_sapiens.chrX.GRCh38.dna.97.deSALT.index/
+
+annotations:
+    chr21 : test/data/Homo_sapiens.chr21.GRCh38.97.gtf
+    chrX  : test/data/Homo_sapiens.chrX.GRCh38.97.gtf

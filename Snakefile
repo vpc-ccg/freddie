@@ -22,8 +22,8 @@ logs_d   = '{}/logs'.format(outpath)
 
 rule all:
     input:
-        expand('{}/{{sample}}.ref_cov.tsv'.format(output_d),           sample=config['samples']),
-        expand('{}/{{sample}}.ref_beds'.format(output_d),             sample=config['samples']),
+        # expand('{}/{{sample}}.ref_cov.tsv'.format(output_d),           sample=config['samples']),
+        # expand('{}/{{sample}}.ref_beds'.format(output_d),             sample=config['samples']),
         expand('{}/freddie.{{sample}}.sam'.format(mapped_d),           sample=config['samples']),
         expand('{}/freddie.{{sample}}.split.tsv'.format(output_d),     sample=config['samples']),
         expand('{}/freddie.{{sample}}.segment.tsv'.format(output_d),   sample=config['samples']),
@@ -33,6 +33,7 @@ rule all:
         expand('{}/freddie.{{sample}}.intersect.tsv'.format(output_d), sample=config['samples']),
         expand('{}/freddie.{{sample}}.seqpare.tsv'.format(output_d),   sample=config['samples']),
         expand('{}/freddie.{{sample}}.pairings.tsv'.format(output_d),  sample=config['samples']),
+        # expand('{}/freddie.{{sample}}.plot'.format(plots_d),         sample=config['samples']),
 
 rule align:
     input:
@@ -99,9 +100,9 @@ rule plot:
         script     = config['exec']['plot'],
         segment    = '{}/freddie.{{sample}}.segment.tsv'.format(output_d),
         cluster    = '{}/freddie.{{sample}}.cluster.tsv'.format(output_d),
-        annotation = config['annotations']['gtf']
+        annotation = lambda wildcards: config['annotations'][config['samples'][wildcards.sample]['gtf']],
     output:
-        plot_dir = directory('{}/freddie.{{sample}}.plot/'.format(plots_d)),
+        plot_dir = directory('{}/freddie.{{sample}}.plot'.format(plots_d)),
     threads:
         32
     conda:
@@ -132,7 +133,7 @@ rule ref_beds:
     input:
         script_cov = config['exec']['coverage'],
         script_bed = config['exec']['beds'],
-        annotation = config['annotations']['gtf'],
+        annotation = lambda wildcards: config['annotations'][config['samples'][wildcards.sample]['gtf']],
         split      = '{}/freddie.{{sample}}.split.tsv'.format(output_d),
     output:
         ref_cov    = '{}/{{sample}}.ref_cov.tsv'.format(output_d),

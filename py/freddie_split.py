@@ -115,7 +115,7 @@ def read_sam(sam, format):
     contigs = {x['SN']:int(x['LN']) for x in sam.header['SQ']}
     reads = list()
     for aln in sam.fetch():
-        if aln.is_secondary or aln.reference_name == None:
+        if aln.is_supplementary or aln.is_secondary or aln.reference_name == None:
             continue
         assert aln.reference_name in contigs, '{} : {}'.format(aln.reference_name, contigs)
         reads.append(dict(
@@ -125,7 +125,7 @@ def read_sam(sam, format):
             strand       = '-' if aln.is_reverse else '+',
             simple_tints = list(),
             tint         = None,
-            intervals    = get_intervals(aln),
+            intervals    = [(st,et,sr,er,c) for (st,et,sr,er,c) in get_intervals(aln) if st!=et and sr!=er],
         ))
     return contigs,reads
 

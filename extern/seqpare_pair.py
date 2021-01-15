@@ -26,6 +26,11 @@ def parse_args():
                         type=int,
                         default=100,
                         help="Number of trials. Default: 100")
+    parser.add_argument("-m",
+                        "--min-seqpare",
+                        type=float,
+                        default=0.6,
+                        help="Min acceptable seqpare score. Default: 0.5")
     parser.add_argument("-o",
                         "--output",
                         type=str,
@@ -33,6 +38,7 @@ def parse_args():
                         help="Path to output. Default: freddie_pair.tsv")
     args = parser.parse_args()
     assert args.trials > 0
+    assert 1.0 >= args.min_seqpare >= 0.0
     args.beds = args.beds.rstrip('/')
     args.ref_beds = args.ref_beds.rstrip('/')
     return args
@@ -43,7 +49,7 @@ def main():
     random.seed(42)
     iids = [f.split('/')[-1][:-4] for f in glob.glob('{}/*.bed'.format(args.beds))]
     tids = [f.split('/')[-1][:-4] for f in glob.glob('{}/*.bed'.format(args.ref_beds))]
-    seqpare =  [l.split('\t') for l in open(args.seqpare) if float(l.split('\t')[2]) >= 0]
+    seqpare =  [l.split('\t') for l in open(args.seqpare) if float(l.split('\t')[2]) >= args.min_seqpare]
     pairings = dict()
     for idx in range(args.trials):
         iid_to_tid = {iid:'None' for iid in iids}

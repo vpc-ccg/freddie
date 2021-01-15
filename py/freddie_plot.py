@@ -4,6 +4,7 @@ import os
 import argparse
 import re
 from operator import itemgetter
+from itertools import groupby
 
 import matplotlib as mpl
 mpl.use('Agg')
@@ -35,7 +36,7 @@ grid_width_ratios = [
     (100, 4),
     (50, 3),
     (20, 2),
-    (0, 1)
+    (0, 2)
 ]
 
 def parse_args():
@@ -61,6 +62,11 @@ def parse_args():
                         type=int,
                         default=1,
                         help="Number of threads. Default: 1")
+    parser.add_argument("--tints",
+                        type=int,
+                        nargs='+',
+                        default=list(),
+                        help="Keep only specified tint ids. Default: All tints")
     parser.add_argument("-od",
                         "--out-dir",
                         type=str,
@@ -68,6 +74,7 @@ def parse_args():
                         help="Output directory. Will be created if does not exist. Default: freddie_plot")
     args = parser.parse_args()
     args.out_dir = args.out_dir.rstrip('/')
+    args.tints = set(args.tints)
     assert 1 <= args.threads <= 256
     return args
 
@@ -119,8 +126,8 @@ def plot_isoform(isoform, transcripts, plot_settings, title, outpath):
     gs = out_gs[1].subgridspec(
         ncols=len(grid_lens),
         nrows=2,
-        width_ratios=grid_lens,
         height_ratios=[1,5],
+        width_ratios=grid_lens,
         hspace=.1,
         wspace=0
     )
@@ -157,16 +164,18 @@ def plot_isoform(isoform, transcripts, plot_settings, title, outpath):
         ax.set_ylim(0,ylim)
         ax.set_yticks([])
         ax.set_xlim(0, 150)
-    for axes,ylim in [(t_axes,len(plot_settings['plot_tids'])),(r_axes,len(isoform['reads']))]:
+    first_pos = segs[0][0]
+    for axes,ylim in [(t_axes,len(plot_settings['plot_tids'])+1),(r_axes,len(isoform['reads']))]:
         for ax,seg_idx in zip(axes,seg_idxs):
             (s,e) = segs[seg_idx]
             ax.grid(zorder=0)
             ax.set_ylim(0,ylim)
             ax.set_xlim(0, 1)
             ax.set_xticks([0])
-            ax.set_xticklabels([s], rotation=45)
+            ax.set_xticklabels([s-first_pos], rotation=45)
             ax.set_yticks(range(0,ylim,max(ylim//20,1)))
             if ax.is_first_col():
+                ax.set_xticklabels([first_pos], rotation=45)
                 pass
             elif ax.is_last_col():
                 ax.yaxis.tick_right()
@@ -174,42 +183,59 @@ def plot_isoform(isoform, transcripts, plot_settings, title, outpath):
                 ax.set_xticklabels([s,e], rotation=45)
             else:
                 ax.set_yticklabels([])
-    t_axes[0].set_yticklabels( [transcripts[tid]['name'] for tid in plot_settings['plot_tids']])
-    t_axes[-1].set_yticklabels([transcripts[tid]['name'] for tid in plot_settings['plot_tids']])
+    t_axes[0].set_yticklabels( [transcripts[tid]['name'] for tid in plot_settings['plot_tids']]+['{}'.format('Consensus')])
+    t_axes[-1].set_yticklabels([transcripts[tid]['name'] for tid in plot_settings['plot_tids']]+['{}'.format('Consensus')])
 
     for p,read in enumerate(sorted(isoform['reads'], key=itemgetter('tid', 'data'))):
         if read['tid'] in plot_settings['tid_colors']:
             color = plot_settings['tid_colors'][read['tid']]
         else:
             color = 'gray'
-        for aid,ax in enumerate(r_axes):
-            j = seg_idxs[aid]
-            if read['gaps'][j] > 0:
-                ax.text(0.9,p+0.5,s='{}'.format(read['gaps'][j]), size='xx-small', ha='right', color='red' if read['gaps'][j]>99 else 'black')
-            if read['data'][j]=='0':
-                pass
-            if read['data'][j]=='1':
-                ax.add_patch(patches.Rectangle(
-                    xy     = (0,p),
-                    width  = 1,
-                    height = 1,
-                    color  = color,
-                ))
-            if read['data'][j]=='2':
-                ax.add_patch(patches.Rectangle(
-                    xy     = (0,p),
-                    width  = 1,
-                    height = 1,
-                    facecolor  = color,
-                    hatch     = '/',
-                ))
+        for s,e in read['intervals']:
+            x_0 = -1
+            x_1 = -1
+            for r_ax,seg_idx in zip(r_axes,seg_idxs):
+                (seg_s,seg_e) = segs[seg_idx]
+                if not (s <= seg_e and e >= seg_s):
+                    continue
+                seg_l = seg_e-seg_s
+                if seg_s < s:
+                    x_0 = (s-seg_s)/seg_l
+                else:
+                    x_0 = 0.0
+                if seg_e < e:
+                    x_1 = 1.0
+                else:
+                    x_1 = (e-seg_s)/seg_l
+                r_ax.add_patch(patches.Rectangle(xy=(x_0,p),width=x_1,height=1,color=color))
+        # for aid,ax in enumerate(r_axes):
+        #     j = seg_idxs[aid]
+        #     if read['gaps'][j] > 0:
+        #         ax.text(0.9,p+0.5,s='{}'.format(read['gaps'][j]), size='xx-small', ha='right', color='red' if read['gaps'][j]>99 else 'black')
+        #     if read['data'][j]=='0':
+        #         pass
+        #     if read['data'][j]=='1':
+        #         ax.add_patch(patches.Rectangle(
+        #             xy     = (0,p),
+        #             width  = 1,
+        #             height = 1,
+        #             color  = color,
+        #         ))
+        #     if read['data'][j]=='2':
+        #         ax.add_patch(patches.Rectangle(
+        #             xy     = (0,p),
+        #             width  = 1,
+        #             height = 1,
+        #             facecolor  = color,
+        #             hatch     = '/',
+        #         ))
     # for ax in r_axes+[sce_ax,scs_ax]:
     #     ax.hlines(y=ch_changes, xmin=0, xmax=1, alpha=0.4)
     for p,tid in enumerate(plot_settings['plot_tids']):
-        for s,e in transcripts[tid]['intervals']:
-            t_aid = -1
+        for enum,(s,e) in zip(transcripts[tid]['enum'],transcripts[tid]['intervals']):
             x_0 = -1
             x_1 = -1
+            temp = list()
             for t_ax,seg_idx in zip(t_axes,seg_idxs):
                 (seg_s,seg_e) = segs[seg_idx]
                 if not (s <= seg_e and e >= seg_s):
@@ -223,8 +249,29 @@ def plot_isoform(isoform, transcripts, plot_settings, title, outpath):
                     x_1 = 1.0
                 else:
                     x_1 = (e-seg_s)/seg_l
+                temp.append(t_ax)
                 t_ax.add_patch(patches.Rectangle(xy=(x_0,p),width=x_1,height=1,color=plot_settings['tid_colors'][tid]))
-            # t_axes[0].text(x=-0.5, y=tid_to_p[tid]+0.5, s=tid)
+            temp[len(temp)//2].text(x=0.5, y=p+0.5, s=enum, horizontalalignment='center', verticalalignment='center')
+    for s,e in isoform['intervals']:
+        x_0 = -1
+        x_1 = -1
+        temp = list()
+        for t_ax,seg_idx in zip(t_axes,seg_idxs):
+            (seg_s,seg_e) = segs[seg_idx]
+            if not (s <= seg_e and e >= seg_s):
+                continue
+            seg_l = seg_e-seg_s
+            if seg_s < s:
+                x_0 = (s-seg_s)/seg_l
+            else:
+                x_0 = 0.0
+            if seg_e < e:
+                x_1 = 1.0
+            else:
+                x_1 = (e-seg_s)/seg_l
+            temp.append(t_ax)
+            t_ax.add_patch(patches.Rectangle(xy=(x_0,len(plot_settings['plot_tids'])),width=x_1,height=1,color='black'))
+    p=len(plot_settings['plot_tids'])
     plt.savefig(outpath,bbox_inches='tight')
     print('Done with',outpath)
 
@@ -242,9 +289,11 @@ def get_transcripts(gtf):
             transcripts[tid]=dict(
                 chrom=line[0],
                 intervals=list(),
+                enum=list(),
                 name=re.search(r'transcript_name \"(?P<tname>[\w\.-]+)\"', line[8]).group('tname')
             )
         transcripts[tid]['intervals'].append(interval)
+        transcripts[tid]['enum'].append(re.search(r'exon_number \"(?P<enum>[\w\.-]+)\"', line[8]).group('enum'))
     return transcripts
 
 def informative_segs(seg_content):
@@ -260,7 +309,7 @@ def informative_segs(seg_content):
         informative[j]=False
     return informative
 
-def get_tints(cluster_tsv, segment_tsv):
+def get_tints(cluster_tsv, segment_tsv, tint_ids=set()):
     tints = dict()
     rid_to_data=dict()
     for line in open(segment_tsv):
@@ -272,6 +321,8 @@ def get_tints(cluster_tsv, segment_tsv):
         if line.startswith('#'):
             chrom,tint_id,segs=line.rstrip()[1:].split('\t')
             tint_id = int(tint_id)
+            if len(tint_ids)>0 and not tint_id in tint_ids:
+                continue
             segs = segs.split(',')
             segs = [(int(s),int(e)) for s,e in zip(segs[:-1], segs[1:])]
             tints[tint_id]=dict(
@@ -286,6 +337,8 @@ def get_tints(cluster_tsv, segment_tsv):
             line=line.rstrip().split('\t')
             rid=int(line[0])
             tint=int(line[4])
+            if len(tint_ids)>0 and not tint_id in tint_ids:
+                continue
             pid=int(line[5])
             iid = line[7]
             if iid =='*':
@@ -327,30 +380,38 @@ def get_tints(cluster_tsv, segment_tsv):
             M = len(tints[tint_id]['segs'])
             seg_content = [set() for _ in range(M)]
             for isoform in tints[tint_id]['partitions'][pid]['isoforms'].values():
+                cons = [0 for _ in range(M)]
                 for read in isoform['reads']:
                     tints[tint_id]['partitions'][pid]['tids'].add(read['tid'])
+                    read['intervals']=get_intervals(tints[tint_id]['segs'], read['data'])
                     for j in range(M):
                         seg_content[j].add(read['data'][j])
+                        cons[j]+= (read['data'][j]=='1')
+                isoform['cons']=['1' if x/len(isoform['reads'])>0.3 else '0' for x in cons]
+                isoform['intervals']=get_intervals(tints[tint_id]['segs'], isoform['cons'])
             informative = informative_segs(seg_content)
             tints[tint_id]['partitions'][pid]['seg_idxs'] = [
                 j for j in range(M) if informative[j]
             ]
     return tints
 
-def plot_partition(tint, partition, transcripts, out_dir):
-    plot_settings = dict()
+def get_intervals(segs,data):
+    intervals=list()
+    for d,group in groupby(enumerate(data), lambda x: x[1]):
+        if d != '1':
+            continue
+        group = list(group)
+        f_seg_idx = group[0][0]
+        l_seg_idx = group[-1][0]
+        intervals.append((segs[f_seg_idx][0],segs[l_seg_idx][1],))
+    return intervals
 
-    grid_lens = list()
-    for seg_idx in partition['seg_idxs']:
-        s,e = tint['segs'][seg_idx]
-        for threshold,value in grid_width_ratios:
-            if e-s > threshold:
-                grid_lens.append(value)
-                break
-
-    tint_s,tint_e = tint['segs'][0][0],tint['segs'][-1][-1]
+def get_plot_tids(tint,partition,transcripts):
     plot_tids = list()
+    tint_s,tint_e = tint['segs'][0][0],tint['segs'][-1][-1]
     for tid,transcript in transcripts.items():
+        if not transcript['name'] in ['AR-UNION', 'AR-204', 'AR-201', 'AR-208']:
+            continue
         if transcript['chrom']!=tint['chrom']:
             continue
         tid_s,tid_e = transcript['intervals'][0][0],transcript['intervals'][-1][-1]
@@ -369,6 +430,31 @@ def plot_partition(tint, partition, transcripts, out_dir):
         if found:
             plot_tids.append(tid)
     plot_tids.sort(key=lambda tid: transcripts.get(tid, {'name':tid})['name'])
+    return plot_tids
+
+def plot_partition(tint, partition, transcripts, out_dir):
+    plot_settings = dict()
+
+    partition['seg_idxs'] = list(range(len(tint['segs'])))
+    plot_tids = get_plot_tids(tint,partition,transcripts)
+
+    new_segs={tint['segs'][0][0],tint['segs'][-1][-1]}
+    for tid in plot_tids:
+        for s,e in transcripts[tid]['intervals']:
+            new_segs.add(s)
+            new_segs.add(e)
+    new_segs=sorted(new_segs)
+
+    tint['segs'] = [(s,e) for s,e in zip(new_segs[:-1],new_segs[1:])]
+    partition['seg_idxs'] = list(range(len(tint['segs'])))
+
+    grid_lens = list()
+    for seg_idx in partition['seg_idxs']:
+        s,e = tint['segs'][seg_idx]
+        for threshold,value in grid_width_ratios:
+            if e-s > threshold:
+                grid_lens.append(value)
+                break
 
     tid_colors = dict()
     color_idx = 0
@@ -413,7 +499,7 @@ def main():
 
     transcripts = get_transcripts(gtf=args.annotation_gtf)
     plot_args = list()
-    for tint in get_tints(cluster_tsv=args.cluster_tsv, segment_tsv=args.segment_tsv).values():
+    for tint in get_tints(cluster_tsv=args.cluster_tsv, segment_tsv=args.segment_tsv, tint_ids=args.tints).values():
         plot_args.append((
             tint,
             transcripts,
