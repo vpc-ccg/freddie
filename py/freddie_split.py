@@ -196,14 +196,14 @@ def get_transcriptional_intervals(reads, contig):
 def run_split(args):
 
     if args.sam_format == 'sam':
-        sam = pysam.AlignmentFile(sam, 'r')
+        sam = pysam.AlignmentFile(args.sam, 'r')
     elif args.sam_format == 'bam':
-        sam = pysam.AlignmentFile(sam, 'rb')
+        sam = pysam.AlignmentFile(args.sam, 'rb')
 
     contigs = {x['SN']: int(x['LN']) for x in sam.header['SQ']}
 
     for contig in contigs.keys():
-        print('[freddie_split.py] Splitting contig {}', contig)
+        print('[freddie_split.py] Splitting contig {}'.format(contig))
         reads = read_sam(sam=sam, contig=contig)
 
         contig_outdir = '{}/{}'.format(args.outdir, contig)
@@ -211,8 +211,7 @@ def run_split(args):
         tints = get_transcriptional_intervals(reads=reads, contig=contig)
         for tint_id, tint in enumerate(tints):
             if (100*tint_id)//len(tints) % 10 == 0:
-                print()
-                print('[freddie_split.py] Done with {}/{}', tint_id, len(tints))
+                print('[freddie_split.py] Done with {}/{}'.format(tint_id, len(tints)))
             outfile = open(
                 '{}/split_{}_{}.tsv'.format(contig_outdir, contig, tint_id), 'w+')
 
@@ -231,7 +230,7 @@ def run_split(args):
                 record.append(read['name'])
                 record.append(read['contig'])
                 record.append(read['strand'])
-                record.append(tint_id)
+                record.append(str(tint_id))
                 for interval in read['intervals']:
                     record.append('{}-{}:{}-{}:{}'.format(*interval))
                 outfile.write('\t'.join(record))
