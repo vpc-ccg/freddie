@@ -758,7 +758,7 @@ def main():
     for contig in os.listdir(args.split_dir):
         if not os.path.isdir('{}/{}'.format(args.split_dir, contig)):
             continue
-        os.makedirs('{}/{}'.format(args.outdir, contig), exist_ok=True)
+        os.makedirs('{}/{}'.format(args.outdir, contig), exist_ok=False)
         for tint_id in glob.iglob('{}/{}/split_*.tsv'.format(args.split_dir, contig)):
             tint_id = int(tint_id[:-4].split('/')[-1].split('_')[-1])
             segment_args.append((
