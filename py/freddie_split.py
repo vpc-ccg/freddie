@@ -202,7 +202,7 @@ def get_transcriptional_intervals(reads, contig):
 
 
 def split_reads(read_files, rname_to_tint, contigs, outdir):
-    outfiles = {c: open('{}/{}/reads.csv'.format(outdir, c), 'w+') for c in contigs}
+    outfiles = {c: open('{}/{}/reads.tsv'.format(outdir, c), 'w+') for c in contigs}
     for read_file in read_files:
         for idx, line in enumerate(open(read_file)):
             if idx == 0:
@@ -225,28 +225,26 @@ def split_reads(read_files, rname_to_tint, contigs, outdir):
                 record.append(seq)
                 outfiles[contig].write('\t'.join(record))
                 outfiles[contig].write('\n')
+    for outfile in outfiles.values():
+        outfile.close()
     for c in contigs:
-        path = '{od}/{c}/reads.csv'.format(od=outdir, c=c)
+        path = '{od}/{c}/reads.tsv'.format(od=outdir, c=c)
         os.system(
             'sort -k3,3n {} > {}_sorted'.format(path, path))
         os.system('mv {}_sorted {}'.format(path,path))
         last_tint = None
         for line in open(path):
-            line = line.rstrip().split('\t')
-            rid = line[0]
-            contig = line[1]
-            tint_id = line[2]
+            rid,contig,tint_id,_ = line.rstrip().split('\t')
             if last_tint == None:
                 last_tint = tint_id
-                outfile = open('{}/{}/reads_{}_{}.csv'.format(outdir, c, c, tint_id), 'w+')
+                outfile = open('{}/{}/reads_{}_{}.tsv'.format(outdir, c, c, tint_id), 'w+')
             if last_tint != tint_id:
                 outfile.close()
                 last_tint = tint_id
-                outfile = open('{}/{}/reads_{}_{}.csv'.format(outdir, c, c, tint_id), 'w+')
-            outfile.write('\t'.join(line))
-            outfile.write('\n')
+                outfile = open('{}/{}/reads_{}_{}.tsv'.format(outdir, c, c, tint_id), 'w+')
+            outfile.write(line)
         outfile.close()
-        os.remove(path)
+        # os.remove(path)
 
 
 def run_split(args):
