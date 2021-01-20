@@ -770,13 +770,13 @@ def main():
                 args.min_isoform_size,
                 args.logs_dir,
             ])
-    with Pool(args.threads) as p:
-        if args.threads == 1:
-            p.close()
-        for idx, tint_id in enumerate(p.imap_unordered(cluster_tint, cluster_args, chunksize=5)) if args.threads > 1 else enumerate(map(cluster_tint, cluster_args)):
-            if  idx % ceil(len(cluster_args)/100) == 0:
-                print(
-                    '[freddie_cluster] Done with {}/{} tints ({:.1%})'.format(idx, len(cluster_args), idx/len(cluster_args)))
+    if args.threads > 1:
+        p = Pool(args.threads)
+        for idx, tint_id in enumerate(p.imap_unordered(cluster_tint, cluster_args, chunksize=5)):
+            print('[freddie_cluster] Done with {}/{} tints ({:.1%})'.format(idx, len(cluster_args), idx/len(cluster_args)))
+    else:
+        for idx, tint_id in enumerate(map(cluster_tint, cluster_args)):
+            print('[freddie_cluster] Done with {}/{} tints ({:.1%})'.format(idx, len(cluster_args), idx/len(cluster_args)))
 
 
 if __name__ == "__main__":
