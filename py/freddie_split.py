@@ -114,6 +114,7 @@ def get_intervals(aln):
 
 def read_sam(sam, contig):
     reads = list()
+    start, end = None, None
     for aln in sam.fetch(contig=contig):
         if aln.is_supplementary or aln.is_secondary or aln.reference_name == None:
             continue
@@ -129,14 +130,22 @@ def read_sam(sam, contig):
             intervals=[(st, et, sr, er, c) for (st, et, sr, er, c)
                        in get_intervals(aln) if st != et and sr != er],
         ))
-    return reads
+        s, e, _, _, _ = reads[-1]['intervals'][-1]
+        if (start, end) == (None, None):
+            start, end = s, e
+        if s > end:
+            yield reads
+            reads = list()
+            start, end = s, e
+        if e > end:
+            end = e
 
 
-def get_transcriptional_intervals(reads, contig):
+def get_transcriptional_intervals(reads):
     intervals = list()
     start, end = None, None
     rids = list()
-    for s, e, rid in sorted((i[0], i[1], read['id']) for read in reads if read['contig'] == contig for i in read['intervals']):
+    for s, e, rid in sorted((i[0], i[1], read['id']) for read in reads for i in read['intervals']):
         if (start, end) == (None, None):
             start, end = s, e
         if s > end:
@@ -185,7 +194,7 @@ def get_transcriptional_intervals(reads, contig):
             rids.update(intervals[tint]['rids'])
             group_intervals.append(
                 (intervals[tint]['start'], intervals[tint]['end']))
-        if len(rids)<3:
+        if len(rids) < 3:
             continue
         for rid in rids:
             reads[rid]['tint'] = len(multi_tints)
@@ -196,7 +205,8 @@ def get_transcriptional_intervals(reads, contig):
 
 
 def split_reads(read_files, rname_to_tint, contigs, outdir):
-    outfiles = {c: open('{}/{}/reads.tsv'.format(outdir, c), 'w+') for c in contigs}
+    outfiles = {c: open('{}/{}/reads.tsv'.format(outdir, c), 'w+')
+                for c in contigs}
     for read_file in read_files:
         for idx, line in enumerate(open(read_file)):
             if idx == 0:
@@ -225,66 +235,64 @@ def split_reads(read_files, rname_to_tint, contigs, outdir):
         path = '{od}/{c}/reads.tsv'.format(od=outdir, c=c)
         os.system(
             'sort -k3,3n {} > {}_sorted'.format(path, path))
-        os.system('mv {}_sorted {}'.format(path,path))
+        os.system('mv {}_sorted {}'.format(path, path))
         last_tint = None
         for line in open(path):
-            rid,contig,tint_id,_ = line.rstrip().split('\t')
+            rid, contig, tint_id, _ = line.rstrip().split('\t')
             if last_tint == None:
                 last_tint = tint_id
-                outfile = open('{}/{}/reads_{}_{}.tsv'.format(outdir, c, c, tint_id), 'w+')
+                outfile = open(
+                    '{}/{}/reads_{}_{}.tsv'.format(outdir, c, c, tint_id), 'w+')
             if last_tint != tint_id:
                 outfile.close()
                 last_tint = tint_id
-                outfile = open('{}/{}/reads_{}_{}.tsv'.format(outdir, c, c, tint_id), 'w+')
+                outfile = open(
+                    '{}/{}/reads_{}_{}.tsv'.format(outdir, c, c, tint_id), 'w+')
             outfile.write(line)
         outfile.close()
         # os.remove(path)
 
 
-def run_split(args):
-    sam = pysam.AlignmentFile(args.sam, 'rb')
+def run_split(sam, reads, outdir):
+    sam = pysam.AlignmentFile(sam, 'rb')
 
     rname_to_tint = dict()
     contigs = {x['SN'] for x in sam.header['SQ']}
-    
+    tint_id = 0
     for contig in contigs:
         print('[freddie_split.py] Splitting contig {}'.format(contig))
-        reads = read_sam(sam=sam, contig=contig)
-
-        contig_outdir = '{}/{}'.format(args.outdir, contig)
-        os.makedirs(contig_outdir, exist_ok=False)
-        tints = get_transcriptional_intervals(reads=reads, contig=contig)
-        for tint_id, tint in enumerate(tints):
-            if (100*tint_id)//len(tints) % 10 == 0:
-                print(
-                    '[freddie_split.py] Done with {}/{}'.format(tint_id, len(tints)))
-            outfile = open(
-                '{}/split_{}_{}.tsv'.format(contig_outdir, contig, tint_id), 'w+')
-
-            record = list()
-            record.append('#{}'.format(contig))
-            record.append('{}'.format(tint_id))
-            record.append(','.join('{}-{}'.format(s, e)
-                                   for s, e in tint['intervals']))
-            record.append(str(len(tint['rids'])))
-            outfile.write('\t'.join(record))
-            outfile.write('\n')
-            for rid in tint['rids']:
-                read = reads[rid]
-                rname_to_tint[read['name']] = (contig, tint_id, rid)
+        for reads in read_sam(sam=sam, contig=contig):
+            contig_outdir = '{}/{}'.format(outdir, contig)
+            os.makedirs(contig_outdir, exist_ok=False)
+            tints = get_transcriptional_intervals(reads=reads)
+            for tint in tints:
+                outfile = open(
+                    '{}/split_{}_{}.tsv'.format(contig_outdir, contig, tint_id), 'w+')
                 record = list()
-                record.append(str(read['id']))
-                record.append(read['name'])
-                record.append(read['contig'])
-                record.append(read['strand'])
-                record.append(str(tint_id))
-                for interval in read['intervals']:
-                    record.append('{}-{}:{}-{}:{}'.format(*interval))
+                record.append('#{}'.format(contig))
+                record.append('{}'.format(tint_id))
+                record.append(','.join('{}-{}'.format(s, e)
+                                       for s, e in tint['intervals']))
+                record.append(str(len(tint['rids'])))
                 outfile.write('\t'.join(record))
                 outfile.write('\n')
-            outfile.close()
-    split_reads(read_files=args.reads,
-                rname_to_tint=rname_to_tint, contigs=contigs, outdir=args.outdir)
+                for rid in tint['rids']:
+                    read = reads[rid]
+                    rname_to_tint[read['name']] = (contig, tint_id, rid)
+                    record = list()
+                    record.append(str(read['id']))
+                    record.append(read['name'])
+                    record.append(read['contig'])
+                    record.append(read['strand'])
+                    record.append(str(tint_id))
+                    for interval in read['intervals']:
+                        record.append('{}-{}:{}-{}:{}'.format(*interval))
+                    outfile.write('\t'.join(record))
+                    outfile.write('\n')
+                outfile.close()
+                tint_id += 1
+    split_reads(read_files=reads,
+                rname_to_tint=rname_to_tint, contigs=contigs, outdir=outdir)
 
 
 def main():
@@ -293,7 +301,7 @@ def main():
     args.outdir = args.outdir.rstrip('/')
     os.makedirs(args.outdir, exist_ok=True)
     print('[freddie_split.py] Running split with args:', args)
-    run_split(args=args)
+    run_split(sam=args.sam, reads=args.reads, outdir=args.outdir)
 
 
 if __name__ == "__main__":
