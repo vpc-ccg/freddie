@@ -11,29 +11,23 @@ cigar_re = re.compile(r'(\d+)([M|I|D|N|S|H|P|=|X]{1})')
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Extract alignment information from BAM/SAM file and splits reads into distinct transcriptional intervals")
-    parser.add_argument("-s",
-                        "--sam",
+    parser.add_argument("-b",
+                        "--bam",
                         type=str,
                         required=True,
-                        help="Path to BAM/SAM file of reads. Assumes splice aligner is used to the genome. Prefers deSALT")
+                        help="Path to sorted and indexed BAM file of reads. Assumes splice aligner is used to the genome. Prefers deSALT")
     parser.add_argument("-r",
                         "--reads",
                         nargs="+",
                         type=str,
                         required=True,
                         help="Space separated paths to reads in FASTQ or FASTA format used to extract polyA tail information")
-    parser.add_argument("-f",
-                        "--sam-format",
-                        type=str,
-                        default=None,
-                        help="SAM file format: bam or sam. Default: infers format from --sam file extension")
     parser.add_argument("-o",
                         "--outdir",
                         type=str,
                         default='freddie_split/',
                         help="Path to output directory. Default: freddie_split/")
     args = parser.parse_args()
-    assert args.sam_format in ['sam', 'bam', None]
     return args
 
 
@@ -248,11 +242,7 @@ def split_reads(read_files, rname_to_tint, contigs, outdir):
 
 
 def run_split(args):
-
-    if args.sam_format == 'sam':
-        sam = pysam.AlignmentFile(args.sam, 'r')
-    elif args.sam_format == 'bam':
-        sam = pysam.AlignmentFile(args.sam, 'rb')
+    sam = pysam.AlignmentFile(args.sam, 'rb')
 
     rname_to_tint = dict()
     contigs = {x['SN'] for x in sam.header['SQ']}
@@ -300,10 +290,6 @@ def run_split(args):
 def main():
     args = parse_args()
 
-    if args.sam_format == None:
-        args.sam_format = 'sam'
-        if args.sam.endswith('.bam'):
-            args.sam_format = 'bam'
     args.outdir = args.outdir.rstrip('/')
     os.makedirs(args.outdir, exist_ok=True)
     print('[freddie_split.py] Running split with args:', args)
