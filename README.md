@@ -41,6 +41,15 @@ Align takes the following arguments:
 - `--sequencer/-s`: Sequencer option for deSALT: `null`, `ccs`, `clr`, `ont1d`, or `ont2d`. Default: `null`
 - `--output/-o`: Output SAM file 
 
+### Sort
+Before running split stage, the SAM file needs to be sorted and indexed using SAMtools
+
+```
+samtools sort <SAM> -m <memory per thread e.g. 2GB> -@ <threads> -O bam > <BAM>
+samtools index <BAM>
+```
+
+
 ### Split (aka partition)
 
 ```
@@ -49,9 +58,7 @@ py/freddie_split.py --sam <SAM/BAM> --output <SPLIT.TSV>
 
 Align takes the following arguments:
 
-- `--sam/-s`: `SAM/BAM` file of read alignments from deSALT or any other split/splice long-read mapper.
-- `--sam-format/-f`: `--sam` file format: `bam` or `sam`. Default: infers format from `--sam` file extension
-
+- `--sam/-s`: `BAM` file of read alignments from deSALT or any other split/splice long-read mapper that are position sorted and indexed.
 - ``--output/-o`: Output TSV file of split stage. Default: `freddie_split.tsv`
 
 ### Segment
