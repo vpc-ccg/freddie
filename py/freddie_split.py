@@ -2,8 +2,11 @@
 import argparse
 import os
 import re
-import pysam
+from operator import itemgetter
 from collections import deque
+from multiprocessing import Pool
+
+import pysam
 
 cigar_re = re.compile(r'(\d+)([M|I|D|N|S|H|P|=|X]{1})')
 
@@ -71,12 +74,18 @@ def parse_args():
                         type=str,
                         required=True,
                         help="Space separated paths to reads in FASTQ or FASTA format used to extract polyA tail information")
+    parser.add_argument("-t",
+                        "--threads",
+                        default=1,
+                        type=int,
+                        help="Number of threads. Max # of threads used is # of contigs. Default: 1")
     parser.add_argument("-o",
                         "--outdir",
                         type=str,
                         default='freddie_split/',
                         help="Path to output directory. Default: freddie_split/")
     args = parser.parse_args()
+    assert args.threads > 0
     return args
 
 
@@ -257,6 +266,7 @@ def get_transcriptional_intervals(reads):
 
 
 def split_reads(read_files, rname_to_tint, contigs, outdir):
+    print('[freddie_split] Splitting reads...')
     outfiles = {c: open('{}/{}/reads.tsv'.format(outdir, c), 'w+')
                 for c in contigs}
     for read_file in read_files:
@@ -284,6 +294,7 @@ def split_reads(read_files, rname_to_tint, contigs, outdir):
     for outfile in outfiles.values():
         outfile.close()
     for c in contigs:
+        print('[freddie_split.py] Sorting contig {}...'.format(c))
         path = '{od}/{c}/reads.tsv'.format(od=outdir, c=c)
         os.system(
             'sort -k3,3n {} > {}_sorted'.format(path, path))
@@ -305,24 +316,21 @@ def split_reads(read_files, rname_to_tint, contigs, outdir):
         # os.remove(path)
 
 
-def run_split(bam, read_files, outdir):
+def run_split(split_args):
+    bam, contig, outdir = split_args
     sam = pysam.AlignmentFile(bam, 'rb')
-
     rname_to_tint = dict()
-    contigs = {x['SN'] for x in sam.header['SQ']}
     tint_id = 0
-    for contig in contigs:
-        print('[freddie_split.py] Splitting contig {}'.format(contig))
-        contig_outdir = '{}/{}'.format(outdir, contig)
-        os.makedirs(contig_outdir, exist_ok=False)
-        for reads in read_sam(sam=sam, contig=contig):
-            tints = get_transcriptional_intervals(reads=reads)
-            for tint in tints:
-                write_tint(contig_outdir, contig, tint_id,
-                           tint, reads, rname_to_tint)
-                tint_id += 1
-    split_reads(read_files=read_files,
-                rname_to_tint=rname_to_tint, contigs=contigs, outdir=outdir)
+    print('[freddie_split.py] Splitting contig {}'.format(contig))
+    contig_outdir = '{}/{}'.format(outdir, contig)
+    os.makedirs(contig_outdir, exist_ok=False)
+    for reads in read_sam(sam=sam, contig=contig):
+        tints = get_transcriptional_intervals(reads=reads)
+        for tint in tints:
+            write_tint(contig_outdir, contig, tint_id,
+                       tint, reads, rname_to_tint)
+            tint_id += 1
+    return contig, rname_to_tint
 
 
 def write_tint(contig_outdir, contig, tint_id, tint, reads, rname_to_tint):
@@ -362,7 +370,31 @@ def main():
     args.outdir = args.outdir.rstrip('/')
     os.makedirs(args.outdir, exist_ok=True)
     print('[freddie_split.py] Running split with args:', args)
-    run_split(bam=args.bam, read_files=args.reads, outdir=args.outdir)
+
+    contigs = {x['SN']: x['LN']
+               for x in pysam.AlignmentFile(args.bam, 'rb').header['SQ']}
+    args.threads = min(args.threads, len(contigs))
+    split_args = list()
+    for contig, _ in sorted(contigs.items(), key=itemgetter(1), reverse=True):
+        split_args.append((
+            args.bam,
+            contig,
+            args.outdir,
+        ))
+    rname_to_tint = dict()
+    if args.threads > 1:
+        p = Pool(args.threads)
+        for contig, rname_to_tint_thread in p.imap_unordered(run_split, split_args, chunksize=1):
+            rname_to_tint = {**rname_to_tint, **rname_to_tint_thread}
+            print('[freddie_split] Done with contig {}'.format(contig))
+        p.close()
+    else:
+        for contig, rname_to_tint_thread in map(run_split, split_args):
+            rname_to_tint = {**rname_to_tint, **rname_to_tint_thread}
+            print('[freddie_split] Done with contig {}'.format(contig))
+
+    split_reads(read_files=args.reads,
+                rname_to_tint=rname_to_tint, contigs=contigs, outdir=args.outdir)
 
 
 if __name__ == "__main__":

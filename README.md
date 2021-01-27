@@ -58,7 +58,7 @@ py/freddie_split.py --sam <SAM/BAM> --output <SPLIT.TSV>
 
 Align takes the following arguments:
 
-- `--sam/-s`: `BAM` file of read alignments from deSALT or any other split/splice long-read mapper that are position sorted and indexed.
+- `--bam/-b`: `BAM` file of read alignments from deSALT or any other split/splice long-read mapper that are position sorted and indexed.
 - ``--output/-o`: Output TSV file of split stage. Default: `freddie_split.tsv`
 
 ### Segment
