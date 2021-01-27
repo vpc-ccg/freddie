@@ -266,7 +266,7 @@ def get_transcriptional_intervals(reads):
 
 
 def split_reads(read_files, rname_to_tint, contigs, outdir):
-    print('[freddie_split.py] Splitting reads...')
+    print('[freddie_split] Splitting reads...')
     outfiles = {c: open('{}/{}/reads.tsv'.format(outdir, c), 'w+')
                 for c in contigs}
     for read_file in read_files:
