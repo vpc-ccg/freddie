@@ -52,4 +52,4 @@ freddie_dbg
 *.paf
 *.mat
 *.data
-.vscode/settings.json
+.vscode/
