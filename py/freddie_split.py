@@ -7,6 +7,55 @@ from collections import deque
 
 cigar_re = re.compile(r'(\d+)([M|I|D|N|S|H|P|=|X]{1})')
 
+query_consuming = [
+    pysam.CINS,
+    pysam.CSOFT_CLIP,
+    pysam.CMATCH,
+    pysam.CEQUAL,
+    pysam.CDIFF,
+]
+target_consuming = [
+    pysam.CDEL,
+    pysam.CMATCH,
+    pysam.CEQUAL,
+    pysam.CDIFF,
+]
+exon_consuming = [
+    pysam.CINS,
+    pysam.CDEL,
+    pysam.CMATCH,
+    pysam.CEQUAL,
+    pysam.CDIFF,
+]
+intron_consuming = [
+    pysam.CINS,
+    pysam.CDEL,
+    pysam.CMATCH,
+    pysam.CEQUAL,
+    pysam.CDIFF,
+]
+target_and_query_consuming = [
+    pysam.CMATCH,
+    pysam.CEQUAL,
+    pysam.CDIFF,
+]
+target_skipping = [
+    pysam.CDEL,
+    pysam.CREF_SKIP,
+]
+cop_to_str = [
+    'M',
+    'I',
+    'D',
+    'N',
+    'S',
+    'H',
+    'P',
+    '=',
+    'X',
+    'B',
+]
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -34,43 +83,46 @@ def parse_args():
 def fix_cigar(cigar):
     fixed_cigar = list()
     fixed_cigar.append(cigar[0])
-    for c, t in cigar[1:]:
-        last_c, last_t = fixed_cigar[-1]
+    for t, c in cigar[1:]:
+        last_t, last_c = fixed_cigar[-1]
         if t == last_t:
-            fixed_cigar[-1] = (last_c+c, t)
+            fixed_cigar[-1] = (t, last_c+c)
             continue
-        if t in ['D', 'N'] and last_t in ['D', 'N']:
-            fixed_cigar[-1] = (c+last_c, 'N')
+        if t in target_skipping and last_t in target_skipping:
+            fixed_cigar[-1] = (pysam.CREF_SKIP, c+last_c)
             continue
-        fixed_cigar.append((c, t))
+        fixed_cigar.append((t, c))
     return fixed_cigar
 
 
 def get_intervals(aln):
-    if aln.cigarstring == None:
-        return list()
-    cigar = [x for x in cigar_re.findall(aln.cigarstring)]
-    assert sum(len(x[0])+len(x[1]) for x in cigar) == len(
-        aln.cigarstring), 'Errorenous cigar for aln: {}'.format(aln)
-    cigar = [(int(x[0]), x[1]) for x in cigar_re.findall(aln.cigarstring)]
+    # if aln.cigarstring == None:
+    #     return list()
+    # cigar = [x for x in cigar_re.findall(aln.cigarstring)]
+    cigar = aln.cigartuples
+    # assert sum(len(x[0])+len(x[1]) for x in cigar) == len(
+    #     aln.cigarstring), 'Errorenous cigar for aln: {}'.format(aln)
+    # cigar = [(int(x[0]), x[1]) for x in cigar_re.findall(aln.cigarstring)]
     qstart = 0
-    if cigar[0][1] in ['S']:
-        qstart += cigar[0][0]
+    if cigar[0][0] == pysam.CSOFT_CLIP:
+        qstart += cigar[0][1]
     qlen = 0
-    for c, t in cigar:
-        if t in ['I', 'S', 'M', '=', 'X']:
+    for t, c in cigar:
+        if t in query_consuming:
             qlen += c
     assert qlen == len(aln.query_sequence)
     qend = qlen
-    if cigar[-1][1] in ['S']:
-        qend -= cigar[-1][0]
+    if cigar[-1][0] == pysam.CSOFT_CLIP:
+        qend -= cigar[-1][1]
     assert qend > qstart
     tstart = aln.reference_start
     tend = tstart + 1
 
-    cigar = fix_cigar(cigar)
-    for c, t in cigar:
-        if t in ['D', 'M', '=', 'X']:
+    # cigar = fix_cigar(cigar)
+    for t, c in cigar:
+        assert(0 <= t < 10)
+    for t, c in cigar:
+        if t in target_consuming:
             tend += c
     qstart_c = qstart
     qend_c = qstart
@@ -79,23 +131,23 @@ def get_intervals(aln):
 
     intervals = list()
     interval_cigar = list()
-    for c, t in cigar:
-        if t in ['D', 'I', 'X', '=', 'M']:
-            interval_cigar.append('{}{}'.format(c, t))
-        if t in ['D']:
+    for t, c in cigar:
+        if t in exon_consuming:
+            interval_cigar.append((t, c))
+        if t == pysam.CDEL:
             tend_c += c
-        if t in ['I']:
+        if t == pysam.CINS:
             qend_c += c
-        if t in ['X', '=', 'M']:
+        if t in target_and_query_consuming:
             tend_c += c
             qend_c += c
-        if t == 'N':
+        if t == pysam.CREF_SKIP:
             intervals.append((
                 tstart_c,
                 tend_c,
                 qstart_c,
                 qend_c,
-                ''.join(interval_cigar)
+                interval_cigar,
             ))
             interval_cigar = list()
             tend_c += c
@@ -107,7 +159,7 @@ def get_intervals(aln):
             tend_c,
             qstart_c,
             qend_c,
-            ''.join(interval_cigar)
+            interval_cigar,
         ))
     return intervals
 
@@ -116,7 +168,7 @@ def read_sam(sam, contig):
     reads = list()
     start, end = None, None
     for aln in sam.fetch(contig=contig):
-        if aln.is_supplementary or aln.is_secondary or aln.reference_name == None:
+        if aln.is_unmapped or aln.is_supplementary or aln.is_secondary or aln.reference_name == None:
             continue
         assert aln.reference_name == contig, '{} : {}'.format(
             aln.reference_name, contig)
@@ -253,46 +305,55 @@ def split_reads(read_files, rname_to_tint, contigs, outdir):
         # os.remove(path)
 
 
-def run_split(sam, reads, outdir):
-    sam = pysam.AlignmentFile(sam, 'rb')
+def run_split(bam, read_files, outdir):
+    sam = pysam.AlignmentFile(bam, 'rb')
 
     rname_to_tint = dict()
     contigs = {x['SN'] for x in sam.header['SQ']}
     tint_id = 0
     for contig in contigs:
         print('[freddie_split.py] Splitting contig {}'.format(contig))
+        contig_outdir = '{}/{}'.format(outdir, contig)
+        os.makedirs(contig_outdir, exist_ok=False)
         for reads in read_sam(sam=sam, contig=contig):
-            contig_outdir = '{}/{}'.format(outdir, contig)
-            os.makedirs(contig_outdir, exist_ok=False)
             tints = get_transcriptional_intervals(reads=reads)
             for tint in tints:
-                outfile = open(
-                    '{}/split_{}_{}.tsv'.format(contig_outdir, contig, tint_id), 'w+')
-                record = list()
-                record.append('#{}'.format(contig))
-                record.append('{}'.format(tint_id))
-                record.append(','.join('{}-{}'.format(s, e)
-                                       for s, e in tint['intervals']))
-                record.append(str(len(tint['rids'])))
-                outfile.write('\t'.join(record))
-                outfile.write('\n')
-                for rid in tint['rids']:
-                    read = reads[rid]
-                    rname_to_tint[read['name']] = (contig, tint_id, rid)
-                    record = list()
-                    record.append(str(read['id']))
-                    record.append(read['name'])
-                    record.append(read['contig'])
-                    record.append(read['strand'])
-                    record.append(str(tint_id))
-                    for interval in read['intervals']:
-                        record.append('{}-{}:{}-{}:{}'.format(*interval))
-                    outfile.write('\t'.join(record))
-                    outfile.write('\n')
-                outfile.close()
+                write_tint(contig_outdir, contig, tint_id,
+                           tint, reads, rname_to_tint)
                 tint_id += 1
-    split_reads(read_files=reads,
+    split_reads(read_files=read_files,
                 rname_to_tint=rname_to_tint, contigs=contigs, outdir=outdir)
+
+
+def write_tint(contig_outdir, contig, tint_id, tint, reads, rname_to_tint):
+    outfile = open(
+        '{}/split_{}_{}.tsv'.format(contig_outdir, contig, tint_id), 'w+')
+    record = list()
+    record.append('#{}'.format(contig))
+    record.append('{}'.format(tint_id))
+    record.append(','.join('{}-{}'.format(s, e)
+                           for s, e in tint['intervals']))
+    record.append(str(len(tint['rids'])))
+    outfile.write('\t'.join(record))
+    outfile.write('\n')
+    for rid in tint['rids']:
+        read = reads[rid]
+        rname_to_tint[read['name']] = (contig, tint_id, rid)
+        record = list()
+        record.append(str(read['id']))
+        record.append(read['name'])
+        record.append(read['contig'])
+        record.append(read['strand'])
+        record.append(str(tint_id))
+        for interval in read['intervals']:
+            record.append(parse_interval_field(interval))
+        outfile.write('\t'.join(record))
+        outfile.write('\n')
+    outfile.close()
+
+
+def parse_interval_field(interval):
+    return '{}-{}:{}-{}:{}'.format(interval[0], interval[1], interval[2], interval[3], ''.join(('{}{}'.format(c, cop_to_str[t]) for t, c in interval[4])))
 
 
 def main():
@@ -301,7 +362,7 @@ def main():
     args.outdir = args.outdir.rstrip('/')
     os.makedirs(args.outdir, exist_ok=True)
     print('[freddie_split.py] Running split with args:', args)
-    run_split(sam=args.sam, reads=args.reads, outdir=args.outdir)
+    run_split(bam=args.bam, read_files=args.reads, outdir=args.outdir)
 
 
 if __name__ == "__main__":
