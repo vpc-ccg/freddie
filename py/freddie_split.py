@@ -89,29 +89,41 @@ def parse_args():
     return args
 
 
-def fix_cigar(cigar):
-    fixed_cigar = list()
-    fixed_cigar.append(cigar[0])
-    for t, c in cigar[1:]:
-        last_t, last_c = fixed_cigar[-1]
-        if t == last_t:
-            fixed_cigar[-1] = (t, last_c+c)
+# def fix_cigar(cigar):
+#     fixed_cigar = list()
+#     fixed_cigar.append(cigar[0])
+#     for t, c in cigar[1:]:
+#         last_t, last_c = fixed_cigar[-1]
+#         if t == last_t:
+#             fixed_cigar[-1] = (t, last_c+c)
+#             continue
+#         if t in target_skipping and last_t in target_skipping:
+#             fixed_cigar[-1] = (pysam.CREF_SKIP, c+last_c)
+#             continue
+#         fixed_cigar.append((t, c))
+#     return fixed_cigar
+
+
+def fix_intervals(intervals):
+    for ts, te, qs, qe, cigar in intervals:
+        if len(cigar) == 0:
             continue
-        if t in target_skipping and last_t in target_skipping:
-            fixed_cigar[-1] = (pysam.CREF_SKIP, c+last_c)
+        (t, c) = cigar[0]
+        if t == pysam.CDEL:
+            ts += c
+            cigar = cigar[1:]
+        if len(cigar) == 0:
             continue
-        fixed_cigar.append((t, c))
-    return fixed_cigar
+        (t, c) = cigar[-1]
+        if t == pysam.CDEL:
+            te -= c
+            cigar = cigar[:-1]
+        if ts < te:
+            yield (ts, te, qs, qe, cigar)
 
 
 def get_intervals(aln):
-    # if aln.cigarstring == None:
-    #     return list()
-    # cigar = [x for x in cigar_re.findall(aln.cigarstring)]
     cigar = aln.cigartuples
-    # assert sum(len(x[0])+len(x[1]) for x in cigar) == len(
-    #     aln.cigarstring), 'Errorenous cigar for aln: {}'.format(aln)
-    # cigar = [(int(x[0]), x[1]) for x in cigar_re.findall(aln.cigarstring)]
     qstart = 0
     if cigar[0][0] == pysam.CSOFT_CLIP:
         qstart += cigar[0][1]
@@ -127,7 +139,6 @@ def get_intervals(aln):
     tstart = aln.reference_start
     tend = tstart + 1
 
-    # cigar = fix_cigar(cigar)
     for t, c in cigar:
         assert(0 <= t < 10)
     for t, c in cigar:
@@ -170,7 +181,7 @@ def get_intervals(aln):
             qend_c,
             interval_cigar,
         ))
-    return intervals
+    return list(fix_intervals(intervals))
 
 
 def read_sam(sam, contig):
