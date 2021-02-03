@@ -51,8 +51,10 @@ rule split:
         split = directory('{}/{{sample}}/freddie.split'.format(output_d)),
     conda:
         'environment.env'
+    threads:
+        8
     shell:
-        '{input.script} -b {input.bam} -r {input.reads} -o {output.split}'
+        '{input.script} -b {input.bam} -r {input.reads} -o {output.split} -t {threads}'
 
 rule segment:
     input:
