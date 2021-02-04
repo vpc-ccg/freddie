@@ -192,7 +192,7 @@ def read_sam(sam, contig):
             continue
         assert aln.reference_name == contig, '{} : {}'.format(
             aln.reference_name, contig)
-        reads.append(dict(
+        read = dict(
             id=len(reads),
             name=aln.query_name,
             contig=aln.reference_name,
@@ -201,16 +201,20 @@ def read_sam(sam, contig):
             tint=None,
             intervals=[(st, et, sr, er, c) for (st, et, sr, er, c)
                        in get_intervals(aln) if st != et and sr != er],
-        ))
-        s, e, _, _, _ = reads[-1]['intervals'][-1]
+        )
+        s, _, _, _, _ = read['intervals'][0]
+        _, e, _, _, _ = read['intervals'][-1]
         if (start, end) == (None, None):
             start, end = s, e
         if s > end:
             yield reads
             reads = list()
-            start, end = s, e
-        if e > end:
+            read['id'] = len(reads)
             end = e
+        end = max(end, e)
+        reads.append(read)
+    if len(reads) > 0:
+        yield reads
 
 
 def get_transcriptional_intervals(reads):
