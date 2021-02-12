@@ -2,79 +2,16 @@ outpath:
     test/dev-out/
 
 gurobi:
-    license: /home/baraa/gurobi.lic
+    license: gurobi.lic
     timeout: 15
 
 samples:
-    N_sim.chr21:
+    N_sim:
         reads:
-            - test/data/N_sim.chr21.fastq
+            - /groups/hachgrp/projects/dev-ltr-simulator/analysis/ltr-sim-dev/reads/P000S000.L-non.fastq
         seq_type: ont1d
         data_type: sim
-        gtf: chr21
-    # SGNex_MCF7_directcDNA:
-    #     reads:
-    #         - test/data/SGNex_MCF7_directcDNA.fastq
-    #     seq_type: ont1d
-    #     data_type: real
-    #     gtf: PCan
-    # SGNex_MCF7_directRNA:
-    #     reads:
-    #         - test/data/SGNex_MCF7_directRNA.fastq
-    #     seq_type: ont1d
-    #     data_type: real
-    #     gtf: PCan
-    # 22Rv1_PCan:
-    #     reads:
-    #         - test/data/22RV1.PCan.fastq
-    #     seq_type: ont1d
-    #     data_type: real
-    #     gtf: PCan
-    # L_sim.chr21:
-    #     reads:
-    #         - test/data/L_sim.chr21.fastq
-    #     seq_type: ont1d
-    #     data_type: sim
-    #     gtf: chr21
-    # P000S000.chr21:
-    #     reads:
-    #         - test/data/P000S000.chr21.fastq
-    #     seq_type: ont1d
-    #     data_type: real
-    #     gtf: chr21
-    # P001S000.chr21:
-    #     reads:
-    #         - test/data/P001S000.chr21.fastq
-    #     seq_type: ont1d
-    #     data_type: real
-    #     gtf: chr21
-    # P001S000:
-    #     reads:
-    #         - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R410/P001R410.pass.fastq
-    #         - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R411/P001R411.pass.fastq
-    #         - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R510/P001R510.pass.fastq
-    #         - /groups/hachgrp/projects/dev-ont/raw-data/wts/fastq/P001R511/P001R511.pass.fastq
-    #     seq_type: ont1d
-    #     data_type: real
-    #     gtf: whole_genome
-    # N_sim:
-    #     reads:
-    #         - /groups/hachgrp/projects/dev-ltr-simulator/analysis/ltr-sim-dev/reads/P000S000.L-non.fastq
-    #     seq_type: ont1d
-    #     data_type: sim
-    #     gtf: whole_genome
-    # L_sim:
-    #     reads:
-    #         - /groups/hachgrp/projects/dev-ltr-simulator/analysis/ltr-sim-dev/reads/P000S000.L-low.fastq
-    #     seq_type: ont1d
-    #     data_type: sim
-    #     gtf: whole_genome
-    # H_sim:
-    #     reads:
-    #         - /groups/hachgrp/projects/dev-ltr-simulator/analysis/ltr-sim-dev/reads/P000S000.L-high.fastq
-    #     seq_type: ont1d
-    #     data_type: sim
-    #     gtf: whole_genome
+        gtf: whole_genome
 
 exec:
     align    : py/freddie_align.py
@@ -82,23 +19,6 @@ exec:
     segment  : py/freddie_segment.py
     cluster  : py/freddie_cluster.py
     isoforms : py/freddie_isoforms.py
-    beds     : extern/transcript_beds.py
-    coverage : extern/transcript_coverage.py
-    seqpare  : extern/seqpare.sh
-    pairing  : extern/seqpare_pair.py
-    plot     : py/freddie_plot.py
 
 references:
-    dna_desalt : test/data/Homo_sapiens.chr21.GRCh38.dna.97.deSALT.index
-
-annotations:
-    chr21 : test/data/Homo_sapiens.chr21.GRCh38.97.gtf
-    PCan  : test/data/Homo_sapiens.PCan.gtf
-
-transcript_coverage:
-    sim:
-        per_read_threshold : 0.0
-        per_transcript_threshold : 3
-    real:
-        per_read_threshold : 0.0
-        per_transcript_threshold : 0
+    dna_desalt : /groups/hachgrp/annotations/DNA/97/deSALT.index

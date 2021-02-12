@@ -158,14 +158,8 @@ def read_sequence(tint, reads_tsv):
         rid_to_seq[rid] = seq
     assert len(rid_to_seq) == len(tint['reads']), tint
     for read in tint['reads']:
-        seq = rid_to_seq[read['id']]
-        read['length'] = len(seq)
-        if read['strand'] == '+':
-            read['seq'] = ''.join(dna_id.get(x, 'N')
-                                  for x in seq.upper())
-        else:
-            read['seq'] = ''.join(rev_comp.get(x, 'N')
-                                  for x in reversed(seq.upper()))
+        read['seq'] = rid_to_seq[read['id']]
+        read['length'] = len(read['seq'])
     return
 
 
@@ -282,22 +276,22 @@ def get_interval_end(end, read):
     assert False
 
 
-def find_longest_poly(seq, match_score=1, mismatch_score=-2, char='A'):
-    if len(seq) == 0:
+def find_longest_poly(seq, s, e, step, match_score=1, mismatch_score=-2, char='A'):
+    if e-s == 0:
         return
-    if seq[0] == char:
+    if seq[s] == char:
         scores = [match_score]
     else:
         scores = [0]
-    for m in (match_score if c == char else mismatch_score for c in seq[1:]):
+    for m in (match_score if c == char else mismatch_score for c in seq[s+step:e:step]):
         scores.append(max(0, scores[-1]+m))
     for k, g in groupby(enumerate(scores), lambda x: x[1] > 0):
         if not k:
             continue
-        i, s = list(zip(*g))
-        max_s, max_i = max(zip(s, i))
+        i, S = list(zip(*g))
+        max_s, max_i = max(zip(S, i))
         l = max_i+1-i[0]
-        yield i[0], l, seq[i[0]:i[0]+l].count(char)/l
+        yield i[0], l, seq[s:e:step][i[0]:i[0]+l].count(char)/l
 
 
 def get_unaligned_gaps_and_polyA(read, segs):
@@ -320,10 +314,19 @@ def get_unaligned_gaps_and_polyA(read, segs):
     end = segs[l_seg_idx][1]
     q_esc_pos, _ = get_interval_end(end=end, read=read)
     assert 0 <= q_ssc_pos < q_esc_pos <= read['length'], (
-        q_ssc_pos, q_esc_pos, read['length'], start, end, read['intervals'], read['id'])
+        q_ssc_pos, q_esc_pos, read['length'], start, end, read)
     s_polys = list()
     for char in ['A', 'T']:
-        for i, l, p in find_longest_poly(read['seq'][0:q_ssc_pos], char=char):
+        s = 0
+        e = q_ssc_pos
+        step = 1
+        sc_char = char
+        if read['strand'] == '-':
+            s = -s -1
+            e = -e -1
+            step = -1
+            sc_char = rev_comp[char]
+        for i, l, p in find_longest_poly(read['seq'], s=s, e=e, step=step, char=sc_char):
             if l < 20 or p < 0.85:
                 continue
             assert 0 <= i < q_ssc_pos, (i, q_ssc_pos, read['length'])
@@ -344,7 +347,16 @@ def get_unaligned_gaps_and_polyA(read, segs):
         )
     e_polys = list()
     for char in ['A', 'T']:
-        for i, l, p in find_longest_poly(read['seq'][q_esc_pos:], char=char):
+        s = q_esc_pos
+        e = read['length']
+        step = 1
+        sc_char = char
+        if read['strand'] == '-':
+            s = -s -1
+            e = -e -1
+            step = -1
+            sc_char = rev_comp[char]
+        for i, l, p in find_longest_poly(read['seq'], s=s, e=e, step=step, char=sc_char):
             if l < 20 or p < 0.85:
                 continue
             assert 0 <= i < read['length'] - \
@@ -421,7 +433,7 @@ def optimize(candidate_y_idxs, C, start, end, smoothed_threshold, threshold_rate
             if i == j or j == k:
                 out_mem[(i, j, k)] = 0
             else:
-                out_mem[(i, j, k)] = sum(np.logical_or(
+                out_mem[(i, j, k)] = np.sum(np.logical_or(
                     np.logical_and(
                         yea_mem[(i, j)],
                         nay_mem[(j, k)]
@@ -601,16 +613,15 @@ def process_splicing_data(tint):
     # print('Building per read coverage data for tint {}'.format(tint['id']))
     for r_idx, read in enumerate(tint['reads']):
         read['data'] = list()
-        for ts, te, _, _, _ in read['intervals']:
-            Y_idx, y_idx = pos_to_Yy_idx[ts]
-            Y_raw[Y_idx][y_idx] += 1
-            Y_idx, y_idx = pos_to_Yy_idx[te]
-            Y_raw[Y_idx][y_idx] += 1
-            for pos in range(ts, te):
-                Y_idx, y_idx = pos_to_Yy_idx[pos]
-                Yy_idx_to_r_idxs[Y_idx][y_idx][r_idx] = True
+        for ts, te, _, _, cigar in read['intervals']:
+            Y_idx_s, y_idx_s = pos_to_Yy_idx[ts]
+            Y_idx_e, y_idx_e = pos_to_Yy_idx[te]
+            assert Y_idx_s == Y_idx_e, (Y_idx_s,Y_idx_e)
+            Y_idx = Y_idx_s
+            Y_raw[Y_idx][y_idx_s] += 1
+            Y_raw[Y_idx][y_idx_e] += 1
+            Yy_idx_to_r_idxs[Y_idx][y_idx_s:y_idx_e,r_idx] = True
     return (
-        pos_to_Yy_idx,
         Yy_idx_to_pos,
         Yy_idx_to_r_idxs,
         Y_raw,
@@ -670,7 +681,6 @@ def run_segment(segment_args):
 
 def segment(tint, sigma, smoothed_threshold, threshold_rate, variance_factor, max_problem_size, min_read_support_outside):
     (
-        pos_to_Yy_idx,
         Yy_idx_to_pos,
         Yy_idx_to_r_idxs,
         Y_raw,
@@ -773,13 +783,34 @@ def main():
                 args.max_problem_size,
                 args.min_read_support_outside,
             ))
-    with Pool(args.threads) as p:
-        if args.threads == 1:
-            p.close()
-        for idx, tint_id in enumerate(p.imap_unordered(run_segment, segment_args, chunksize=10)) if args.threads > 1 else enumerate(map(run_segment, segment_args)):
-            if  idx % ceil(len(segment_args)/100) == 0:
-                print(
-                    '[freddie_segment] Done with {}/{} tints ({:.1%})'.format(idx, len(segment_args), idx/len(segment_args)))
+    if args.threads > 1:
+        p = Pool(args.threads)
+        for idx, tint_id in enumerate(p.imap_unordered(run_segment, segment_args, chunksize=10)):
+            if not idx % ceil(len(segment_args)/100) == 0:
+                continue
+            print('[freddie_segment] Done with {}/{} tints ({:.1%})'.format(
+                idx,
+                len(segment_args),
+                idx/len(segment_args)),
+            )
+    else:
+        for idx, tint_id in enumerate(map(run_segment, segment_args)):
+            if not idx % ceil(len(segment_args)/100) == 0:
+                continue
+            print('[freddie_segment] Done with {}/{} tints ({:.1%})'.format(
+                idx,
+                len(segment_args),
+                idx/len(segment_args)),
+            )
+
 
 if __name__ == "__main__":
+    # import cProfile
+    # import pstats
+    # profiler = cProfile.Profile()
+    # profiler.enable()
     main()
+    # profiler.disable()
+    # stats = pstats.Stats(profiler, stream=open(
+    #     'segment.no_RC.cprof', 'w+')).sort_stats('tottime')
+    # stats.print_stats()
