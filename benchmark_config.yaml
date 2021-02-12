@@ -2,7 +2,7 @@ outpath:
     test/benchmark/
 
 gurobi:
-    license: /home/baraa/gurobi.lic
+    license: gurobi.lic
 
 exec:
     beds     : extern/transcript_beds.py
@@ -12,37 +12,15 @@ exec:
     stats    : extern/seqpare_stats.awk
 
 samples:
-    # N_sim.chr21:
-    #     seq_type  : ont1d
-    #     data_type : sim
-    #     gtf       : chr21
-    #     reads     :
-    #         - test/data/N_sim.chr21.fastq
-    # N_sim.from_chr21:
-    #     reads:
-    #         - test/data/N_sim.from_chr21.fastq
-    #     seq_type: ont1d
-    #     data_type: sim
-    #     gtf: chr21
-    22RV1_ont:
+    N_sim:
         reads:
-            - test/data/22RV1.PCan.fastq
+            - test/data/N_sim.fastq
         seq_type: ont1d
-        data_type: real
-        gtf: chrX
-    # N_sim.chr21.mapping_and_supported:
-    #     reads:
-    #         - test/data/N_sim.chr21.mapping_and_supported.fastq
-    #     seq_type: ont1d
-    #     data_type: sim
-    #     gtf: chr21
+        data_type: sim
+        gtf: whole_genome
 
 references:
-    chr21        : test/data/Homo_sapiens.chr21.GRCh38.dna.97.fasta
-    chrX         : test/data/Homo_sapiens.chrX.GRCh38.dna.97.fasta
-    chr21_desalt : test/data/Homo_sapiens.chr21.GRCh38.dna.97.deSALT.index/
-    chr21_desalt : test/data/Homo_sapiens.chrX.GRCh38.dna.97.deSALT.index/
+    dna_desalt   : /groups/hachgrp/annotations/DNA/97/deSALT.index
 
 annotations:
-    chr21 : test/data/Homo_sapiens.chr21.GRCh38.97.gtf
-    chrX  : test/data/Homo_sapiens.chrX.GRCh38.97.gtf
+    whole_genome : test/data/Homo_sapiens.GRCh38.97.gtf
