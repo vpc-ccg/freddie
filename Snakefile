@@ -1,4 +1,4 @@
-configfile: 'benchmark_config.yaml'
+configfile: 'config.yaml'
 
 for k in config.keys():
     if not k.startswith('override_'):
@@ -28,39 +28,26 @@ bam2Bed12 = '{}/bin/bam2Bed12.py'.format(get_which('flair.py').rstrip('/flair.py
 make_slurm()
 
 mappers = [
-    # 'desalt',
+    'desalt',
     'minimap2'
 ]
 tools = [
-    # 'freddie',
-    # 'stringtie',
+    'freddie',
+    'stringtie',
     'flair',
 ]
-merge_thresholds = [
-    1.00,
-    # 0.98,
-    # 0.96,
-    # 0.94,
-    # 0.92,
-    # 0.90,
-    # 0.88,
-    # 0.86,
-    # 0.84,
-]
+
 gtf_sample_rates = [
     1.00,
-    # 0.75,
-    # 0.50,
-    # 0.25,
-    # 0.01,
+    0.75,
+    0.50,
+    0.25,
+    0.01,
 ]
 tools_stats = list()
 for mapper in mappers:
     for tool in tools:
-        if tool == 'freddie':
-            for t in merge_thresholds:
-                tools_stats.append('freddie.{:.2f}.{}'.format(t,mapper))
-        elif tool == 'flair':
+        if tool == 'flair':
             for r in gtf_sample_rates:
                 tools_stats.append('flair.{:.2f}.{}'.format(r,mapper))
         else:
@@ -68,28 +55,32 @@ for mapper in mappers:
 
 stats_outfiles = [
     'isoforms.gtf',
-    'intersect.tsv',
-    'seqpare.tsv',
-    'pairings.tsv',
 ]
 
 rule all:
     input:
-        expand('{}/{{sample}}/{{tool}}.{{mapper}}.{{extension}}'.format(output_d),
-            tool=tools,
+        [config['references'][s]['desalt_idx'] for s in config['references']],
+        expand('{}/{{sample}}.{{mapper}}.{{extension}}'.format(preprocess_d),
+            sample=config['samples'],
             mapper=mappers,
-            sample=config['samples'],
-            extension=['time.tsv',]),
-        expand('{}/{{sample}}/{{tool}}.{{extension}}'.format(output_d),
-            tool=tools_stats,
-            sample=config['samples'],
-            extension=stats_outfiles),
-        expand('{}/{{sample}}/seqpare_stats.tsv'.format(output_d), sample=config['samples']),
+            extension=['sam','bam','bam.bai']
+        ),
+        
+        # expand('{}/{{sample}}/{{tool}}.{{mapper}}.{{extension}}'.format(output_d),
+        #     tool=tools,
+        #     mapper=mappers,
+        #     sample=config['samples'],
+        #     extension=['time.tsv',]),
+        # expand('{}/{{sample}}/{{tool}}.{{extension}}'.format(output_d),
+        #     tool=tools_stats,
+        #     sample=config['samples'],
+        #     extension=stats_outfiles),
+        # expand('{}/{{sample}}/seqpare_stats.tsv'.format(output_d), sample=config['samples']),
 
 rule minimap2:
     input:
         reads  = lambda wildcards: config['samples'][wildcards.sample]['reads'],
-        genome = lambda wildcards: config['references'][config['samples'][wildcards.sample]['gtf']],
+        genome = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['genome'],
     output:
         sam=protected('{}/{{sample}}.minimap2.sam'.format(preprocess_d)),
         bam=protected('{}/{{sample}}.minimap2.bam'.format(preprocess_d)),
@@ -101,11 +92,20 @@ rule minimap2:
         '  samtools sort -T {output.bam}.tmp -m 2G -@ {threads} -O bam {output.sam} > {output.bam} && '
         '  samtools index {output.bam} '
 
+rule desalt_index:
+    input:
+        genome = lambda wildcards: config['references'][wildcards.species]['genome'],
+    output:
+        index  = directory('test/mapping/{species}.dna.desalt_idx'),
+    wildcard_constraints:
+        species = '|'.join(s for s in config['references']),
+    shell:
+        'deSALT index {input.genome} {output.index}'
+
 rule desalt:
     input:
         reads  = lambda wildcards: config['samples'][wildcards.sample]['reads'],
-        index  = lambda wildcards: config['references'][config['samples'][wildcards.sample]['gtf']+'_desalt'],
-        # index = config['references']['dna_desalt'],
+        index  = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['desalt_idx'],
     output:
         sam=protected('{}/{{sample}}.desalt.sam'.format(preprocess_d)),
         bam=protected('{}/{{sample}}.desalt.bam'.format(preprocess_d)),
@@ -124,10 +124,9 @@ rule freddie:
         sam   = '{}/{{sample}}.{{mapper}}.sam'.format(preprocess_d),
         reads =  lambda wildcards: config['samples'][wildcards.sample]['reads'],
     output:
-        split = '{}/{{sample}}/freddie.{{mapper}}/split.tsv'.format(workspace_d),
+        split   = protected('{}/{{sample}}/freddie.{{mapper}}/split.tsv'.format(workspace_d)),
         segment = protected('{}/{{sample}}/freddie.{{mapper}}/segment.tsv'.format(workspace_d)),
         cluster = protected('{}/{{sample}}/freddie.{{mapper}}/cluster.tsv'.format(workspace_d)),
-        time    = protected('{}/{{sample}}/freddie.{{mapper}}.time.tsv'.format(output_d)),
     params:
         gnu_time     = gnu_time,
         gnu_time_fmt = '"%e\\t%U\\t%M"',
@@ -151,11 +150,11 @@ rule freddie_gtf:
         segment = protected('{}/{{sample}}/freddie.{{mapper}}/segment.tsv'.format(workspace_d)),
         cluster = protected('{}/{{sample}}/freddie.{{mapper}}/cluster.tsv'.format(workspace_d)),
     output:
-        gtf     = protected('{}/{{sample}}/freddie.{{merge_threshold}}.{{mapper}}.isoforms.gtf'.format(output_d)),
+        gtf     = protected('{}/{{sample}}/freddie.{{mapper}}.isoforms.gtf'.format(output_d)),
     wildcard_constraints:
         mapper='desalt|minimap2'
     shell:
-        'py/freddie_isoforms.py -t {wildcards.merge_threshold} -s {input.segment} -c {input.cluster} -o {output.gtf}'
+        'py/freddie_isoforms.py -s {input.segment} -c {input.cluster} -o {output.gtf}'
 
 rule stringtie:
     input:
