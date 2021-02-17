@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import os
+import resource
 import re
 from operator import itemgetter
 from collections import deque
@@ -336,12 +337,13 @@ def run_split(split_args):
     sam = pysam.AlignmentFile(bam, 'rb')
     rname_to_tint = dict()
     tint_id = 0
-    print('[freddie_split.py] Splitting contig {}'.format(contig))
     contig_outdir = '{}/{}'.format(outdir, contig)
-    os.makedirs(contig_outdir, exist_ok=False)
     for reads in read_sam(sam=sam, contig=contig):
         tints = get_transcriptional_intervals(reads=reads)
         for tint in tints:
+            if tint_id == 0:
+                print('[freddie_split.py] Splitting contig {}'.format(contig))
+                os.makedirs(contig_outdir, exist_ok=False)
             write_tint(contig_outdir, contig, tint_id,
                        tint, reads, rname_to_tint)
             tint_id += 1
@@ -397,20 +399,31 @@ def main():
             args.outdir,
         ))
     rname_to_tint = dict()
+    final_contigs = list()
     if args.threads > 1:
         p = Pool(args.threads)
         for contig, rname_to_tint_thread in p.imap_unordered(run_split, split_args, chunksize=1):
-            rname_to_tint = {**rname_to_tint, **rname_to_tint_thread}
+            if len(rname_to_tint_thread) == 0:
+                continue
             print('[freddie_split] Done with contig {}'.format(contig))
+            rname_to_tint = {**rname_to_tint, **rname_to_tint_thread}
+            final_contigs.append(contig)
         p.close()
     else:
         for contig, rname_to_tint_thread in map(run_split, split_args):
-            rname_to_tint = {**rname_to_tint, **rname_to_tint_thread}
+            if len(rname_to_tint_thread) == 0:
+                continue
             print('[freddie_split] Done with contig {}'.format(contig))
+            rname_to_tint = {**rname_to_tint, **rname_to_tint_thread}
+            final_contigs.append(contig)
 
+    RLIMIT_NOFILE_soft,RLIMIT_NOFILE_hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if RLIMIT_NOFILE_hard < len(contigs)+10:
+        assert False, 'Number of contigs in reference is much larger than system hard limit on open files! {} vs {}'.format(len(contigs), RLIMIT_NOFILE_hard)
+    if RLIMIT_NOFILE_soft < len(contigs)+10:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (len(contigs)+10, RLIMIT_NOFILE_hard))
     split_reads(read_files=args.reads,
-                rname_to_tint=rname_to_tint, contigs=contigs, outdir=args.outdir)
-
+                rname_to_tint=rname_to_tint, contigs=final_contigs, outdir=args.outdir)
 
 if __name__ == "__main__":
     main()
