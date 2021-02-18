@@ -152,7 +152,7 @@ rule freddie:
         '{params.gnu_time} -f "freddie-cluster\\t{wildcards.mapper}\\t%e\\t%U\\t%M"  -a -o {input.time} '
         ' py/freddie_cluster.py -s {output.segment} -o {output.cluster} && '
         '{params.gnu_time} -f "freddie-collapse\\t{wildcards.mapper}\\t%e\\t%U\\t%M" -a -o {input.time} '
-        ' py/freddie_isoforms.py -s {output.segment} -c {output.cluster} -o {output.gtf}'
+        ' py/freddie_isoforms.py -s {output.split} -c {output.cluster} -o {output.gtf}'
 
 rule stringtie:
     input:
