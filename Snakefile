@@ -31,7 +31,7 @@ mappers = [
     'desalt',
     'minimap2'
 ]
-tools = [
+tools_bases = [
     'freddie',
     'stringtie',
     'flair',
@@ -44,14 +44,14 @@ gtf_sample_rates = [
     0.25,
     0.01,
 ]
-tools_stats = list()
+tools = list()
 for mapper in mappers:
-    for tool in tools:
+    for tool in tools_bases:
         if tool == 'flair':
             for r in gtf_sample_rates:
-                tools_stats.append('flair.{:.2f}.{}'.format(r,mapper))
+                tools.append('flair.{:.2f}.{}'.format(r,mapper))
         else:
-            tools_stats.append('{}.{}'.format(tool, mapper))
+            tools.append('{}.{}'.format(tool, mapper))
 
 stats_outfiles = [
     'isoforms.gtf',
@@ -65,17 +65,11 @@ rule all:
             mapper=mappers,
             extension=['sam','bam','bam.bai']
         ),
-        
-        # expand('{}/{{sample}}/{{tool}}.{{mapper}}.{{extension}}'.format(output_d),
-        #     tool=tools,
-        #     mapper=mappers,
-        #     sample=config['samples'],
-        #     extension=['time.tsv',]),
-        # expand('{}/{{sample}}/{{tool}}.{{extension}}'.format(output_d),
-        #     tool=tools_stats,
-        #     sample=config['samples'],
-        #     extension=stats_outfiles),
-        # expand('{}/{{sample}}/seqpare_stats.tsv'.format(output_d), sample=config['samples']),
+        expand('{}/{{sample}}/gtime.tsv'.format(output_d), sample=config['samples']),
+        expand('{}/{{sample}}/{{tool}}.isoforms.gtf'.format(output_d),
+            tool=tools,
+            sample=config['samples'],
+        ),
 
 rule minimap2:
     input:
@@ -119,61 +113,65 @@ rule desalt:
         '  samtools sort -T {output.bam}.tmp -m 2G -@ {threads} -O bam {output.sam} > {output.bam} && '
         '  samtools index {output.bam} '
 
+rule make_time:
+    output:
+        time_tsv = '{}/{{sample}}/gtime.tsv'.format(output_d)
+    run:
+        outfile = open(output.time_tsv, 'w+')
+        record = list()
+        record.append('tool')
+        record.append('mapper')
+        record.append('real')
+        record.append('user')
+        record.append('memory')
+        outfile.write('\t'.join(record))
+        outfile.write('\n')
+        outfile.close()
+
 rule freddie:
     input:
-        sam   = '{}/{{sample}}.{{mapper}}.sam'.format(preprocess_d),
+        bam   = '{}/{{sample}}.{{mapper}}.bam'.format(preprocess_d),
         reads =  lambda wildcards: config['samples'][wildcards.sample]['reads'],
+        time  = ancient('{}/{{sample}}/gtime.tsv'.format(output_d))
     output:
-        split   = protected('{}/{{sample}}/freddie.{{mapper}}/split.tsv'.format(workspace_d)),
-        segment = protected('{}/{{sample}}/freddie.{{mapper}}/segment.tsv'.format(workspace_d)),
-        cluster = protected('{}/{{sample}}/freddie.{{mapper}}/cluster.tsv'.format(workspace_d)),
+        split   = directory('{}/{{sample}}/freddie.{{mapper}}/split'.format(workspace_d)),
+        segment = directory('{}/{{sample}}/freddie.{{mapper}}/segment'.format(workspace_d)),
+        cluster = directory('{}/{{sample}}/freddie.{{mapper}}/cluster'.format(workspace_d)),
+        gtf     = protected('{}/{{sample}}/freddie.{{mapper}}.isoforms.gtf'.format(output_d)),
     params:
         gnu_time     = gnu_time,
-        gnu_time_fmt = '"%e\\t%U\\t%M"',
         gurobi       = config['gurobi']['license']
     wildcard_constraints:
         mapper='desalt|minimap2'
     shell:
-        '{params.gnu_time} -f {params.gnu_time_fmt} -o {output.time} bash -c "'
-        ' py/freddie_split.py -s {input.sam} -o {output.split}'
-        '" && '
-        '{params.gnu_time} -f {params.gnu_time_fmt} -a -o {output.time} bash -c "'
-        ' py/freddie_segment.py -s {output.split} -r {input.reads} -o {output.segment} '
-        '" && '
-        '{params.gnu_time} -f {params.gnu_time_fmt} -a -o {output.time} bash -c "'
-        ' export GRB_LICENSE_FILE={params.gurobi} && '
-        ' py/freddie_cluster.py -s {output.segment} -o {output.cluster} -to 15 > {output.cluster}.log'
-        '"'
-
-rule freddie_gtf:
-    input:
-        segment = protected('{}/{{sample}}/freddie.{{mapper}}/segment.tsv'.format(workspace_d)),
-        cluster = protected('{}/{{sample}}/freddie.{{mapper}}/cluster.tsv'.format(workspace_d)),
-    output:
-        gtf     = protected('{}/{{sample}}/freddie.{{mapper}}.isoforms.gtf'.format(output_d)),
-    wildcard_constraints:
-        mapper='desalt|minimap2'
-    shell:
-        'py/freddie_isoforms.py -s {input.segment} -c {input.cluster} -o {output.gtf}'
+        'export GRB_LICENSE_FILE={params.gurobi} && '
+        '{params.gnu_time} -f "freddie-split\\t{wildcards.mapper}\\t%e\\t%U\\t%M"    -a -o {input.time} '
+        '  py/freddie_split.py -b {input.bam} -o {output.split} -r {input.reads} && '
+        '{params.gnu_time} -f "freddie-segment\\t{wildcards.mapper}\\t%e\\t%U\\t%M"  -a -o {input.time} '
+        '  py/freddie_segment.py -s {output.split} -o {output.segment} && '
+        '{params.gnu_time} -f "freddie-cluster\\t{wildcards.mapper}\\t%e\\t%U\\t%M"  -a -o {input.time} '
+        ' py/freddie_cluster.py -s {output.segment} -o {output.cluster} && '
+        '{params.gnu_time} -f "freddie-collapse\\t{wildcards.mapper}\\t%e\\t%U\\t%M" -a -o {input.time} '
+        ' py/freddie_isoforms.py -s {output.segment} -c {output.cluster} -o {output.gtf}'
 
 rule stringtie:
     input:
         bam = '{}/{{sample}}.{{mapper}}.bam'.format(preprocess_d),
+        time  = ancient('{}/{{sample}}/gtime.tsv'.format(output_d))
     output:
         gtf  = protected('{}/{{sample}}/stringtie.{{mapper}}.isoforms.gtf'.format(output_d)),
-        time = protected('{}/{{sample}}/stringtie.{{mapper}}.time.tsv'.format(output_d)),
     wildcard_constraints:
         mapper='desalt|minimap2'
     params:
         gnu_time     = gnu_time,
-        gnu_time_fmt = '"%e\\t%U\\t%M"',
+        gnu_time_fmt = lambda wildcards: '"stringtie\\t'+wildcards.mapper+'\\t%e\\t%U\\t%M"',
     shell:
-        '{params.gnu_time} -f {params.gnu_time_fmt} -o {output.time} '
+        '{params.gnu_time} -f {params.gnu_time_fmt} -a -o {input.time} '
         ' stringtie -p 1 -L -o {output.gtf} {input.bam}'
 
 rule sampled_gtf:
     input:
-        gtf = lambda wildcards: config['annotations'][config['samples'][wildcards.sample]['gtf']],
+        gtf = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['annot'],
     output:
         gtf ='{}/{{sample}}.sampled_at.{{gtf_sample_rate}}.gtf'.format(preprocess_d),
     run:
@@ -219,10 +217,11 @@ rule sampled_gtf:
 
 rule flair:
     input:
-        bam    ='{}/{{sample}}.{{mapper}}.bam'.format(preprocess_d),
+        bam    = '{}/{{sample}}.{{mapper}}.bam'.format(preprocess_d),
         reads  = lambda wildcards: config['samples'][wildcards.sample]['reads'],
-        genome = lambda wildcards: config['references'][config['samples'][wildcards.sample]['gtf']],
-        gtf    ='{}/{{sample}}.sampled_at.{{gtf_sample_rate}}.gtf'.format(preprocess_d),
+        genome = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['genome'],
+        gtf    = '{}/{{sample}}.sampled_at.{{gtf_sample_rate}}.gtf'.format(preprocess_d),
+        time   = ancient('{}/{{sample}}/gtime.tsv'.format(output_d))
     output:
         p_bed  = protected('{}/{{sample}}/flair.{{gtf_sample_rate}}.{{mapper}}/input.bed'.format(workspace_d)),
         c_bed  = protected('{}/{{sample}}/flair.{{gtf_sample_rate}}.{{mapper}}/correct_all_corrected.bed'.format(workspace_d)),
@@ -230,90 +229,18 @@ rule flair:
         t_bed  = protected('{}/{{sample}}/flair.{{gtf_sample_rate}}.{{mapper}}/collapse.isoforms.bed'.format(workspace_d)),
         fasta  = protected('{}/{{sample}}/flair.{{gtf_sample_rate}}.{{mapper}}/collapse.isoforms.fa'.format(workspace_d)),
         gtf  = protected('{}/{{sample}}/flair.{{gtf_sample_rate}}.{{mapper}}.isoforms.gtf'.format(output_d)),
-        time = protected('{}/{{sample}}/flair.{{gtf_sample_rate}}.{{mapper}}.time.tsv'.format(output_d)),
     params:
         gnu_time        = gnu_time,
-        gnu_time_fmt    = '"%e\\t%U\\t%M"',
+        gnu_time_fmt    = lambda wildcards: '"flair-'+wildcards.gtf_sample_rate+'\\t'+wildcards.mapper+'\\t%e\\t%U\\t%M"',
         bam2Bed12       = bam2Bed12,
         correct_prefix  = '{}/{{sample}}/flair.{{gtf_sample_rate}}.{{mapper}}/correct'.format(workspace_d),
         collapse_prefix = '{}/{{sample}}/flair.{{gtf_sample_rate}}.{{mapper}}/collapse'.format(workspace_d),
     wildcard_constraints:
         mapper='desalt|minimap2'
     shell:
+        '{params.gnu_time} -f {params.gnu_time_fmt} -a -o {input.time} bash -c "'
         ' {params.bam2Bed12} -i {input.bam} > {output.p_bed}  && '
-        '{params.gnu_time} -f {params.gnu_time_fmt} -o {output.time} bash -c "'
         ' flair.py correct  -t 1 -q {output.p_bed} -o {params.correct_prefix} -g {input.genome} -f {input.gtf} &&'
         ' flair.py collapse -t 1 -q {output.c_bed} -o {params.collapse_prefix} -g {input.genome} -f {input.gtf} -r {input.reads} '
         '"; '
         'mv {params.collapse_prefix}.isoforms.gtf {output.gtf}'
-
-rule ref_beds:
-    input:
-        sam  = '{}/{{sample}}.{{mapper}}.sam'.format(preprocess_d),
-        script_cov = config['exec']['coverage'],
-        script_bed = config['exec']['beds'],
-        annotation = lambda wildcards: config['annotations'][config['samples'][wildcards.sample]['gtf']],
-    output:
-        split      = '{}/{{sample}}.{{mapper}}.split.tsv'.format(preprocess_d),
-        ref_cov    = '{}/{{sample}}.{{mapper}}.ref_cov.tsv'.format(preprocess_d),
-        ref_beds   = directory('{}/{{sample}}.{{mapper}}.ref_beds'.format(preprocess_d)),
-    params:
-        prt = 0.0,
-        ptt = 3,
-    wildcard_constraints:
-        mapper = 'desalt|minimap2'
-    shell:
-        'py/freddie_split.py -s {input.sam} -o {output.split} && '
-        '{input.script_cov} -g {input.annotation} -s {output.split} -o {output.ref_cov} -prt {params.prt} -ptt {params.ptt} && '
-        '{input.script_bed} -g {input.annotation} -c {output.ref_cov} -od {output.ref_beds}'
-
-rule tool_beds:
-    input:
-        script   = config['exec']['beds'],
-        isoforms = '{}/{{sample}}/{{tool}}.{{mapper}}.isoforms.gtf'.format(output_d),
-    output:
-        tool_beds = directory('{}/{{sample}}/{{tool}}.{{mapper}}.isoforms.beds'.format(workspace_d)),
-    shell:
-        '{input.script} -g {input.isoforms} -od {output.tool_beds}'
-
-
-rule bed_intersect:
-    input:
-        ref_beds  = '{}/{{sample}}.{{mapper}}.ref_beds'.format(preprocess_d),
-        tool_beds = '{}/{{sample}}/{{tool}}.{{mapper}}.isoforms.beds'.format(workspace_d),
-    output:
-        intersect = '{}/{{sample}}/{{tool}}.{{mapper}}.intersect.tsv'.format(output_d),
-    shell:
-        'bedtools intersect -a <(cat {input.ref_beds}/*.bed) -b <(cat {input.tool_beds}/*.bed) -wb'
-        ' | cut -f4,8 | sort -u > "{output.intersect}"; '
-
-rule seqpare:
-    input:
-        script    = config['exec']['seqpare'],
-        intersect = '{}/{{sample}}/{{tool}}.{{mapper}}.intersect.tsv'.format(output_d),
-        ref_beds  = '{}/{{sample}}.{{mapper}}.ref_beds'.format(preprocess_d),
-        tool_beds = '{}/{{sample}}/{{tool}}.{{mapper}}.isoforms.beds'.format(workspace_d),
-    output:
-        seqpare   = '{}/{{sample}}/{{tool}}.{{mapper}}.seqpare.tsv'.format(output_d),
-    shell:
-        '{input.script} {input.tool_beds} {input.ref_beds} {input.intersect} {output.seqpare}'
-
-rule pairing:
-    input:
-        script    = config['exec']['pairing'],
-        seqpare   = '{}/{{sample}}/{{tool}}.{{mapper}}.seqpare.tsv'.format(output_d),
-        tool_beds = '{}/{{sample}}/{{tool}}.{{mapper}}.isoforms.beds'.format(workspace_d),
-        ref_beds  = '{}/{{sample}}.{{mapper}}.ref_beds'.format(preprocess_d),
-    output:
-        pairings = '{}/{{sample}}/{{tool}}.{{mapper}}.pairings.tsv'.format(output_d),
-    shell:
-        '{input.script} -s {input.seqpare} -b {input.tool_beds} -r {input.ref_beds} -o {output.pairings} -t 1'
-
-rule stats:
-    input:
-        script   = config['exec']['stats'],
-        pairing_files = ['{}/{{sample}}/{}.pairings.tsv'.format(output_d, tool) for tool in tools_stats],
-    output:
-        stats = '{}/{{sample}}/seqpare_stats.tsv'.format(output_d),
-    shell:
-        '{input.script} {input.pairing_files} > {output.stats}'

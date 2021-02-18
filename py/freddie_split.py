@@ -310,7 +310,7 @@ def split_reads(read_files, rname_to_tint, contigs, outdir):
     for outfile in outfiles.values():
         outfile.close()
     for c in contigs:
-        print('[freddie_split.py] Sorting contig {}...'.format(c))
+        print('[freddie_split] Sorting contig {}...'.format(c))
         path = '{od}/{c}/reads.tsv'.format(od=outdir, c=c)
         os.system(
             'sort -k3,3n {} > {}_sorted'.format(path, path))
@@ -342,7 +342,7 @@ def run_split(split_args):
         tints = get_transcriptional_intervals(reads=reads)
         for tint in tints:
             if tint_id == 0:
-                print('[freddie_split.py] Splitting contig {}'.format(contig))
+                print('[freddie_split] Splitting contig {}'.format(contig))
                 os.makedirs(contig_outdir, exist_ok=False)
             write_tint(contig_outdir, contig, tint_id,
                        tint, reads, rname_to_tint)
