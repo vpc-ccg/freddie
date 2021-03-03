@@ -3,7 +3,6 @@ import subprocess
 import os
 import itertools
 import glob 
-import shutil
 
 import pyfasta
 import pysam
@@ -502,6 +501,7 @@ rule truth_transcripts_fastas_and_isoform_baseline:
                     tid_to_reads[contig][tid] = list()
                 tid_to_reads[contig][tid].append(lines[0]+'\n'+lines[1]+'\n')
         truth_bed = open(output.truth_bed, 'w+')
+        isoform_bed = open(output.isoform_bed, 'w+')
         for contig,tid_reads in tid_to_reads.items():
             prefix = '{}/{}'.format(params.isoform_baseline_dirs, contig)
             os.makedirs(prefix, exist_ok=True)
@@ -518,10 +518,11 @@ rule truth_transcripts_fastas_and_isoform_baseline:
                 for s,e in sorted(tid_intervals[contig][tid]):
                     outfile.write(dna[contig_to_key[contig]][s:e])
                     truth_bed.write('{}\t{}\t{}\t{}\n'.format(contig, s, e, tid))
+                    isoform_bed.write('{}\t{}\t{}\tisoform_{}_{}\n'.format(contig, s, e, contig, tid))
                 outfile.write('\n')
                 outfile.close()
         truth_bed.close()
-        shutil.copy(output.truth_bed, output.isoform_bed)
+        isoform_bed.close()
         open(output.isoform_baseline_ready, 'w+')
 
 
@@ -559,7 +560,7 @@ rule isoform_based:
                 locs[i]+=1
         
         out_file = open(output.fasta, 'w+')
-        out_file.write('>isoform_{}_\n'.format(wildcards.contig, wildcards.tid))
+        out_file.write('>isoform_{}_{}\n'.format(wildcards.contig, wildcards.tid))
         for i,c in zip(locs,iso_seq):
             if i/len(rids) > 0.3:
                 out_file.write(c)
