@@ -4,6 +4,9 @@ outpath:
 gurobi:
     license: gurobi.lic
 
+min_cov:
+    3
+
 exec:
     beds     : extern/transcript_beds.py
     coverage : extern/transcript_coverage.py
@@ -17,7 +20,6 @@ samples:
         ref      : drosophila_melanogaster
         reads    :
             - extern/LTR-sim/output/reads/ERR3588905.L-non.fastq
-
 references:
     drosophila_melanogaster:
         annot      : extern/LTR-sim/refs/drosophila_melanogaster/drosophila_melanogaster.annot.gtf

@@ -3,6 +3,7 @@ import subprocess
 import os
 import itertools
 import glob 
+import shutil
 
 import pyfasta
 import pysam
@@ -19,6 +20,35 @@ for k in config.keys():
     top_dict = eval('config{}'.format(''.join(['["{}"]'.format(x) for x in keys[:-1]])))
     assert keys[-1] in top_dict
     top_dict[keys[-1]]=config[k]
+
+sample_tids = dict()
+for s in config['samples']:
+    tid_to_contig = dict()
+    for l in open(config['references'][config['samples'][s]['ref']]['annot']):
+        if l[0]=='#':
+            continue
+        l = l.rstrip().split('\t')
+        if l[2]!='transcript':
+            continue
+        info = l[8]
+        info = [x.strip().split(' ') for x in info.strip(';').split(';')]
+        info = {x[0]:x[1].strip('"') for x in info}
+        contig = l[0]
+        tid = info['transcript_id']
+        tid_to_contig[tid] = contig
+    
+    sample_tids[s] = dict()
+    for read_file in config['samples'][s]['reads']:
+        for line in open(read_file):
+            if not line[0] in ['@', '>']:
+                continue
+            tid = line[1:].split()[0].split('_')[0]
+            contig = tid_to_contig[tid]
+            if not contig in sample_tids[s]:
+                sample_tids[s][contig] = dict()
+            sample_tids[s][contig][tid] = sample_tids[s][contig].get(tid, 0) + 1
+    for contig in sample_tids[s]:
+        sample_tids[s][contig] = {k for k,v in sample_tids[s][contig].items() if v >= config['min_cov']}
 
 def make_slurm():
     os.makedirs('slurm'.format(outpath), mode=0o777, exist_ok=True)
@@ -46,10 +76,6 @@ for tool in config['tools']:
     else:
         tools.append(tool)
 
-contigs = dict()
-for species in config['references']:
-    contigs[species] = [line.split()[0] for line in open(config['references'][species]['genome_fai'])]
-
 rule all:
     input:
         [config['references'][s]['desalt_idx'] for s in config['references']],
@@ -65,11 +91,27 @@ rule all:
             sample=config['samples'],
         ),
         expand('{}/{{sample}}/{{mapper}}/{{tool}}.{{extension}}'.format(graphs_d),
-            tool=tools+['genome', 'segment'],
+            tool=tools+['genome', 'segment',],
             mapper=config['mappers'],
             sample=config['samples'],
             extension=['bed', 'transcripts'],
         ),
+        expand('{}/{{sample}}/truth.{{extension}}'.format(graphs_d),
+            sample=config['samples'],
+            extension=['bed', 'transcripts'],
+        ),
+        expand('{}/{{sample}}/truth.{{extension}}'.format(graphs_d),
+            sample=config['samples'],
+            extension=['bed', 'transcripts'],
+        ),
+        [
+            '{prefix}/{sample}/isoform.transcripts/{contig}/isoform_{contig}_{tid}.fasta'.format(
+                prefix=graphs_d,
+                sample=s,
+                contig=c,
+                tid=t,
+            ) for s in config['samples'] for c in sample_tids[s] for t in sample_tids[s][c]
+        ],
 
 
 rule minimap2:
@@ -248,7 +290,7 @@ rule flair:
 
 rule tool_transcript_fastas:
     input:
-        gtf = protected('{}/{{sample}}/{{mapper}}/{{tool}}.isoforms.gtf'.format(output_d)),
+        gtf = '{}/{{sample}}/{{mapper}}/{{tool}}.isoforms.gtf'.format(output_d),
         genome = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['genome'],
     output:
         contig_dirs = directory('{}/{{sample}}/{{mapper}}/{{tool}}.transcripts'.format(graphs_d)),
@@ -409,3 +451,117 @@ rule genome_transcript_fastas:
                 fasta_file.close()
         bed_file.close()
 
+rule truth_transcripts_fastas_and_isoform_baseline:
+    input:
+        reads  = lambda wildcards: config['samples'][wildcards.sample]['reads'],
+        gtf    = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['annot'],
+        genome = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['genome'],
+    output:
+        isoform_baseline_ready = '{}/{{sample}}/isoform_baseline/ready'.format(workspace_d),
+        truth_contig_dirs = directory('{}/{{sample}}/truth.transcripts'.format(graphs_d)),
+        truth_bed = '{}/{{sample}}/truth.bed'.format(graphs_d),
+        isoform_bed = '{}/{{sample}}/isoform.bed'.format(graphs_d),
+    params:
+        isoform_baseline_dirs = '{}/{{sample}}/isoform_baseline'.format(workspace_d),
+    run:
+        dna = pyfasta.Fasta(input.genome)
+        contig_to_key = {k.split()[0]:k for k in dna.keys()}
+        for contig in contig_to_key.keys():
+            os.makedirs('{}/{}'.format(output.truth_contig_dirs, contig), exist_ok=False)
+        tid_intervals = {c:dict() for c in contig_to_key.keys()}
+        tid_to_contig = dict()
+        tid_to_reads = {c:dict() for c in contig_to_key.keys()}
+        for l in open(input.gtf):
+            if l[0]=='#':
+                continue
+            l = l.rstrip().split('\t')
+            if l[2]!='exon':
+                continue
+            info = l[8]
+            info = [x.strip().split(' ') for x in info.strip(';').split(';')]
+            info = {x[0]:x[1].strip('"') for x in info}
+            contig = l[0]
+            tid = info['transcript_id']
+            if not tid in tid_intervals[contig]:
+                tid_to_contig[tid] = contig
+                tid_intervals[contig][tid] = list()
+            tid_intervals[contig][tid].append((int(l[3]),int(l[4])))
+        for read_file in input.reads:
+            if read_file.endswith('.fq') or read_file.endswith('.fastq'):
+                num = 4 
+            else:
+                num = 2
+            infile = open(read_file)
+            while True:
+                lines = [line.rstrip() for line in itertools.islice(infile, num)]
+                if (len(lines)) != num:
+                    break
+                tid = lines[0][1:].split()[0].split('_')[0]
+                contig = tid_to_contig[tid]
+                if not tid in tid_to_reads[contig]:
+                    tid_to_reads[contig][tid] = list()
+                tid_to_reads[contig][tid].append(lines[0]+'\n'+lines[1]+'\n')
+        truth_bed = open(output.truth_bed, 'w+')
+        for contig,tid_reads in tid_to_reads.items():
+            prefix = '{}/{}'.format(params.isoform_baseline_dirs, contig)
+            os.makedirs(prefix, exist_ok=True)
+            for tid,reads in tid_reads.items():
+                if len(reads) < config['min_cov']:
+                    continue
+                outfile = open('{}/{}_{}_reads.fa'.format(prefix, contig, tid), 'w+')
+                for read in reads:
+                    outfile.write(read)
+                outfile.close()
+                
+                outfile = open('{}/{}/{}.fa'.format(output.truth_contig_dirs, contig, tid), 'w+')
+                outfile.write('>{}\n'.format(tid))
+                for s,e in sorted(tid_intervals[contig][tid]):
+                    outfile.write(dna[contig_to_key[contig]][s:e])
+                    truth_bed.write('{}\t{}\t{}\t{}\n'.format(contig, s, e, tid))
+                outfile.write('\n')
+                outfile.close()
+        truth_bed.close()
+        shutil.copy(output.truth_bed, output.isoform_bed)
+        open(output.isoform_baseline_ready, 'w+')
+
+
+
+rule isoform_baseline_align:
+    input:
+        isoform_baseline_ready = '{}/{{sample}}/isoform_baseline/ready'.format(workspace_d),
+        truth_contig_dirs = '{}/{{sample}}/truth.transcripts'.format(graphs_d),
+    output:
+        paf = '{}/{{sample}}/isoform_baseline/{{contig}}/{{contig}}_{{tid}}_reads.paf'.format(workspace_d),
+    params:
+        reads = '{}/{{sample}}/isoform_baseline/{{contig}}/{{contig}}_{{tid}}_reads.fa'.format(workspace_d),
+        target = '{}/{{sample}}/truth.transcripts/{{contig}}/{{tid}}.fa'.format(graphs_d),
+    shell:
+        'minimap2 -t 1 -c --MD --eqx --no-long-join {params.target} {params.reads} > {output.paf} 2> /dev/null'
+
+
+rule isoform_based:
+    input:
+        truth_contig_dirs = '{}/{{sample}}/truth.transcripts'.format(graphs_d),
+        paf    = '{}/{{sample}}/isoform_baseline/{{contig}}/{{contig}}_{{tid}}_reads.paf'.format(workspace_d),
+    output:
+        fasta  = '{}/{{sample}}/isoform.transcripts/{{contig}}/isoform_{{contig}}_{{tid}}.fasta'.format(graphs_d),
+    params:
+        target = '{}/{{sample}}/truth.transcripts/{{contig}}/{{tid}}.fa'.format(graphs_d),
+    run:
+        iso_seq = open(params.target).readlines()[1].rstrip()
+        locs = [0 for _ in range(len(iso_seq))]
+        rids = set()
+        for l in open(input.paf):
+            l = l.rstrip().split('\t')
+            rids.add(l[0])
+            assert len(locs) == int(l[6])
+            for i in range(int(l[7]),int(l[8])):
+                locs[i]+=1
+        
+        out_file = open(output.fasta, 'w+')
+        out_file.write('>isoform_{}_\n'.format(wildcards.contig, wildcards.tid))
+        for i,c in zip(locs,iso_seq):
+            if i/len(rids) > 0.3:
+                out_file.write(c)
+        out_file.write('\n')
+        out_file.close()
