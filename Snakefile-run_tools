@@ -101,7 +101,7 @@ rule all:
             extension=['bed', 'overlaps.tsv'],
         ),
         [
-            '{prefix}/{sample}/{mapper}/isoform.transcripts/{contig}/isoform_{contig}_{tid}.fasta'.format(
+            '{prefix}/{sample}/{mapper}/isoform.transcripts/{contig}/isoform_{contig}_{tid}.fa'.format(
                 prefix=graphs_d,
                 sample=s,
                 mapper=m,
@@ -325,7 +325,7 @@ rule tool_transcript_fastas:
                 for s,e in intervals:
                     bed_file.write('{}\t{}\t{}\t{}\n'.format(contig, s, e, iid))
                     seq.append(dna[contig_to_key[contig]][s:e])
-                fasta_file = open('{}/{}/{}.fasta'.format(output.contig_dirs, contig, iid), 'w+')
+                fasta_file = open('{}/{}/{}.fa'.format(output.contig_dirs, contig, iid), 'w+')
                 fasta_file.write('>{}\n'.format(iid))
                 fasta_file.write('{}\n'.format(''.join(seq)))
                 fasta_file.close()
@@ -388,7 +388,7 @@ rule segment_transcript_fastas:
                         e = tint_segs[contig][tint][l_seg_idx][1]
                         seq.append(dna[contig_to_key[contig]][s:e])
                         bed_file.write('{}\t{}\t{}\tsegment_{}_{}_{}\n'.format(contig, s, e, contig, tint, iid))
-                    fasta_file = open('{}/{}/{}.fasta'.format(output.contig_dirs, contig, iid), 'w+')
+                    fasta_file = open('{}/{}/segment_{}_{}_{}.fa'.format(output.contig_dirs, contig, contig, tint, iid), 'w+')
                     fasta_file.write('>{}\n'.format(iid))
                     fasta_file.write('{}\n'.format(''.join(seq)))
                     fasta_file.close()
@@ -414,7 +414,7 @@ rule genome_transcript_fastas:
                 continue
             contig = read.reference_name
             assert contig in genome_isoforms, (contig, genome_isoforms.keys())
-            iid = 'genome_{}_{}'.format(contig, read.query_name.split('_')[0])
+            iid = read.query_name.split('_')[0]
             if not iid in genome_isoforms[contig]:
                 genome_isoforms[contig][iid] = dict(read_count=0, pos_count=dict(), intervals=list())
             genome_isoforms[contig][iid]['read_count']+=1
@@ -440,9 +440,9 @@ rule genome_transcript_fastas:
                     continue
                 seq = list()
                 for s,e in intervals:
-                    bed_file.write('{}\t{}\t{}\t{}\n'.format(contig, s, e, iid))
+                    bed_file.write('{}\t{}\t{}\tgenome_{}_{}\n'.format(contig, s, e, contig, iid))
                     seq.append(dna[contig_to_key[contig]][s:e])
-                fasta_file = open('{}/{}/{}.fasta'.format(output.contig_dirs, contig, iid), 'w+')
+                fasta_file = open('{}/{}/genome_{}_{}.fa'.format(output.contig_dirs, contig, contig, iid), 'w+')
                 fasta_file.write('>{}\n'.format(iid))
                 fasta_file.write('{}\n'.format(''.join(seq)))
                 fasta_file.close()
@@ -511,11 +511,11 @@ rule truth_transcripts_fastas_and_isoform_baseline:
                     outfile.write(read)
                 outfile.close()
                 
-                outfile = open('{}/{}/{}.fa'.format(output.truth_contig_dirs, contig, tid), 'w+')
-                outfile.write('>{}\n'.format(tid))
+                outfile = open('{}/{}/truth_{}_{}.fa'.format(output.truth_contig_dirs, contig, contig, tid), 'w+')
+                outfile.write('>truth_{}_{}\n'.format(contig, tid))
                 for s,e in sorted(tid_intervals[contig][tid]):
                     outfile.write(dna[contig_to_key[contig]][s:e])
-                    truth_bed.write('{}\t{}\t{}\t{}\n'.format(contig, s, e, tid))
+                    truth_bed.write('{}\t{}\t{}\ttruth_{}_{}\n'.format(contig, s, e, contig, tid))
                     isoform_bed.write('{}\t{}\t{}\tisoform_{}_{}\n'.format(contig, s, e, contig, tid))
                 outfile.write('\n')
                 outfile.close()
@@ -527,13 +527,13 @@ rule truth_transcripts_fastas_and_isoform_baseline:
 
 rule isoform_baseline_align:
     input:
-        isoform_baseline_ready = '{}/{{sample}}/isoform_baseline/ready'.format(workspace_d),
+        isoform_baseline_ready = '{}/{{sample}}/{{mapper}}/isoform_baseline/ready'.format(workspace_d),
         truth_contig_dirs = '{}/{{sample}}/{{mapper}}/truth.transcripts'.format(graphs_d),
     output:
         paf = '{}/{{sample}}/{{mapper}}/isoform_baseline/{{contig}}/{{contig}}_{{tid}}_reads.paf'.format(workspace_d),
     params:
         reads = '{}/{{sample}}/{{mapper}}/isoform_baseline/{{contig}}/{{contig}}_{{tid}}_reads.fa'.format(workspace_d),
-        target = '{}/{{sample}}/{{mapper}}/truth.transcripts/{{contig}}/{{tid}}.fa'.format(graphs_d),
+        target = '{}/{{sample}}/{{mapper}}/truth.transcripts/{{contig}}/truth_{{contig}}_{{tid}}.fa'.format(graphs_d),
     shell:
         'minimap2 -t 1 -c --MD --eqx --no-long-join {params.target} {params.reads} > {output.paf} 2> /dev/null'
 
@@ -543,9 +543,9 @@ rule isoform_based:
         truth_contig_dirs = '{}/{{sample}}/{{mapper}}/truth.transcripts'.format(graphs_d),
         paf    = '{}/{{sample}}/{{mapper}}/isoform_baseline/{{contig}}/{{contig}}_{{tid}}_reads.paf'.format(workspace_d),
     output:
-        fasta  = '{}/{{sample}}/{{mapper}}/isoform.transcripts/{{contig}}/isoform_{{contig}}_{{tid}}.fasta'.format(graphs_d),
+        fasta  = '{}/{{sample}}/{{mapper}}/isoform.transcripts/{{contig}}/isoform_{{contig}}_{{tid}}.fa'.format(graphs_d),
     params:
-        target = '{}/{{sample}}/{{mapper}}/truth.transcripts/{{contig}}/{{tid}}.fa'.format(graphs_d),
+        target = '{}/{{sample}}/{{mapper}}/truth.transcripts/{{contig}}/truth_{{contig}}_{{tid}}.fa'.format(graphs_d),
     run:
         iso_seq = open(params.target).readlines()[1].rstrip()
         locs = [0 for _ in range(len(iso_seq))]
@@ -573,6 +573,6 @@ rule bed_overlaps:
     output:
         overlaps_tsv = '{}/{{sample}}/{{truth}}/{{tool}}.overlaps.tsv'.format(graphs_d),
     shell:
-        ' bedtools intersect -a {input.tool_bed} -b <(cat {input.tool_bed} {input.truth_bed}) -wa -wb | '
-        ' cut -f4,8 | '
+        'bedtools intersect -a {input.tool_bed} -b <(cat {input.tool_bed} {input.truth_bed}) -wa -wb | '
+        ' cut -f1,4,8 | '
         ' sort -u > {output.overlaps_tsv}'

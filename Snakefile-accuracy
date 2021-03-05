@@ -1,0 +1,123 @@
+import os
+configfile: 'config.yaml'
+
+configfile: 'config.yaml'
+localrules:
+    all,
+
+for k in config.keys():
+    if not k.startswith('override_'):
+        continue
+    keys = k[len('override_'):].split('_')
+    top_dict = eval('config{}'.format(''.join(['["{}"]'.format(x) for x in keys[:-1]])))
+    assert keys[-1] in top_dict
+    top_dict[keys[-1]]=config[k]
+
+def make_slurm():
+    os.makedirs('slurm'.format(outpath), mode=0o777, exist_ok=True)
+
+def get_which(command):
+    result = subprocess.run(['which', command], stdout=subprocess.PIPE)
+    return result.stdout.decode('ascii').rstrip()
+
+outpath      = config['outpath'].rstrip('/')
+preprocess_d = '{}/preprocess'.format(outpath)
+workspace_d  = '{}/workspace'.format(outpath)
+output_d     = '{}/output'.format(outpath)
+graphs_d     = '{}/graphs'.format(outpath)
+
+
+tools = ['truth', 'isoform', 'genome', 'segment']
+for tool in config['tools']:
+    if tool == 'flair':
+        for r in config['gtf_sample_rates']:
+            tools.append('flair.{:.2f}'.format(r))
+    else:
+        tools.append(tool)
+make_slurm()
+
+overlaps = dict()
+for s in config['samples']:
+    overlaps[s]=dict()
+    for m in config['mappers']:
+        overlaps[s][m]=dict()
+        for t in tools:
+            overlaps[s][m][t] = dict()
+            for l in open('{}/{}/{}/{}.overlaps.tsv'.format(graphs_d, s, m, t)):
+                c,i1,i2 = l.rstrip().split('\t')
+                if i1==i2:
+                    continue
+                if not c in overlaps[s][m][t]:
+                    overlaps[s][m][t][c]=dict()
+                overlaps[s][m][t][c][i1] = overlaps[s][m][t][c].get(i1, set()) | {i2}
+
+print(sum(
+    len(i2s) 
+    for s in overlaps 
+        for m in overlaps[s] 
+            for t in overlaps[s][m]
+                for c in overlaps[s][m][t]
+                    for i1,i2s in overlaps[s][m][t][c].items()    
+))
+
+rule all:
+    input:
+        [
+            '{p}/{s}/{m}/{t}.transcripts/{c}/{i}.fa'.format(
+                p=graphs_d,
+                s=s,
+                m=m,
+                t=t,
+                c=c,
+                i=i1,
+            )
+            for s in overlaps 
+                for m in overlaps[s] 
+                    for t in overlaps[s][m]
+                        for c in overlaps[s][m][t]
+                            for i1,i2s in overlaps[s][m][t][c].items()
+        ]    
+
+
+# rule align:
+#     input:
+#         cons='data/staged_analysis/{aligner}/{t}/{iid}.fasta',
+#     output:
+#         sam='data/staged_analysis/{aligner}/{t}/{iid}.sam',
+#     run:
+#         command = 'touch {}'.format(output)
+#         os.system(command)
+#         for iid in overlaps[wildcards.aligner][wildcards.t][wildcards.iid]:
+#             if len(iid.split('_')) == 1:
+#                 target = 'data/staged_analysis/{aligner}/ensembl/{iid}.fasta'.format(aligner=wildcards.aligner, iid=iid)
+#             else:
+#                 target = 'data/staged_analysis/{aligner}/{t}/{iid}.fasta'.format(aligner=wildcards.aligner, t=wildcards.t,iid=iid)
+#             assert os.path.exists(target)
+#             command = 'minimap2 -t 1 -a --MD --splice {} {} 2> /dev/null | grep -v "^@" >> {} '.format(
+#                 target,
+#                 input.cons,
+#                 output.sam
+#             )
+#             os.system(command)
+
+# rule cons_tsv:
+#     input:
+#         lambda wildcards: expand('data/staged_analysis/{a}/{t}/{{iid}}.sam'.format(t=wildcards.t, a=wildcards.a), iid=iids[wildcards.a][wildcards.t]),
+#     output:
+#         'data/staged_analysis/{a}/{t}_cons.tsv',
+#     run:
+#         command = 'awk \'BEGIN{{OFS=\"\t\"}} $2<256 && $6!="*" {{print $1,$3,$4,$6}}\' {} >> ' + str(output)
+#         for f in input:
+#             os.system(command.format(f))
+
+# rule lengths_tsv:
+#     input:
+#         lambda wildcards: ['data/staged_analysis/{a}/{t}/{iid}.fasta'.format(a=wildcards.a, t=t, iid=iid) for t in types for iid in iids[wildcards.a][t]]
+#     output:
+#         'data/staged_analysis/{a}/lengths.tsv',
+#     run:
+#         if os.path.exists(str(output)):
+#             os.remove(str(output))
+#         command = 'awk \'{{s=substr($1,2); getline; print s"\t"length($0)}}\' {} >> ' + str(output)
+#         for f in input:
+#             os.system(command.format(f))
