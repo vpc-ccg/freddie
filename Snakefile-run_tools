@@ -90,26 +90,24 @@ rule all:
             sample=config['samples'],
         ),
         expand('{}/{{sample}}/{{mapper}}/{{tool}}.{{extension}}'.format(graphs_d),
-            tool=tools+['genome', 'segment',],
+            tool=tools+['genome', 'segment','truth'],
             mapper=config['mappers'],
             sample=config['samples'],
-            extension=['bed', 'transcripts'],
+            extension=['bed', 'transcripts', 'overlaps.tsv'],
         ),
-        expand('{}/{{sample}}/truth.{{extension}}'.format(graphs_d),
+        expand('{}/{{sample}}/{{mapper}}/isoform.{{extension}}'.format(graphs_d),
+            mapper=config['mappers'],
             sample=config['samples'],
-            extension=['bed', 'transcripts'],
-        ),
-        expand('{}/{{sample}}/truth.{{extension}}'.format(graphs_d),
-            sample=config['samples'],
-            extension=['bed', 'transcripts'],
+            extension=['bed', 'overlaps.tsv'],
         ),
         [
-            '{prefix}/{sample}/isoform.transcripts/{contig}/isoform_{contig}_{tid}.fasta'.format(
+            '{prefix}/{sample}/{mapper}/isoform.transcripts/{contig}/isoform_{contig}_{tid}.fasta'.format(
                 prefix=graphs_d,
                 sample=s,
+                mapper=m,
                 contig=c,
                 tid=t,
-            ) for s in config['samples'] for c in sample_tids[s] for t in sample_tids[s][c]
+            ) for m in config['mappers'] for s in config['samples'] for c in sample_tids[s] for t in sample_tids[s][c]
         ],
 
 
@@ -456,12 +454,12 @@ rule truth_transcripts_fastas_and_isoform_baseline:
         gtf    = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['annot'],
         genome = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['genome'],
     output:
-        isoform_baseline_ready = '{}/{{sample}}/isoform_baseline/ready'.format(workspace_d),
-        truth_contig_dirs = directory('{}/{{sample}}/truth.transcripts'.format(graphs_d)),
-        truth_bed = '{}/{{sample}}/truth.bed'.format(graphs_d),
-        isoform_bed = '{}/{{sample}}/isoform.bed'.format(graphs_d),
+        isoform_baseline_ready = '{}/{{sample}}/{{mapper}}/isoform_baseline/ready'.format(workspace_d),
+        truth_contig_dirs = directory('{}/{{sample}}/{{mapper}}/truth.transcripts'.format(graphs_d)),
+        truth_bed = '{}/{{sample}}/{{mapper}}/truth.bed'.format(graphs_d),
+        isoform_bed = '{}/{{sample}}/{{mapper}}/isoform.bed'.format(graphs_d),
     params:
-        isoform_baseline_dirs = '{}/{{sample}}/isoform_baseline'.format(workspace_d),
+        isoform_baseline_dirs = '{}/{{sample}}/{{mapper}}/isoform_baseline'.format(workspace_d),
     run:
         dna = pyfasta.Fasta(input.genome)
         contig_to_key = {k.split()[0]:k for k in dna.keys()}
@@ -530,24 +528,24 @@ rule truth_transcripts_fastas_and_isoform_baseline:
 rule isoform_baseline_align:
     input:
         isoform_baseline_ready = '{}/{{sample}}/isoform_baseline/ready'.format(workspace_d),
-        truth_contig_dirs = '{}/{{sample}}/truth.transcripts'.format(graphs_d),
+        truth_contig_dirs = '{}/{{sample}}/{{mapper}}/truth.transcripts'.format(graphs_d),
     output:
-        paf = '{}/{{sample}}/isoform_baseline/{{contig}}/{{contig}}_{{tid}}_reads.paf'.format(workspace_d),
+        paf = '{}/{{sample}}/{{mapper}}/isoform_baseline/{{contig}}/{{contig}}_{{tid}}_reads.paf'.format(workspace_d),
     params:
-        reads = '{}/{{sample}}/isoform_baseline/{{contig}}/{{contig}}_{{tid}}_reads.fa'.format(workspace_d),
-        target = '{}/{{sample}}/truth.transcripts/{{contig}}/{{tid}}.fa'.format(graphs_d),
+        reads = '{}/{{sample}}/{{mapper}}/isoform_baseline/{{contig}}/{{contig}}_{{tid}}_reads.fa'.format(workspace_d),
+        target = '{}/{{sample}}/{{mapper}}/truth.transcripts/{{contig}}/{{tid}}.fa'.format(graphs_d),
     shell:
         'minimap2 -t 1 -c --MD --eqx --no-long-join {params.target} {params.reads} > {output.paf} 2> /dev/null'
 
 
 rule isoform_based:
     input:
-        truth_contig_dirs = '{}/{{sample}}/truth.transcripts'.format(graphs_d),
-        paf    = '{}/{{sample}}/isoform_baseline/{{contig}}/{{contig}}_{{tid}}_reads.paf'.format(workspace_d),
+        truth_contig_dirs = '{}/{{sample}}/{{mapper}}/truth.transcripts'.format(graphs_d),
+        paf    = '{}/{{sample}}/{{mapper}}/isoform_baseline/{{contig}}/{{contig}}_{{tid}}_reads.paf'.format(workspace_d),
     output:
-        fasta  = '{}/{{sample}}/isoform.transcripts/{{contig}}/isoform_{{contig}}_{{tid}}.fasta'.format(graphs_d),
+        fasta  = '{}/{{sample}}/{{mapper}}/isoform.transcripts/{{contig}}/isoform_{{contig}}_{{tid}}.fasta'.format(graphs_d),
     params:
-        target = '{}/{{sample}}/truth.transcripts/{{contig}}/{{tid}}.fa'.format(graphs_d),
+        target = '{}/{{sample}}/{{mapper}}/truth.transcripts/{{contig}}/{{tid}}.fa'.format(graphs_d),
     run:
         iso_seq = open(params.target).readlines()[1].rstrip()
         locs = [0 for _ in range(len(iso_seq))]
@@ -566,3 +564,15 @@ rule isoform_based:
                 out_file.write(c)
         out_file.write('\n')
         out_file.close()
+
+
+rule bed_overlaps:
+    input:
+        tool_bed = '{}/{{sample}}/{{truth}}/{{tool}}.bed'.format(graphs_d),
+        truth_bed = '{}/{{sample}}/{{truth}}/truth.bed'.format(graphs_d),
+    output:
+        overlaps_tsv = '{}/{{sample}}/{{truth}}/{{tool}}.overlaps.tsv'.format(graphs_d),
+    shell:
+        ' bedtools intersect -a {input.tool_bed} -b <(cat {input.tool_bed} {input.truth_bed}) -wa -wb | '
+        ' cut -f4,8 | '
+        ' sort -u > {output.overlaps_tsv}'
