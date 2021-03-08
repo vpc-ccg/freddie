@@ -443,7 +443,7 @@ rule genome_transcript_fastas:
                     bed_file.write('{}\t{}\t{}\tgenome_{}_{}\n'.format(contig, s, e, contig, iid))
                     seq.append(dna[contig_to_key[contig]][s:e])
                 fasta_file = open('{}/{}/genome_{}_{}.fa'.format(output.contig_dirs, contig, contig, iid), 'w+')
-                fasta_file.write('>{}\n'.format(iid))
+                fasta_file.write('>genome_{}_{}\n'.format(contig, iid))
                 fasta_file.write('{}\n'.format(''.join(seq)))
                 fasta_file.close()
         bed_file.close()

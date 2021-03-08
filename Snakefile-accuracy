@@ -49,75 +49,93 @@ for s in config['samples']:
                     continue
                 if not c in overlaps[s][m][t]:
                     overlaps[s][m][t][c]=dict()
+                if i1.startswith(t) and i2.startswith(t):
+                    i1,i2 = sorted((i1,i2))
                 overlaps[s][m][t][c][i1] = overlaps[s][m][t][c].get(i1, set()) | {i2}
 
-print(sum(
-    len(i2s) 
-    for s in overlaps 
-        for m in overlaps[s] 
-            for t in overlaps[s][m]
-                for c in overlaps[s][m][t]
-                    for i1,i2s in overlaps[s][m][t][c].items()    
-))
+
 
 rule all:
     input:
-        [
-            '{p}/{s}/{m}/{t}.transcripts/{c}/{i}.fa'.format(
-                p=graphs_d,
-                s=s,
-                m=m,
-                t=t,
-                c=c,
-                i=i1,
+        # [
+        #     '{p}/{s}/{m}/{t}.transcripts/{c}/{i}.fa'.format(
+        #         p=graphs_d,
+        #         s=s,
+        #         m=m,
+        #         t=t,
+        #         c=c,
+        #         i=i1,
+        #     )
+        #     for s in overlaps 
+        #         for m in overlaps[s] 
+        #             for t in overlaps[s][m]
+        #                 for c in overlaps[s][m][t]
+        #                     for i1,i2s in overlaps[s][m][t][c].items()
+        # ],
+        # [
+        #     '{p}/{s}/{m}/{t}.alignments/{c}/{i}.tsv'.format(
+        #         p=graphs_d,
+        #         s=s,
+        #         m=m,
+        #         t=t,
+        #         c=c,
+        #         i=i1,
+        #     )
+        #     for s in overlaps 
+        #         for m in overlaps[s] 
+        #             for t in overlaps[s][m]
+        #                 for c in overlaps[s][m][t]
+        #                     for i1,i2s in overlaps[s][m][t][c].items()
+        # ],
+        expand('{}/{{sample}}/{{mapper}}/{{tool}}.edges.tsv'.format(graphs_d),
+            sample=config['samples'],
+            mapper=config['mappers'],
+            tool=tools,
+        ),
+
+
+rule align:
+    input:
+        target = '{}/{{sample}}/{{mapper}}/{{tool}}.transcripts/{{contig}}/{{i1}}.fa'.format(graphs_d),
+    output:
+        tsv    = '{}/{{sample}}/{{mapper}}/{{tool}}.alignments/{{contig}}/{{i1}}.tsv'.format(graphs_d),
+    run:
+        query_template = '{p}/{s}/{m}/{{qt}}.transcripts/{c}/{{i2}}.fa'.format(
+            p=graphs_d,
+            s=wildcards.sample,
+            m=wildcards.mapper,
+            c=wildcards.contig,
+        )
+        command = 'touch {}'.format(output.tsv)
+        os.system(command)
+        
+        for i2 in overlaps[wildcards.sample][wildcards.mapper][wildcards.tool][wildcards.contig][wildcards.i1]:
+            query = query_template.format(qt=i2.split('_')[0], i2=i2)
+            assert os.path.exists(query),query
+            command = 'minimap2 -t 1 --splice {} {} 2> /dev/null | grep "tp:A:P" | awk \'BEGIN{{OFS=\"\t\"}} {{print $1,$6,$10/(($2+$7)/2)}}\' >> {}'.format(
+                input.target,
+                query,
+                output.tsv
             )
-            for s in overlaps 
-                for m in overlaps[s] 
-                    for t in overlaps[s][m]
-                        for c in overlaps[s][m][t]
-                            for i1,i2s in overlaps[s][m][t][c].items()
-        ]    
+            os.system(command)
 
-
-# rule align:
-#     input:
-#         cons='data/staged_analysis/{aligner}/{t}/{iid}.fasta',
-#     output:
-#         sam='data/staged_analysis/{aligner}/{t}/{iid}.sam',
-#     run:
-#         command = 'touch {}'.format(output)
-#         os.system(command)
-#         for iid in overlaps[wildcards.aligner][wildcards.t][wildcards.iid]:
-#             if len(iid.split('_')) == 1:
-#                 target = 'data/staged_analysis/{aligner}/ensembl/{iid}.fasta'.format(aligner=wildcards.aligner, iid=iid)
-#             else:
-#                 target = 'data/staged_analysis/{aligner}/{t}/{iid}.fasta'.format(aligner=wildcards.aligner, t=wildcards.t,iid=iid)
-#             assert os.path.exists(target)
-#             command = 'minimap2 -t 1 -a --MD --splice {} {} 2> /dev/null | grep -v "^@" >> {} '.format(
-#                 target,
-#                 input.cons,
-#                 output.sam
-#             )
-#             os.system(command)
-
-# rule cons_tsv:
-#     input:
-#         lambda wildcards: expand('data/staged_analysis/{a}/{t}/{{iid}}.sam'.format(t=wildcards.t, a=wildcards.a), iid=iids[wildcards.a][wildcards.t]),
-#     output:
-#         'data/staged_analysis/{a}/{t}_cons.tsv',
-#     run:
-#         command = 'awk \'BEGIN{{OFS=\"\t\"}} $2<256 && $6!="*" {{print $1,$3,$4,$6}}\' {} >> ' + str(output)
-#         for f in input:
-#             os.system(command.format(f))
-
-# rule lengths_tsv:
-#     input:
-#         lambda wildcards: ['data/staged_analysis/{a}/{t}/{iid}.fasta'.format(a=wildcards.a, t=t, iid=iid) for t in types for iid in iids[wildcards.a][t]]
-#     output:
-#         'data/staged_analysis/{a}/lengths.tsv',
-#     run:
-#         if os.path.exists(str(output)):
-#             os.remove(str(output))
-#         command = 'awk \'{{s=substr($1,2); getline; print s"\t"length($0)}}\' {} >> ' + str(output)
-#         for f in input:
-#             os.system(command.format(f))
+rule cons_tsv:
+    input:
+        lambda wildcards: [
+            '{p}/{s}/{m}/{t}.alignments/{c}/{i1}.tsv'.format(
+                p=graphs_d,
+                s=wildcards.sample,
+                m=wildcards.mapper,
+                t=wildcards.tool,
+                c=c,
+                i1=i1,
+            )
+            for c in overlaps[wildcards.sample][wildcards.mapper][wildcards.tool]
+                for i1 in overlaps[wildcards.sample][wildcards.mapper][wildcards.tool][c]
+        ],
+    output:
+        edges_tsv = '{}/{{sample}}/{{mapper}}/{{tool}}.edges.tsv'.format(graphs_d),
+    run:
+        command = 'cat {{}} >> {}'.format(output.edges_tsv)
+        for f in input:
+            os.system(command.format(f))
