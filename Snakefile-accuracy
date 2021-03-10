@@ -112,7 +112,7 @@ rule align:
         for i2 in overlaps[wildcards.sample][wildcards.mapper][wildcards.tool][wildcards.contig][wildcards.i1]:
             query = query_template.format(qt=i2.split('_')[0], i2=i2)
             assert os.path.exists(query),query
-            command = 'minimap2 -t 1 --splice {} {} 2> /dev/null | grep "tp:A:P" | awk \'BEGIN{{OFS=\"\t\"}} {{print $1,$6,$10/(($2+$7)/2)}}\' >> {}'.format(
+            command = 'minimap2 -t 1 --splice {} {} 2> /dev/null | grep "tp:A:P" | sort -k10,10nr | awk \'BEGIN{{OFS=\"\t\"}} NR==1 {{print $1,$6,$10/(($2+$7)/2)}}\' >> {}'.format(
                 input.target,
                 query,
                 output.tsv

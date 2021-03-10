@@ -389,7 +389,7 @@ rule segment_transcript_fastas:
                         seq.append(dna[contig_to_key[contig]][s:e])
                         bed_file.write('{}\t{}\t{}\tsegment_{}_{}_{}\n'.format(contig, s, e, contig, tint, iid))
                     fasta_file = open('{}/{}/segment_{}_{}_{}.fa'.format(output.contig_dirs, contig, contig, tint, iid), 'w+')
-                    fasta_file.write('>{}\n'.format(iid))
+                    fasta_file.write('>segment_{}_{}_{}\n'.format(contig, tint, iid))
                     fasta_file.write('{}\n'.format(''.join(seq)))
                     fasta_file.close()
         bed_file.close()
