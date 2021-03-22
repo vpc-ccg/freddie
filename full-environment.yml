@@ -329,4 +329,3 @@ dependencies:
   - pip:
     - cython==0.29.21
     - kerneltree==0.0.5
-prefix: /home/baraa/anaconda3/envs/freddie_benchmark
