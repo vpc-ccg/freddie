@@ -1,0 +1,578 @@
+import re
+import subprocess
+import os
+import itertools
+import glob 
+
+import pyfasta
+import pysam
+
+configfile: 'config.yaml'
+localrules:
+    all,
+    make_time
+
+for k in config.keys():
+    if not k.startswith('override_'):
+        continue
+    keys = k[len('override_'):].split('_')
+    top_dict = eval('config{}'.format(''.join(['["{}"]'.format(x) for x in keys[:-1]])))
+    assert keys[-1] in top_dict
+    top_dict[keys[-1]]=config[k]
+
+sample_tids = dict()
+for s in config['samples']:
+    tid_to_contig = dict()
+    for l in open(config['references'][config['samples'][s]['ref']]['annot']):
+        if l[0]=='#':
+            continue
+        l = l.rstrip().split('\t')
+        if l[2]!='transcript':
+            continue
+        info = l[8]
+        info = [x.strip().split(' ') for x in info.strip(';').split(';')]
+        info = {x[0]:x[1].strip('"') for x in info}
+        contig = l[0]
+        tid = info['transcript_id']
+        tid_to_contig[tid] = contig
+    
+    sample_tids[s] = dict()
+    for read_file in config['samples'][s]['reads']:
+        for line in open(read_file):
+            if not line[0] in ['@', '>']:
+                continue
+            tid = line[1:].split()[0].split('_')[0]
+            contig = tid_to_contig[tid]
+            if not contig in sample_tids[s]:
+                sample_tids[s][contig] = dict()
+            sample_tids[s][contig][tid] = sample_tids[s][contig].get(tid, 0) + 1
+    for contig in sample_tids[s]:
+        sample_tids[s][contig] = {k for k,v in sample_tids[s][contig].items() if v >= config['min_cov']}
+
+def make_slurm():
+    os.makedirs('slurm'.format(outpath), mode=0o777, exist_ok=True)
+
+def get_which(command):
+    result = subprocess.run(['which', command], stdout=subprocess.PIPE)
+    return result.stdout.decode('ascii').rstrip()
+
+outpath      = config['outpath'].rstrip('/')
+preprocess_d = '{}/preprocess'.format(outpath)
+workspace_d  = '{}/workspace'.format(outpath)
+output_d     = '{}/output'.format(outpath)
+graphs_d     = '{}/graphs'.format(outpath)
+
+gnu_time = get_which('time')
+bam2Bed12 = '{}/bin/bam2Bed12.py'.format(get_which('flair.py').rstrip('/flair.py'))
+
+make_slurm()
+
+tools = list()
+for tool in config['tools']:
+    if tool == 'flair':
+        for r in config['gtf_sample_rates']:
+            tools.append('flair.{:.2f}'.format(r))
+    else:
+        tools.append(tool)
+
+rule all:
+    input:
+        [config['references'][s]['desalt_idx'] for s in config['references']],
+        expand('{}/{{sample}}.{{mapper}}.{{extension}}'.format(preprocess_d),
+            sample=config['samples'],
+            mapper=config['mappers'],
+            extension=['sam','bam','bam.bai']
+        ),
+        expand('{}/{{sample}}/gtime.tsv'.format(output_d), sample=config['samples']),
+        expand('{}/{{sample}}/{{mapper}}/{{tool}}.isoforms.gtf'.format(output_d),
+            tool=tools,
+            mapper=config['mappers'],
+            sample=config['samples'],
+        ),
+        expand('{}/{{sample}}/{{mapper}}/{{tool}}.{{extension}}'.format(graphs_d),
+            tool=tools+['genome', 'segment','truth'],
+            mapper=config['mappers'],
+            sample=config['samples'],
+            extension=['bed', 'transcripts', 'overlaps.tsv'],
+        ),
+        expand('{}/{{sample}}/{{mapper}}/isoform.{{extension}}'.format(graphs_d),
+            mapper=config['mappers'],
+            sample=config['samples'],
+            extension=['bed', 'overlaps.tsv'],
+        ),
+        [
+            '{prefix}/{sample}/{mapper}/isoform.transcripts/{contig}/isoform_{contig}_{tid}.fa'.format(
+                prefix=graphs_d,
+                sample=s,
+                mapper=m,
+                contig=c,
+                tid=t,
+            ) for m in config['mappers'] for s in config['samples'] for c in sample_tids[s] for t in sample_tids[s][c]
+        ],
+
+
+rule minimap2:
+    input:
+        reads  = lambda wildcards: config['samples'][wildcards.sample]['reads'],
+        genome = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['genome'],
+    output:
+        sam=protected('{}/{{sample}}.minimap2.sam'.format(preprocess_d)),
+        bam=protected('{}/{{sample}}.minimap2.bam'.format(preprocess_d)),
+        bai=protected('{}/{{sample}}.minimap2.bam.bai'.format(preprocess_d)),
+    threads:
+        32
+    shell:
+        'minimap2 -a -x splice -t {threads} {input.genome} {input.reads} > {output.sam} && '
+        '  samtools sort -T {output.bam}.tmp -m 2G -@ {threads} -O bam {output.sam} > {output.bam} && '
+        '  samtools index {output.bam} '
+
+rule desalt_index:
+    input:
+        genome = lambda wildcards: config['references'][wildcards.species]['genome'],
+    output:
+        index  = directory('test/mapping/{species}.dna.desalt_idx'),
+    wildcard_constraints:
+        species = '|'.join(s for s in config['references']),
+    shell:
+        'deSALT index {input.genome} {output.index}'
+
+rule desalt:
+    input:
+        reads  = lambda wildcards: config['samples'][wildcards.sample]['reads'],
+        index  = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['desalt_idx'],
+    output:
+        sam=protected('{}/{{sample}}.desalt.sam'.format(preprocess_d)),
+        bam=protected('{}/{{sample}}.desalt.bam'.format(preprocess_d)),
+        bai=protected('{}/{{sample}}.desalt.bam.bai'.format(preprocess_d)),
+    params:
+        seq_type = lambda wildcards: config['samples'][wildcards.sample]['seq_type'],
+    threads:
+        32
+    shell:
+        'py/freddie_align.py -r {input.reads} -i {input.index}/ -s {params.seq_type} -o {output.sam} -t {threads} &&'
+        '  samtools sort -T {output.bam}.tmp -m 2G -@ {threads} -O bam {output.sam} > {output.bam} && '
+        '  samtools index {output.bam} '
+
+rule make_time:
+    output:
+        time_tsv = '{}/{{sample}}/gtime.tsv'.format(output_d)
+    run:
+        outfile = open(output.time_tsv, 'w+')
+        record = list()
+        record.append('tool')
+        record.append('mapper')
+        record.append('real')
+        record.append('user')
+        record.append('memory')
+        outfile.write('\t'.join(record))
+        outfile.write('\n')
+        outfile.close()
+
+rule freddie:
+    input:
+        bam   = '{}/{{sample}}.{{mapper}}.bam'.format(preprocess_d),
+        reads =  lambda wildcards: config['samples'][wildcards.sample]['reads'],
+        time  = ancient('{}/{{sample}}/gtime.tsv'.format(output_d))
+    output:
+        split   = directory('{}/{{sample}}/{{mapper}}/freddie/split'.format(workspace_d)),
+        segment = directory('{}/{{sample}}/{{mapper}}/freddie/segment'.format(workspace_d)),
+        cluster = directory('{}/{{sample}}/{{mapper}}/freddie/cluster'.format(workspace_d)),
+        gtf     = protected('{}/{{sample}}/{{mapper}}/freddie.isoforms.gtf'.format(output_d)),
+    params:
+        gnu_time     = gnu_time,
+        gurobi       = config['gurobi']['license']
+    wildcard_constraints:
+        mapper='desalt|minimap2'
+    shell:
+        'export GRB_LICENSE_FILE={params.gurobi} && '
+        '{params.gnu_time} -f "freddie-split\\t{wildcards.mapper}\\t%e\\t%U\\t%M"    -a -o {input.time} '
+        '  py/freddie_split.py -b {input.bam} -o {output.split} -r {input.reads} && '
+        '{params.gnu_time} -f "freddie-segment\\t{wildcards.mapper}\\t%e\\t%U\\t%M"  -a -o {input.time} '
+        '  py/freddie_segment.py -s {output.split} -o {output.segment} && '
+        '{params.gnu_time} -f "freddie-cluster\\t{wildcards.mapper}\\t%e\\t%U\\t%M"  -a -o {input.time} '
+        ' py/freddie_cluster.py -s {output.segment} -o {output.cluster} && '
+        '{params.gnu_time} -f "freddie-collapse\\t{wildcards.mapper}\\t%e\\t%U\\t%M" -a -o {input.time} '
+        ' py/freddie_isoforms.py -s {output.split} -c {output.cluster} -o {output.gtf}'
+
+rule stringtie:
+    input:
+        bam = '{}/{{sample}}.{{mapper}}.bam'.format(preprocess_d),
+        time  = ancient('{}/{{sample}}/gtime.tsv'.format(output_d))
+    output:
+        gtf  = protected('{}/{{sample}}/{{mapper}}/stringtie.isoforms.gtf'.format(output_d)),
+    wildcard_constraints:
+        mapper='desalt|minimap2'
+    params:
+        gnu_time     = gnu_time,
+        gnu_time_fmt = lambda wildcards: '"stringtie\\t'+wildcards.mapper+'\\t%e\\t%U\\t%M"',
+    shell:
+        '{params.gnu_time} -f {params.gnu_time_fmt} -a -o {input.time} '
+        ' stringtie -p 1 -L -o {output.gtf} {input.bam}'
+
+rule sampled_gtf:
+    input:
+        gtf = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['annot'],
+    output:
+        gtf ='{}/{{sample}}.sampled_at.{{gtf_sample_rate}}.gtf'.format(preprocess_d),
+    run:
+        import numpy as np
+        print(input.gtf)
+        np.random.seed(42)
+        isoform_ids = set()
+        isoform_id_gid = dict()
+        for l in open(input.gtf):
+            if l[0]=='#':
+                continue
+            l = l.rstrip().split('\t')
+            if l[2]!='transcript':
+                continue
+            info = l[8]
+            info = [x.strip().split(' ') for x in info.strip(';').split(';')]
+            info = {x[0]:x[1].strip('"') for x in info}
+            isoform_ids.add(info['transcript_id'])
+            isoform_id_gid[info['transcript_id']] = info['gene_id']
+        print(len(isoform_ids))
+        isoform_ids = set(np.random.choice(
+            list(isoform_ids),
+            int(len(isoform_ids)*float(wildcards.gtf_sample_rate)),
+            replace=False,
+        ))
+        print(len(isoform_ids))
+        gene_ids = {isoform_id_gid[isoform_id] for isoform_id in isoform_ids}
+        print(len(gene_ids))
+        out_file = open(output.gtf, 'w+')
+        for line in open(input.gtf):
+            if line[0]=='#':
+                out_file.write(line)
+                continue
+            l = line.rstrip().split('\t')
+            info = l[8]
+            info = [x.strip().split(' ') for x in info.strip(';').split(';')]
+            info = {x[0]:x[1].strip('"') for x in info}
+            if l[2]=='gene' and info['gene_id'] in gene_ids:
+                out_file.write(line)
+            elif l[2]!='gene' and info['transcript_id'] in isoform_ids:
+                out_file.write(line)
+        out_file.close()
+
+rule flair:
+    input:
+        bam    = '{}/{{sample}}.{{mapper}}.bam'.format(preprocess_d),
+        reads  = lambda wildcards: config['samples'][wildcards.sample]['reads'],
+        genome = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['genome'],
+        gtf    = '{}/{{sample}}.sampled_at.{{gtf_sample_rate}}.gtf'.format(preprocess_d),
+        time   = ancient('{}/{{sample}}/gtime.tsv'.format(output_d))
+    output:
+        p_bed  = protected('{}/{{sample}}/{{mapper}}/flair.{{gtf_sample_rate}}/input.bed'.format(workspace_d)),
+        c_bed  = protected('{}/{{sample}}/{{mapper}}/flair.{{gtf_sample_rate}}/correct_all_corrected.bed'.format(workspace_d)),
+        i_bed  = protected('{}/{{sample}}/{{mapper}}/flair.{{gtf_sample_rate}}/correct_all_inconsistent.bed'.format(workspace_d)),
+        t_bed  = protected('{}/{{sample}}/{{mapper}}/flair.{{gtf_sample_rate}}/collapse.isoforms.bed'.format(workspace_d)),
+        fasta  = protected('{}/{{sample}}/{{mapper}}/flair.{{gtf_sample_rate}}/collapse.isoforms.fa'.format(workspace_d)),
+        gtf  = protected('{}/{{sample}}/{{mapper}}/flair.{{gtf_sample_rate}}.isoforms.gtf'.format(output_d)),
+    params:
+        gnu_time        = gnu_time,
+        gnu_time_fmt    = lambda wildcards: '"flair-'+wildcards.gtf_sample_rate+'\\t'+wildcards.mapper+'\\t%e\\t%U\\t%M"',
+        bam2Bed12       = bam2Bed12,
+        correct_prefix  = '{}/{{sample}}/{{mapper}}/flair.{{gtf_sample_rate}}/correct'.format(workspace_d),
+        collapse_prefix = '{}/{{sample}}/{{mapper}}/flair.{{gtf_sample_rate}}/collapse'.format(workspace_d),
+    wildcard_constraints:
+        mapper='desalt|minimap2'
+    shell:
+        '{params.gnu_time} -f {params.gnu_time_fmt} -a -o {input.time} bash -c "'
+        ' {params.bam2Bed12} -i {input.bam} > {output.p_bed}  && '
+        ' flair.py correct  -t 1 -q {output.p_bed} -o {params.correct_prefix} -g {input.genome} -f {input.gtf} &&'
+        ' flair.py collapse -t 1 -q {output.c_bed} -o {params.collapse_prefix} -g {input.genome} -f {input.gtf} -r {input.reads} '
+        '"; '
+        'mv {params.collapse_prefix}.isoforms.gtf {output.gtf}'
+
+rule tool_transcript_fastas:
+    input:
+        gtf = '{}/{{sample}}/{{mapper}}/{{tool}}.isoforms.gtf'.format(output_d),
+        genome = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['genome'],
+    output:
+        contig_dirs = directory('{}/{{sample}}/{{mapper}}/{{tool}}.transcripts'.format(graphs_d)),
+        bed = '{}/{{sample}}/{{mapper}}/{{tool}}.bed'.format(graphs_d)
+    wildcard_constraints:
+        tool = '|'.join(re.escape(t) for t in tools)
+    params:
+        species = lambda wildcards: config['samples'][wildcards.sample]['ref']
+    run:
+        dna = pyfasta.Fasta(input.genome)
+        contig_to_key = {k.split()[0]:k for k in dna.keys()}
+        for contig in contig_to_key.keys():
+            os.makedirs('{}/{}'.format(output.contig_dirs, contig), exist_ok=False)
+        tool_isoforms = {c:dict() for c in contig_to_key.keys()}
+        for l in open(input.gtf):
+            if l[0]=='#':
+                continue
+            l = l.rstrip().split('\t')
+            if l[2]!='exon':
+                continue
+            info = l[8]
+            info = [x.strip().split(' ') for x in info.strip(';').split(';')]
+            info = {x[0]:x[1].strip('"') for x in info}
+            iid = '{}_{}'.format(wildcards.tool, info['transcript_id'])
+            if not iid in tool_isoforms:
+                tool_isoforms[l[0]][iid] = list()
+            tool_isoforms[l[0]][iid].append((int(l[3]),int(l[4])))
+        for v1 in tool_isoforms.values():
+            for v2 in v1.values():
+                v2.sort()
+        bed_file = open(output.bed, 'w+')
+        for contig,isoforms in sorted(tool_isoforms.items()):
+            for iid,intervals in isoforms.items():
+                seq = list()
+                for s,e in intervals:
+                    bed_file.write('{}\t{}\t{}\t{}\n'.format(contig, s, e, iid))
+                    seq.append(dna[contig_to_key[contig]][s:e])
+                fasta_file = open('{}/{}/{}.fa'.format(output.contig_dirs, contig, iid), 'w+')
+                fasta_file.write('>{}\n'.format(iid))
+                fasta_file.write('{}\n'.format(''.join(seq)))
+                fasta_file.close()
+        bed_file.close()
+
+
+rule segment_transcript_fastas:
+    input:
+        segment_dir = directory('{}/{{sample}}/{{mapper}}/freddie/segment'.format(workspace_d)),
+        genome = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['genome'],
+    output:
+        contig_dirs = directory('{}/{{sample}}/{{mapper}}/segment.transcripts'.format(graphs_d)),
+        bed = '{}/{{sample}}/{{mapper}}/segment.bed'.format(graphs_d)
+    params:
+        species = lambda wildcards: config['samples'][wildcards.sample]['ref']
+    run:
+        dna = pyfasta.Fasta(input.genome)
+        contig_to_key = {k.split()[0]:k for k in dna.keys()}
+        for contig in contig_to_key.keys():
+            os.makedirs('{}/{}'.format(output.contig_dirs, contig), exist_ok=False)
+        segment_isoforms = {c:dict() for c in contig_to_key.keys()}
+        tint_segs = {c:dict() for c in contig_to_key.keys()}
+        for segment_tsv in glob.iglob('{}/*/segment_*.tsv'.format(input.segment_dir)):
+            for line in open(segment_tsv):
+                line = line.rstrip().split('\t')
+                if line[0][0]=='#':
+                    segs = [int(i) for i in line[2].split(',')]
+                    segs = list(zip(segs[:-1],segs[1:]))
+                    contig = line[0][1:]
+                    tint = line[1]
+                    tint_segs[contig][tint] = segs
+                    continue
+                rname = line[1]
+                contig = line[2]
+                tint = line[4]
+                iid = rname.split('_')[0]
+                data = line[5]
+                if not tint in segment_isoforms[contig]:
+                    segment_isoforms[contig][tint] = dict()
+                if not iid in segment_isoforms[contig][tint]:
+                    segment_isoforms[contig][tint][iid] = dict(cov=[0 for _ in data], count=0)
+                assert len(data) == len(segment_isoforms[contig][tint][iid]['cov'])
+                segment_isoforms[contig][tint][iid]['count']+=1
+                for idx,d in enumerate(data):
+                    segment_isoforms[contig][tint][iid]['cov'][idx] += (d =='1')
+        bed_file = open(output.bed, 'w+')
+        for contig,tints in segment_isoforms.items():
+            for tint,isoforms in tints.items():
+                for iid,isoform in isoforms.items():
+                    seq = list()
+                    cons = [(c/isoform['count'])>0.3 for c in isoform['cov']]
+                    assert len(tint_segs[contig][tint])==len(cons)
+                    for d, group in itertools.groupby(enumerate(cons), lambda x: x[1]):
+                        if d != True:
+                            continue
+                        group = list(group)
+                        f_seg_idx = group[0][0]
+                        l_seg_idx = group[-1][0]
+                        s = tint_segs[contig][tint][f_seg_idx][0]
+                        e = tint_segs[contig][tint][l_seg_idx][1]
+                        seq.append(dna[contig_to_key[contig]][s:e])
+                        bed_file.write('{}\t{}\t{}\tsegment_{}_{}_{}\n'.format(contig, s, e, contig, tint, iid))
+                    fasta_file = open('{}/{}/segment_{}_{}_{}.fa'.format(output.contig_dirs, contig, contig, tint, iid), 'w+')
+                    fasta_file.write('>segment_{}_{}_{}\n'.format(contig, tint, iid))
+                    fasta_file.write('{}\n'.format(''.join(seq)))
+                    fasta_file.close()
+        bed_file.close()
+
+rule genome_transcript_fastas:
+    input:
+        bam    = '{}/{{sample}}.{{mapper}}.bam'.format(preprocess_d),
+        genome = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['genome'],
+    output:
+        contig_dirs = directory('{}/{{sample}}/{{mapper}}/genome.transcripts'.format(graphs_d)),
+        bed = '{}/{{sample}}/{{mapper}}/genome.bed'.format(graphs_d)
+    params:
+        species = lambda wildcards: config['samples'][wildcards.sample]['ref']
+    run:
+        dna = pyfasta.Fasta(input.genome)
+        contig_to_key = {k.split()[0]:k for k in dna.keys()}
+        for contig in contig_to_key.keys():
+            os.makedirs('{}/{}'.format(output.contig_dirs, contig), exist_ok=False)
+        genome_isoforms = {c:dict() for c in contig_to_key.keys()}
+        for read in pysam.AlignmentFile(input.bam):
+            if read.is_unmapped:
+                continue
+            contig = read.reference_name
+            assert contig in genome_isoforms, (contig, genome_isoforms.keys())
+            iid = read.query_name.split('_')[0]
+            if not iid in genome_isoforms[contig]:
+                genome_isoforms[contig][iid] = dict(read_count=0, pos_count=dict(), intervals=list())
+            genome_isoforms[contig][iid]['read_count']+=1
+            for p in read.get_reference_positions():
+                genome_isoforms[contig][iid]['pos_count'][p] = genome_isoforms[contig][iid]['pos_count'].get(p,0) + 1
+        for contig in genome_isoforms:
+            for isoform in genome_isoforms[contig].values():
+                if isoform['read_count'] < 3:
+                    continue
+                positions = list()
+                for p,c in isoform['pos_count'].items():
+                    if p > isoform['read_count']/3.0:
+                        positions.append(p)
+                positions.sort()
+                for k, g in itertools.groupby(enumerate(positions), lambda t: t[1] - t[0]): 
+                    g = list(g)
+                    isoform['intervals'].append((g[0][1], g[-1][1]+1))                
+        bed_file = open(output.bed, 'w+')
+        for contig,isoforms in sorted(genome_isoforms.items()):
+            for iid,isoform in isoforms.items():
+                intervals = isoform['intervals']
+                if len(intervals) == 0:
+                    continue
+                seq = list()
+                for s,e in intervals:
+                    bed_file.write('{}\t{}\t{}\tgenome_{}_{}\n'.format(contig, s, e, contig, iid))
+                    seq.append(dna[contig_to_key[contig]][s:e])
+                fasta_file = open('{}/{}/genome_{}_{}.fa'.format(output.contig_dirs, contig, contig, iid), 'w+')
+                fasta_file.write('>genome_{}_{}\n'.format(contig, iid))
+                fasta_file.write('{}\n'.format(''.join(seq)))
+                fasta_file.close()
+        bed_file.close()
+
+rule truth_transcripts_fastas_and_isoform_baseline:
+    input:
+        reads  = lambda wildcards: config['samples'][wildcards.sample]['reads'],
+        gtf    = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['annot'],
+        genome = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['genome'],
+    output:
+        isoform_baseline_ready = '{}/{{sample}}/{{mapper}}/isoform_baseline/ready'.format(workspace_d),
+        truth_contig_dirs = directory('{}/{{sample}}/{{mapper}}/truth.transcripts'.format(graphs_d)),
+        truth_bed = '{}/{{sample}}/{{mapper}}/truth.bed'.format(graphs_d),
+        isoform_bed = '{}/{{sample}}/{{mapper}}/isoform.bed'.format(graphs_d),
+    params:
+        isoform_baseline_dirs = '{}/{{sample}}/{{mapper}}/isoform_baseline'.format(workspace_d),
+    run:
+        dna = pyfasta.Fasta(input.genome)
+        contig_to_key = {k.split()[0]:k for k in dna.keys()}
+        for contig in contig_to_key.keys():
+            os.makedirs('{}/{}'.format(output.truth_contig_dirs, contig), exist_ok=False)
+        tid_intervals = {c:dict() for c in contig_to_key.keys()}
+        tid_to_contig = dict()
+        tid_to_reads = {c:dict() for c in contig_to_key.keys()}
+        for l in open(input.gtf):
+            if l[0]=='#':
+                continue
+            l = l.rstrip().split('\t')
+            if l[2]!='exon':
+                continue
+            info = l[8]
+            info = [x.strip().split(' ') for x in info.strip(';').split(';')]
+            info = {x[0]:x[1].strip('"') for x in info}
+            contig = l[0]
+            tid = info['transcript_id']
+            if not tid in tid_intervals[contig]:
+                tid_to_contig[tid] = contig
+                tid_intervals[contig][tid] = list()
+            tid_intervals[contig][tid].append((int(l[3]),int(l[4])))
+        for read_file in input.reads:
+            if read_file.endswith('.fq') or read_file.endswith('.fastq'):
+                num = 4 
+            else:
+                num = 2
+            infile = open(read_file)
+            while True:
+                lines = [line.rstrip() for line in itertools.islice(infile, num)]
+                if (len(lines)) != num:
+                    break
+                tid = lines[0][1:].split()[0].split('_')[0]
+                contig = tid_to_contig[tid]
+                if not tid in tid_to_reads[contig]:
+                    tid_to_reads[contig][tid] = list()
+                tid_to_reads[contig][tid].append(lines[0]+'\n'+lines[1]+'\n')
+        truth_bed = open(output.truth_bed, 'w+')
+        isoform_bed = open(output.isoform_bed, 'w+')
+        for contig,tid_reads in tid_to_reads.items():
+            prefix = '{}/{}'.format(params.isoform_baseline_dirs, contig)
+            os.makedirs(prefix, exist_ok=True)
+            for tid,reads in tid_reads.items():
+                if len(reads) < config['min_cov']:
+                    continue
+                outfile = open('{}/{}_{}_reads.fa'.format(prefix, contig, tid), 'w+')
+                for read in reads:
+                    outfile.write(read)
+                outfile.close()
+                
+                outfile = open('{}/{}/truth_{}_{}.fa'.format(output.truth_contig_dirs, contig, contig, tid), 'w+')
+                outfile.write('>truth_{}_{}\n'.format(contig, tid))
+                for s,e in sorted(tid_intervals[contig][tid]):
+                    outfile.write(dna[contig_to_key[contig]][s:e])
+                    truth_bed.write('{}\t{}\t{}\ttruth_{}_{}\n'.format(contig, s, e, contig, tid))
+                    isoform_bed.write('{}\t{}\t{}\tisoform_{}_{}\n'.format(contig, s, e, contig, tid))
+                outfile.write('\n')
+                outfile.close()
+        truth_bed.close()
+        isoform_bed.close()
+        open(output.isoform_baseline_ready, 'w+')
+
+
+
+rule isoform_baseline_align:
+    input:
+        isoform_baseline_ready = '{}/{{sample}}/{{mapper}}/isoform_baseline/ready'.format(workspace_d),
+        truth_contig_dirs = '{}/{{sample}}/{{mapper}}/truth.transcripts'.format(graphs_d),
+    output:
+        paf = '{}/{{sample}}/{{mapper}}/isoform_baseline/{{contig}}/{{contig}}_{{tid}}_reads.paf'.format(workspace_d),
+    params:
+        reads = '{}/{{sample}}/{{mapper}}/isoform_baseline/{{contig}}/{{contig}}_{{tid}}_reads.fa'.format(workspace_d),
+        target = '{}/{{sample}}/{{mapper}}/truth.transcripts/{{contig}}/truth_{{contig}}_{{tid}}.fa'.format(graphs_d),
+    shell:
+        'minimap2 -t 1 -c --MD --eqx --no-long-join {params.target} {params.reads} > {output.paf} 2> /dev/null'
+
+
+rule isoform_based:
+    input:
+        truth_contig_dirs = '{}/{{sample}}/{{mapper}}/truth.transcripts'.format(graphs_d),
+        paf    = '{}/{{sample}}/{{mapper}}/isoform_baseline/{{contig}}/{{contig}}_{{tid}}_reads.paf'.format(workspace_d),
+    output:
+        fasta  = '{}/{{sample}}/{{mapper}}/isoform.transcripts/{{contig}}/isoform_{{contig}}_{{tid}}.fa'.format(graphs_d),
+    params:
+        target = '{}/{{sample}}/{{mapper}}/truth.transcripts/{{contig}}/truth_{{contig}}_{{tid}}.fa'.format(graphs_d),
+    run:
+        iso_seq = open(params.target).readlines()[1].rstrip()
+        locs = [0 for _ in range(len(iso_seq))]
+        rids = set()
+        for l in open(input.paf):
+            l = l.rstrip().split('\t')
+            rids.add(l[0])
+            assert len(locs) == int(l[6])
+            for i in range(int(l[7]),int(l[8])):
+                locs[i]+=1
+        
+        out_file = open(output.fasta, 'w+')
+        out_file.write('>isoform_{}_{}\n'.format(wildcards.contig, wildcards.tid))
+        for i,c in zip(locs,iso_seq):
+            if i/len(rids) > 0.3:
+                out_file.write(c)
+        out_file.write('\n')
+        out_file.close()
+
+
+rule bed_overlaps:
+    input:
+        tool_bed = '{}/{{sample}}/{{truth}}/{{tool}}.bed'.format(graphs_d),
+        truth_bed = '{}/{{sample}}/{{truth}}/truth.bed'.format(graphs_d),
+    output:
+        overlaps_tsv = '{}/{{sample}}/{{truth}}/{{tool}}.overlaps.tsv'.format(graphs_d),
+    shell:
+        'bedtools intersect -a {input.tool_bed} -b <(cat {input.tool_bed} {input.truth_bed}) -wa -wb | '
+        ' cut -f1,4,8 | '
+        ' sort -u > {output.overlaps_tsv}'

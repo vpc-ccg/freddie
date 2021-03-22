@@ -1,0 +1,152 @@
+import os
+configfile: 'config.yaml'
+
+configfile: 'config.yaml'
+localrules:
+    all,
+
+for k in config.keys():
+    if not k.startswith('override_'):
+        continue
+    keys = k[len('override_'):].split('_')
+    top_dict = eval('config{}'.format(''.join(['["{}"]'.format(x) for x in keys[:-1]])))
+    assert keys[-1] in top_dict
+    top_dict[keys[-1]]=config[k]
+
+def make_slurm():
+    os.makedirs('slurm'.format(outpath), mode=0o777, exist_ok=True)
+
+def get_which(command):
+    result = subprocess.run(['which', command], stdout=subprocess.PIPE)
+    return result.stdout.decode('ascii').rstrip()
+
+outpath      = config['outpath'].rstrip('/')
+preprocess_d = '{}/preprocess'.format(outpath)
+workspace_d  = '{}/workspace'.format(outpath)
+output_d     = '{}/output'.format(outpath)
+graphs_d     = '{}/graphs'.format(outpath)
+plots_d      = '{}/plots'.format(outpath)
+
+
+tools = ['truth', 'isoform', 'genome', 'segment']
+for tool in config['tools']:
+    if tool == 'flair':
+        for r in config['gtf_sample_rates']:
+            tools.append('flair.{:.2f}'.format(r))
+    else:
+        tools.append(tool)
+make_slurm()
+
+overlaps = dict()
+for s in config['samples']:
+    overlaps[s]=dict()
+    for m in config['mappers']:
+        overlaps[s][m]=dict()
+        for t in tools:
+            overlaps[s][m][t] = dict()
+            for l in open('{}/{}/{}/{}.overlaps.tsv'.format(graphs_d, s, m, t)):
+                c,i1,i2 = l.rstrip().split('\t')
+                if i1==i2:
+                    continue
+                if not c in overlaps[s][m][t]:
+                    overlaps[s][m][t][c]=dict()
+                if i1.startswith(t) and i2.startswith(t):
+                    i1,i2 = sorted((i1,i2))
+                overlaps[s][m][t][c][i1] = overlaps[s][m][t][c].get(i1, set()) | {i2}
+
+
+
+rule all:
+    input:
+        # [
+        #     '{p}/{s}/{m}/{t}.transcripts/{c}/{i}.fa'.format(
+        #         p=graphs_d,
+        #         s=s,
+        #         m=m,
+        #         t=t,
+        #         c=c,
+        #         i=i1,
+        #     )
+        #     for s in overlaps 
+        #         for m in overlaps[s] 
+        #             for t in overlaps[s][m]
+        #                 for c in overlaps[s][m][t]
+        #                     for i1,i2s in overlaps[s][m][t][c].items()
+        # ],
+        # [
+        #     '{p}/{s}/{m}/{t}.alignments/{c}/{i}.tsv'.format(
+        #         p=graphs_d,
+        #         s=s,
+        #         m=m,
+        #         t=t,
+        #         c=c,
+        #         i=i1,
+        #     )
+        #     for s in overlaps 
+        #         for m in overlaps[s] 
+        #             for t in overlaps[s][m]
+        #                 for c in overlaps[s][m][t]
+        #                     for i1,i2s in overlaps[s][m][t][c].items()
+        # ],
+        expand('{}/{{sample}}/{{mapper}}/{{tool}}.edges.tsv'.format(graphs_d),
+            sample=config['samples'],
+            mapper=config['mappers'],
+            tool=tools,
+        ),
+
+
+rule align:
+    input:
+        target = '{}/{{sample}}/{{mapper}}/{{tool}}.transcripts/{{contig}}/{{i1}}.fa'.format(graphs_d),
+    output:
+        tsv    = '{}/{{sample}}/{{mapper}}/{{tool}}.alignments/{{contig}}/{{i1}}.tsv'.format(graphs_d),
+    run:
+        query_template = '{p}/{s}/{m}/{{qt}}.transcripts/{c}/{{i2}}.fa'.format(
+            p=graphs_d,
+            s=wildcards.sample,
+            m=wildcards.mapper,
+            c=wildcards.contig,
+        )
+        command = 'touch {}'.format(output.tsv)
+        os.system(command)
+        
+        for i2 in overlaps[wildcards.sample][wildcards.mapper][wildcards.tool][wildcards.contig][wildcards.i1]:
+            query = query_template.format(qt=i2.split('_')[0], i2=i2)
+            assert os.path.exists(query),query
+            command = 'minimap2 -t 1 --splice {} {} 2> /dev/null | grep "tp:A:P" | sort -k10,10nr | awk \'BEGIN{{OFS=\"\t\"}} NR==1 {{print $1,$6,$10/(($2+$7)/2)}}\' >> {}'.format(
+                input.target,
+                query,
+                output.tsv
+            )
+            os.system(command)
+
+rule cons_tsv:
+    input:
+        lambda wildcards: [
+            '{p}/{s}/{m}/{t}.alignments/{c}/{i1}.tsv'.format(
+                p=graphs_d,
+                s=wildcards.sample,
+                m=wildcards.mapper,
+                t=wildcards.tool,
+                c=c,
+                i1=i1,
+            )
+            for c in overlaps[wildcards.sample][wildcards.mapper][wildcards.tool]
+                for i1 in overlaps[wildcards.sample][wildcards.mapper][wildcards.tool][c]
+        ],
+    output:
+        edges_tsv = '{}/{{sample}}/{{mapper}}/{{tool}}.edges.tsv'.format(graphs_d),
+    run:
+        command = 'cat {{}} >> {}'.format(output.edges_tsv)
+        for f in input:
+            os.system(command.format(f))
+
+
+rule accuracy_plots:
+    input:
+        script = 'py/freddie_accuracy.py',
+        direct = '{}/{{sample}}/{{mapper}}'.format(graphs_d),
+    output:
+        direct = '{}/{{sample}}/{{mapper}}'.format(plots_d),
+    shell:
+        '{script} -id {input.directory} -od -id {output.directory}'

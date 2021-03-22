@@ -1,24 +1,44 @@
 outpath:
-    test/dev-out/
+    test/benchmark/
 
 gurobi:
     license: gurobi.lic
-    timeout: 15
 
-samples:
-    N_sim:
-        reads:
-            - /groups/hachgrp/projects/dev-ltr-simulator/analysis/ltr-sim-dev/reads/P000S000.L-non.fastq
-        seq_type: ont1d
-        data_type: sim
-        gtf: whole_genome
+min_cov:
+    3
 
 exec:
-    align    : py/freddie_align.py
-    split    : py/freddie_split.py
-    segment  : py/freddie_segment.py
-    cluster  : py/freddie_cluster.py
-    isoforms : py/freddie_isoforms.py
+    beds     : extern/transcript_beds.py
+    coverage : extern/transcript_coverage.py
+    seqpare  : extern/seqpare.sh
+    pairing  : extern/seqpare_pair.py
+    stats    : extern/seqpare_stats.awk
 
+samples:
+    ERR3588905:
+        seq_type : ont1d
+        ref      : drosophila_melanogaster
+        reads    :
+            - extern/LTR-sim/output/reads/ERR3588905.L-non.fastq
 references:
-    dna_desalt : /groups/hachgrp/annotations/DNA/97/deSALT.index
+    drosophila_melanogaster:
+        annot      : extern/LTR-sim/refs/drosophila_melanogaster/drosophila_melanogaster.annot.gtf
+        genome     : extern/LTR-sim/refs/drosophila_melanogaster/drosophila_melanogaster.dna.fa
+        genome_fai : extern/LTR-sim/refs/drosophila_melanogaster/drosophila_melanogaster.dna.fa.fai
+        desalt_idx : test/mapping/drosophila_melanogaster.dna.desalt_idx
+
+mappers:
+    - desalt
+    - minimap2
+
+tools:
+    - freddie
+    - stringtie
+    - flair
+
+gtf_sample_rates:
+    - 1.00
+    - 0.75
+    - 0.50
+    - 0.25
+    - 0.01
