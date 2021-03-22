@@ -25,6 +25,7 @@ preprocess_d = '{}/preprocess'.format(outpath)
 workspace_d  = '{}/workspace'.format(outpath)
 output_d     = '{}/output'.format(outpath)
 graphs_d     = '{}/graphs'.format(outpath)
+plots_d      = '{}/plots'.format(outpath)
 
 
 tools = ['truth', 'isoform', 'genome', 'segment']
@@ -139,3 +140,13 @@ rule cons_tsv:
         command = 'cat {{}} >> {}'.format(output.edges_tsv)
         for f in input:
             os.system(command.format(f))
+
+
+rule accuracy_plots:
+    input:
+        script = 'py/freddie_accuracy.py',
+        direct = '{}/{{sample}}/{{mapper}}'.format(graphs_d),
+    output:
+        direct = '{}/{{sample}}/{{mapper}}'.format(plots_d),
+    shell:
+        '{script} -id {input.directory} -od -id {output.directory}'

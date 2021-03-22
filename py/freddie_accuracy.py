@@ -5,9 +5,11 @@ from networkx.algorithms import clique
 
 import numpy as np
 import networkx as nx
-# import matplotlib as mpl
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+import plotly
+
 
 BIP_TRUTH = 0
 BIP_TOOL = 1
@@ -165,10 +167,10 @@ def plot_components(stats, tools, tool_labels, threshold, out_dir):
     group_labels = [
         ('count', 'All CCs'),
         ('TP', 'True positive\n(cliques with GTIs and PIs)'),
-        ('FN', 'False postive\n(CCs with only PIs)'),
+        ('FN', 'False positive\n(CCs with only PIs)'),
         ('FP', 'False negative\n(CCs with only GTIs)'),
         ('LTP', 'Likely true positive\n(CCs with PIs matching all GTIs)'),
-        ('LFX', 'Likely false postive/negative\n(CCs with PIs not matching all GTIs)'),
+        ('LFX', 'Likely false positive/negative\n(CCs with PIs not matching all GTIs)'),
     ]
     x = np.arange(len(group_labels))  # the label locations
     width = 1/(2+len(tools))  # the width of the bars
@@ -200,7 +202,8 @@ def plot_components(stats, tools, tool_labels, threshold, out_dir):
                             textcoords="offset points",
                             ha='center', va='bottom')
     fig.legend(axes[-1].get_legend_handles_labels()[1], loc='right')
-    fig.savefig('{}/comp_{}.png'.format(out_dir, threshold))
+    fig.savefig('{}/comp_{}.pdf'.format(out_dir, threshold))
+
 
 def sort_tool_names(tools):
     sorted_tools = list()
@@ -227,12 +230,97 @@ def sort_tool_names(tools):
     for t in sorted(tools, reverse=True):
         if not t in sorted_tools:
             sorted_tools.append(t)
-    return sorted_tools,tool_to_name
+    return sorted_tools, tool_to_name
+
+
+def plot_isoforms(stats, thresholds, tools, tool_labels, out_dir):
+    fig, axes = plt.subplots(2, 1, figsize=(25, 10), sharex=True)
+    fig.suptitle('Connected components at alignment threshold={}'.format(0.97))
+    plot_titles = [
+        ('TP_truth', 'True positive GTIs'),
+        ('TP_tool', 'True positive PIs'),
+        ('TP_tool%', 'True positive PIs (%)'),
+        ('FN', 'False negative GTIs'),
+        ('FP', 'False positive PIs'),
+        ('FP%', 'False positive PIs (%)'),
+        ('LTP_truth', 'Likely true positive GTIs\n(matching all PIs)'),
+        ('LTP_tool', 'Likely true positive PIs\n(matching all GTIs)'),
+        ('LTP_tool%', 'Likely true positive PIs\n(matching all GTIs, %)'),
+        ('LFN', 'Likely false negative GTIs\n(not matching all PIs)'),
+        ('LFP', 'Likely false positive PIs\n(not matching all GTIs)'),
+        ('LFP%', 'Likely false positive PIs\n(not matching all GTIs, %)'),
+    ]
+    fig, axes = plt.subplots(
+        nrows=4,
+        ncols=3,
+        figsize=(28, 19),
+        sharex=True,
+        gridspec_kw={'hspace': 0.3, 'wspace': 0.2}
+    )
+
+    for ax, (f, title) in zip(axes.flat, plot_titles):
+        ax.set_xticks(thresholds)
+        ax.set_xticklabels(['{:2.2f}'.format(t) for t in thresholds])
+        if f.endswith('_truth') or f.endswith('FN') or f.endswith('%'):
+            ax.yaxis.set_major_formatter(mpl.ticker.PercentFormatter())
+        if f.endswith('_%'):
+            ax.yaxis.tick_right()
+        ax.tick_params(axis='x', labelrotation=45)
+        ax.set_title(title)
+        ax.grid(True)
+        for tool in tools:
+            if f.endswith('%'):
+                data = [
+                    stats[tool][t][f[:-1]]/stats[tool][t]['tool_count']
+                    for t in thresholds
+                ]
+            elif f.endswith('_truth') or f.endswith('FN'):
+                data = [
+                    100*stats[tool][t][f]/stats[tool][t]['truth_count']
+                    for t in thresholds
+                ]
+            else:
+                data = [
+                    stats[tool][t][f]
+                    for t in thresholds
+                ]
+            # print(f, tool, data)
+            ax.plot(thresholds,
+                    data,
+                    label=tool_labels[tool],
+                    # ls=ls[n],
+                    lw=3,
+                    # color=c[n],
+                    )
+        if f.endswith('_truth'):
+            axsec = ax.secondary_yaxis(location='right', functions=(
+                lambda x: x/100*stats[tools[0]][thresholds[0]]['truth_count'], lambda x: x*100/stats[tools[0]][thresholds[0]]['truth_count']))
+            axsec.xaxis.set_major_formatter(mticker.PercentFormatter())
+
+    plt.subplots_adjust(bottom=0.15)
+    axes_handles, axes_labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(axes_handles, axes_labels, ncol=len(tools), loc='lower center')
+
+    for ax in axes[-1, :]:
+        ax.set_xlabel('Alignment score threshold', fontsize=20)
+    fig.savefig('{}/isoforms.pdf'.format(out_dir))
+    plotly_fig = plotly.tools.mpl_to_plotly(fig)
+    plotly_fig.update_layout(
+        # margin=dict(l=20, r=20, t=20, b=20),
+        font=dict(size=20),
+        title_font=dict(size=28),   
+    )
+    plotly.offline.plot(
+        plotly_fig,
+        filename='{}/isoforms.html'.format(out_dir),
+        auto_open=False,
+    )
+
 
 def main():
     args = parse_args()
     nodes, edges = read_nodes_and_edges(args.input_dir)
-    tools,tool_labels = sort_tool_names(edges.keys())
+    tools, tool_labels = sort_tool_names(edges.keys())
     comp_stats = dict()
     isof_stats = dict()
     for tool in tools:
@@ -253,6 +341,13 @@ def main():
         tools=tools,
         tool_labels=tool_labels,
         threshold=0.97,
+        out_dir=args.out_dir,
+    )
+    plot_isoforms(
+        stats=isof_stats,
+        thresholds=args.thresholds,
+        tools=tools,
+        tool_labels=tool_labels,
         out_dir=args.out_dir,
     )
 
