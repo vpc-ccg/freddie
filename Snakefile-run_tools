@@ -4,13 +4,19 @@ import os
 import itertools
 import glob 
 
+import numpy as np
 import pyfasta
 import pysam
 
 configfile: 'config.yaml'
 localrules:
     all,
-    make_time
+    genome_transcript_fastas,
+    isoform_based,
+    make_time,
+    sampled_gtf,
+    tool_transcript_fastas,
+    truth_transcripts_fastas_and_isoform_baseline,
 
 for k in config.keys():
     if not k.startswith('override_'):
@@ -37,11 +43,11 @@ for s in config['samples']:
         tid_to_contig[tid] = contig
     
     sample_tids[s] = dict()
-    for read_file in config['samples'][s]['reads']:
-        for line in open(read_file):
-            if not line[0] in ['@', '>']:
-                continue
-            tid = line[1:].split()[0].split('_')[0]
+    for reads_info_file_path in config['samples'][s]['reads_info']:
+        reads_info_file = open(reads_info_file_path)
+        reads_info_file.readline()
+        for line in reads_info_file:
+            tid = line.rstrip().split('\t')[1]
             contig = tid_to_contig[tid]
             if not contig in sample_tids[s]:
                 sample_tids[s][contig] = dict()
@@ -56,6 +62,8 @@ def get_which(command):
     result = subprocess.run(['which', command], stdout=subprocess.PIPE)
     return result.stdout.decode('ascii').rstrip()
 
+print(get_which('conda'))
+
 outpath      = config['outpath'].rstrip('/')
 preprocess_d = '{}/preprocess'.format(outpath)
 workspace_d  = '{}/workspace'.format(outpath)
@@ -63,8 +71,6 @@ output_d     = '{}/output'.format(outpath)
 graphs_d     = '{}/graphs'.format(outpath)
 
 gnu_time = get_which('time')
-bam2Bed12 = '{}/bin/bam2Bed12.py'.format(get_which('flair.py').rstrip('/flair.py'))
-
 make_slurm()
 
 tools = list()
@@ -77,7 +83,7 @@ for tool in config['tools']:
 
 rule all:
     input:
-        [config['references'][s]['desalt_idx'] for s in config['references']],
+        # [config['references'][s]['desalt_idx'] for s in config['references']],
         expand('{}/{{sample}}.{{mapper}}.{{extension}}'.format(preprocess_d),
             sample=config['samples'],
             mapper=config['mappers'],
@@ -89,26 +95,26 @@ rule all:
             mapper=config['mappers'],
             sample=config['samples'],
         ),
-        expand('{}/{{sample}}/{{mapper}}/{{tool}}.{{extension}}'.format(graphs_d),
-            tool=tools+['genome', 'segment','truth'],
-            mapper=config['mappers'],
-            sample=config['samples'],
-            extension=['bed', 'transcripts', 'overlaps.tsv'],
-        ),
-        expand('{}/{{sample}}/{{mapper}}/isoform.{{extension}}'.format(graphs_d),
-            mapper=config['mappers'],
-            sample=config['samples'],
-            extension=['bed', 'overlaps.tsv'],
-        ),
-        [
-            '{prefix}/{sample}/{mapper}/isoform.transcripts/{contig}/isoform_{contig}_{tid}.fa'.format(
-                prefix=graphs_d,
-                sample=s,
-                mapper=m,
-                contig=c,
-                tid=t,
-            ) for m in config['mappers'] for s in config['samples'] for c in sample_tids[s] for t in sample_tids[s][c]
-        ],
+        # expand('{}/{{sample}}/{{mapper}}/{{tool}}.{{extension}}'.format(graphs_d),
+        #     tool=tools+['genome', 'segment','truth'],
+        #     mapper=config['mappers'],
+        #     sample=config['samples'],
+        #     extension=['bed', 'transcripts', 'overlaps.tsv'],
+        # ),
+        # expand('{}/{{sample}}/{{mapper}}/isoform.{{extension}}'.format(graphs_d),
+        #     mapper=config['mappers'],
+        #     sample=config['samples'],
+        #     extension=['bed', 'overlaps.tsv'],
+        # ),
+        # [
+        #     '{prefix}/{sample}/{mapper}/isoform.transcripts/{contig}/isoform_{contig}_{tid}.fa'.format(
+        #         prefix=graphs_d,
+        #         sample=s,
+        #         mapper=m,
+        #         contig=c,
+        #         tid=t,
+        #     ) for m in config['mappers'] for s in config['samples'] for c in sample_tids[s] for t in sample_tids[s][c]
+        # ],
 
 
 rule minimap2:
@@ -146,9 +152,12 @@ rule desalt:
         bai=protected('{}/{{sample}}.desalt.bam.bai'.format(preprocess_d)),
     params:
         seq_type = lambda wildcards: config['samples'][wildcards.sample]['seq_type'],
+    conda:
+        config['conda_env_names']['freddie']
     threads:
         32
     shell:
+        # 'set +u; conda activate {params.conda}; set -u; '
         'py/freddie_align.py -r {input.reads} -i {input.index}/ -s {params.seq_type} -o {output.sam} -t {threads} &&'
         '  samtools sort -T {output.bam}.tmp -m 2G -@ {threads} -O bam {output.sam} > {output.bam} && '
         '  samtools index {output.bam} '
@@ -179,11 +188,14 @@ rule freddie:
         cluster = directory('{}/{{sample}}/{{mapper}}/freddie/cluster'.format(workspace_d)),
         gtf     = protected('{}/{{sample}}/{{mapper}}/freddie.isoforms.gtf'.format(output_d)),
     params:
-        gnu_time     = gnu_time,
-        gurobi       = config['gurobi']['license']
+        gnu_time = gnu_time,
+        gurobi   = config['gurobi']['license'],
+    conda:
+        config['conda_env_names']['freddie']
     wildcard_constraints:
         mapper='desalt|minimap2'
     shell:
+        # 'set +u; conda activate {params.conda}; set -u; '
         'export GRB_LICENSE_FILE={params.gurobi} && '
         '{params.gnu_time} -f "freddie-split\\t{wildcards.mapper}\\t%e\\t%U\\t%M"    -a -o {input.time} '
         '  py/freddie_split.py -b {input.bam} -o {output.split} -r {input.reads} && '
@@ -205,7 +217,10 @@ rule stringtie:
     params:
         gnu_time     = gnu_time,
         gnu_time_fmt = lambda wildcards: '"stringtie\\t'+wildcards.mapper+'\\t%e\\t%U\\t%M"',
+    conda:
+        config['conda_env_names']['stringtie']
     shell:
+        # 'set +u; conda activate {params.conda}; set -u; '
         '{params.gnu_time} -f {params.gnu_time_fmt} -a -o {input.time} '
         ' stringtie -p 1 -L -o {output.gtf} {input.bam}'
 
@@ -215,7 +230,6 @@ rule sampled_gtf:
     output:
         gtf ='{}/{{sample}}.sampled_at.{{gtf_sample_rate}}.gtf'.format(preprocess_d),
     run:
-        import numpy as np
         print(input.gtf)
         np.random.seed(42)
         isoform_ids = set()
@@ -257,6 +271,8 @@ rule sampled_gtf:
 
 rule flair:
     input:
+        flair  = config['exec']['flair'],
+        b2b12  = config['exec']['bam2Bed12'],
         bam    = '{}/{{sample}}.{{mapper}}.bam'.format(preprocess_d),
         reads  = lambda wildcards: config['samples'][wildcards.sample]['reads'],
         genome = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['genome'],
@@ -272,16 +288,17 @@ rule flair:
     params:
         gnu_time        = gnu_time,
         gnu_time_fmt    = lambda wildcards: '"flair-'+wildcards.gtf_sample_rate+'\\t'+wildcards.mapper+'\\t%e\\t%U\\t%M"',
-        bam2Bed12       = bam2Bed12,
         correct_prefix  = '{}/{{sample}}/{{mapper}}/flair.{{gtf_sample_rate}}/correct'.format(workspace_d),
         collapse_prefix = '{}/{{sample}}/{{mapper}}/flair.{{gtf_sample_rate}}/collapse'.format(workspace_d),
+    conda:
+        config['conda_env_names']['flair']
     wildcard_constraints:
         mapper='desalt|minimap2'
     shell:
         '{params.gnu_time} -f {params.gnu_time_fmt} -a -o {input.time} bash -c "'
-        ' {params.bam2Bed12} -i {input.bam} > {output.p_bed}  && '
-        ' flair.py correct  -t 1 -q {output.p_bed} -o {params.correct_prefix} -g {input.genome} -f {input.gtf} &&'
-        ' flair.py collapse -t 1 -q {output.c_bed} -o {params.collapse_prefix} -g {input.genome} -f {input.gtf} -r {input.reads} '
+        ' python3 {input.b2b12} -i {input.bam} > {output.p_bed}  && '
+        ' python3 {input.flair} correct  -t 1 -q {output.p_bed} -o {params.correct_prefix} -g {input.genome} -f {input.gtf} &&'
+        ' python3 {input.flair} collapse -t 1 -q {output.c_bed} -o {params.collapse_prefix} -g {input.genome} -f {input.gtf} -r {input.reads} '
         '"; '
         'mv {params.collapse_prefix}.isoforms.gtf {output.gtf}'
 
@@ -522,7 +539,6 @@ rule truth_transcripts_fastas_and_isoform_baseline:
         truth_bed.close()
         isoform_bed.close()
         open(output.isoform_baseline_ready, 'w+')
-
 
 
 rule isoform_baseline_align:

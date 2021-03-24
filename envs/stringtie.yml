@@ -1,0 +1,6 @@
+name: freddie_bench_stringtie
+channels:
+  - bioconda
+  - anaconda
+dependencies:
+  - stringtie=2.1.4

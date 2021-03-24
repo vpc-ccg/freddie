@@ -8,27 +8,43 @@ min_cov:
     3
 
 exec:
-    beds     : extern/transcript_beds.py
-    coverage : extern/transcript_coverage.py
-    seqpare  : extern/seqpare.sh
-    pairing  : extern/seqpare_pair.py
-    stats    : extern/seqpare_stats.awk
+    beds      : extern/transcript_beds.py
+    coverage  : extern/transcript_coverage.py
+    seqpare   : extern/seqpare.sh
+    pairing   : extern/seqpare_pair.py
+    stats     : extern/seqpare_stats.awk
+    flair     : extern/flair/flair.py
+    bam2Bed12 : extern/flair/bin/bam2Bed12.py
 
 samples:
-    ERR3588905:
+    # ERR3588905:
+    #     seq_type : ont1d
+    #     ref      : drosophila_melanogaster
+    #     reads    :
+    #         - extern/LTR-sim/output/reads/ERR3588905.L-non.fastq
+    #    reads_info    :
+    #        - extern/LTR-sim/output/reads/ERR3588905.L-non.tsv
+    22Rv1:
         seq_type : ont1d
-        ref      : drosophila_melanogaster
+        ref      : homo_sapiens
         reads    :
-            - extern/LTR-sim/output/reads/ERR3588905.L-non.fastq
+            - extern/LTR-sim/output/reads/22Rv1.L-non.fastq
+        reads_info    :
+            - extern/LTR-sim/output/reads/22Rv1.L-non.tsv
 references:
-    drosophila_melanogaster:
-        annot      : extern/LTR-sim/refs/drosophila_melanogaster/drosophila_melanogaster.annot.gtf
-        genome     : extern/LTR-sim/refs/drosophila_melanogaster/drosophila_melanogaster.dna.fa
-        genome_fai : extern/LTR-sim/refs/drosophila_melanogaster/drosophila_melanogaster.dna.fa.fai
-        desalt_idx : test/mapping/drosophila_melanogaster.dna.desalt_idx
+    # drosophila_melanogaster:
+    #     annot      : extern/LTR-sim/refs/drosophila_melanogaster/drosophila_melanogaster.annot.gtf
+    #     genome     : extern/LTR-sim/refs/drosophila_melanogaster/drosophila_melanogaster.dna.fa
+    #     genome_fai : extern/LTR-sim/refs/drosophila_melanogaster/drosophila_melanogaster.dna.fa.fai
+    #     desalt_idx : test/mapping/drosophila_melanogaster.dna.desalt_idx
+    homo_sapiens:
+        annot      : extern/LTR-sim/refs/homo_sapiens/homo_sapiens.annot.gtf
+        genome     : extern/LTR-sim/refs/homo_sapiens/homo_sapiens.dna.fa
+        genome_fai : extern/LTR-sim/refs/homo_sapiens/homo_sapiens.dna.fa.fai
+        desalt_idx : test/mapping/homo_sapiens.dna.desalt_idx
 
 mappers:
-    - desalt
+    # - desalt
     - minimap2
 
 tools:
@@ -38,7 +54,12 @@ tools:
 
 gtf_sample_rates:
     - 1.00
-    - 0.75
-    - 0.50
-    - 0.25
-    - 0.01
+    # - 0.75
+    # - 0.50
+    # - 0.25
+    # - 0.01
+
+conda_env_names:
+    freddie   : envs/freddie.yml
+    flair     : envs/flair.yml
+    stringtie : envs/stringtie.yml

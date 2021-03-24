@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 import argparse
 import glob
-from networkx.algorithms import clique
 
 import numpy as np
 import networkx as nx
+from networkx.algorithms import clique
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
