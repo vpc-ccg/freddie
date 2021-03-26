@@ -11,12 +11,13 @@ import pysam
 configfile: 'config.yaml'
 localrules:
     all,
-    genome_transcript_fastas,
-    isoform_based,
     make_time,
     sampled_gtf,
     tool_transcript_fastas,
     truth_transcripts_fastas_and_isoform_baseline,
+    flair,
+    freddie,
+    stringtie,
 
 for k in config.keys():
     if not k.startswith('override_'):
@@ -62,8 +63,6 @@ def get_which(command):
     result = subprocess.run(['which', command], stdout=subprocess.PIPE)
     return result.stdout.decode('ascii').rstrip()
 
-print(get_which('conda'))
-
 outpath      = config['outpath'].rstrip('/')
 preprocess_d = '{}/preprocess'.format(outpath)
 workspace_d  = '{}/workspace'.format(outpath)
@@ -95,26 +94,41 @@ rule all:
             mapper=config['mappers'],
             sample=config['samples'],
         ),
-        # expand('{}/{{sample}}/{{mapper}}/{{tool}}.{{extension}}'.format(graphs_d),
-        #     tool=tools+['genome', 'segment','truth'],
-        #     mapper=config['mappers'],
-        #     sample=config['samples'],
-        #     extension=['bed', 'transcripts', 'overlaps.tsv'],
-        # ),
-        # expand('{}/{{sample}}/{{mapper}}/isoform.{{extension}}'.format(graphs_d),
-        #     mapper=config['mappers'],
-        #     sample=config['samples'],
-        #     extension=['bed', 'overlaps.tsv'],
-        # ),
-        # [
-        #     '{prefix}/{sample}/{mapper}/isoform.transcripts/{contig}/isoform_{contig}_{tid}.fa'.format(
-        #         prefix=graphs_d,
-        #         sample=s,
-        #         mapper=m,
-        #         contig=c,
-        #         tid=t,
-        #     ) for m in config['mappers'] for s in config['samples'] for c in sample_tids[s] for t in sample_tids[s][c]
-        # ],
+        expand('{}/{{sample}}/{{mapper}}/{{tool}}.{{extension}}'.format(graphs_d),
+            tool=tools+['genome', 'segment','truth'],
+            mapper=config['mappers'],
+            sample=config['samples'],
+            extension=['bed', 'transcripts', 'overlaps.tsv'],
+        ),
+        expand('{}/{{sample}}/{{mapper}}/isoform.{{extension}}'.format(graphs_d),
+            mapper=config['mappers'],
+            sample=config['samples'],
+            extension=['bed', 'overlaps.tsv'],
+        ),
+        [
+            '{prefix}/{sample}/{mapper}/isoform_baseline/jobs/{contig}.txt'.format(
+                prefix=workspace_d,
+                sample=s,
+                mapper=m,
+                contig=c,
+            ) for m in config['mappers'] for s in config['samples'] for c in sample_tids[s]
+        ],
+        [
+            '{prefix}/{sample}/{mapper}/isoform_baseline/pafs/{contig}/done'.format(
+                prefix=workspace_d,
+                sample=s,
+                mapper=m,
+                contig=c,
+            ) for m in config['mappers'] for s in config['samples'] for c in sample_tids[s]
+        ],
+        [
+            '{prefix}/{sample}/{mapper}/isoform.transcripts/{contig}'.format(
+                prefix=graphs_d,
+                sample=s,
+                mapper=m,
+                contig=c,
+            ) for m in config['mappers'] for s in config['samples'] for c in sample_tids[s]
+        ],
 
 
 rule minimap2:
@@ -127,6 +141,9 @@ rule minimap2:
         bai=protected('{}/{{sample}}.minimap2.bam.bai'.format(preprocess_d)),
     threads:
         32
+    resources:
+        mem  = "128G",
+        time = 1439,
     shell:
         'minimap2 -a -x splice -t {threads} {input.genome} {input.reads} > {output.sam} && '
         '  samtools sort -T {output.bam}.tmp -m 2G -@ {threads} -O bam {output.sam} > {output.bam} && '
@@ -139,6 +156,9 @@ rule desalt_index:
         index  = directory('test/mapping/{species}.dna.desalt_idx'),
     wildcard_constraints:
         species = '|'.join(s for s in config['references']),
+    resources:
+        mem  = "128G",
+        time = 179,
     shell:
         'deSALT index {input.genome} {output.index}'
 
@@ -156,8 +176,10 @@ rule desalt:
         config['conda_env_names']['freddie']
     threads:
         32
+    resources:
+        mem  = "128G",
+        time = 179,
     shell:
-        # 'set +u; conda activate {params.conda}; set -u; '
         'py/freddie_align.py -r {input.reads} -i {input.index}/ -s {params.seq_type} -o {output.sam} -t {threads} &&'
         '  samtools sort -T {output.bam}.tmp -m 2G -@ {threads} -O bam {output.sam} > {output.bam} && '
         '  samtools index {output.bam} '
@@ -195,7 +217,6 @@ rule freddie:
     wildcard_constraints:
         mapper='desalt|minimap2'
     shell:
-        # 'set +u; conda activate {params.conda}; set -u; '
         'export GRB_LICENSE_FILE={params.gurobi} && '
         '{params.gnu_time} -f "freddie-split\\t{wildcards.mapper}\\t%e\\t%U\\t%M"    -a -o {input.time} '
         '  py/freddie_split.py -b {input.bam} -o {output.split} -r {input.reads} && '
@@ -220,7 +241,6 @@ rule stringtie:
     conda:
         config['conda_env_names']['stringtie']
     shell:
-        # 'set +u; conda activate {params.conda}; set -u; '
         '{params.gnu_time} -f {params.gnu_time_fmt} -a -o {input.time} '
         ' stringtie -p 1 -L -o {output.gtf} {input.bam}'
 
@@ -351,13 +371,16 @@ rule tool_transcript_fastas:
 
 rule segment_transcript_fastas:
     input:
-        segment_dir = directory('{}/{{sample}}/{{mapper}}/freddie/segment'.format(workspace_d)),
+        segment_dir = '{}/{{sample}}/{{mapper}}/freddie/segment'.format(workspace_d),
         genome = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['genome'],
     output:
         contig_dirs = directory('{}/{{sample}}/{{mapper}}/segment.transcripts'.format(graphs_d)),
         bed = '{}/{{sample}}/{{mapper}}/segment.bed'.format(graphs_d)
     params:
         species = lambda wildcards: config['samples'][wildcards.sample]['ref']
+    resources:
+        mem  = "64G",
+        time = 179,
     run:
         dna = pyfasta.Fasta(input.genome)
         contig_to_key = {k.split()[0]:k for k in dna.keys()}
@@ -420,6 +443,9 @@ rule genome_transcript_fastas:
         bed = '{}/{{sample}}/{{mapper}}/genome.bed'.format(graphs_d)
     params:
         species = lambda wildcards: config['samples'][wildcards.sample]['ref']
+    resources:
+        mem  = "128G",
+        time = 119,
     run:
         dna = pyfasta.Fasta(input.genome)
         contig_to_key = {k.split()[0]:k for k in dna.keys()}
@@ -476,7 +502,7 @@ rule truth_transcripts_fastas_and_isoform_baseline:
         truth_bed = '{}/{{sample}}/{{mapper}}/truth.bed'.format(graphs_d),
         isoform_bed = '{}/{{sample}}/{{mapper}}/isoform.bed'.format(graphs_d),
     params:
-        isoform_baseline_dirs = '{}/{{sample}}/{{mapper}}/isoform_baseline'.format(workspace_d),
+        isoform_baseline_dirs = '{}/{{sample}}/{{mapper}}/isoform_baseline/reads'.format(workspace_d),
     run:
         dna = pyfasta.Fasta(input.genome)
         contig_to_key = {k.split()[0]:k for k in dna.keys()}
@@ -541,46 +567,110 @@ rule truth_transcripts_fastas_and_isoform_baseline:
         open(output.isoform_baseline_ready, 'w+')
 
 
+rule isoform_baseline_align_jobs:
+    output:
+        jobs = '{}/{{sample}}/{{mapper}}/isoform_baseline/jobs/{{contig}}.txt'.format(workspace_d),
+    wildcard_constraints:
+        contig = '|'.join(list({re.escape(c) for s in sample_tids for c in sample_tids[s]}))
+    run:
+        target_template = ''
+        outfile = open(output.jobs, 'w+')
+        p_tmplt = '{p}/{s}/{m}/isoform_baseline/pafs/{c}/{c}_{{t}}_reads.paf'.format(
+            p=workspace_d,
+            s=wildcards.sample,
+            m=wildcards.mapper,
+            c=wildcards.contig,
+        )
+        r_tmplt = '{p}/{s}/{m}/isoform_baseline/reads/{c}/{c}_{{t}}_reads.fa'.format(
+            p=workspace_d,
+            s=wildcards.sample,
+            m=wildcards.mapper,
+            c=wildcards.contig,
+        )
+        t_tmplt = '{p}/{s}/{m}/truth.transcripts/{c}/truth_{c}_{{t}}.fa'.format(
+            p=graphs_d,
+            s=wildcards.sample,
+            m=wildcards.mapper,
+            c=wildcards.contig,
+        )
+        for t in sample_tids[wildcards.sample][wildcards.contig]:
+            outfile.write('minimap2 -t 1 --no-long-join {} {} > {} 2> /dev/null\n'.format(
+                t_tmplt.format(t=t),
+                r_tmplt.format(t=t),
+                p_tmplt.format(t=t),
+            ))
+        outfile.close()
+
 rule isoform_baseline_align:
     input:
         isoform_baseline_ready = '{}/{{sample}}/{{mapper}}/isoform_baseline/ready'.format(workspace_d),
         truth_contig_dirs = '{}/{{sample}}/{{mapper}}/truth.transcripts'.format(graphs_d),
+        jobs = '{}/{{sample}}/{{mapper}}/isoform_baseline/jobs/{{contig}}.txt'.format(workspace_d),
     output:
-        paf = '{}/{{sample}}/{{mapper}}/isoform_baseline/{{contig}}/{{contig}}_{{tid}}_reads.paf'.format(workspace_d),
-    params:
-        reads = '{}/{{sample}}/{{mapper}}/isoform_baseline/{{contig}}/{{contig}}_{{tid}}_reads.fa'.format(workspace_d),
-        target = '{}/{{sample}}/{{mapper}}/truth.transcripts/{{contig}}/truth_{{contig}}_{{tid}}.fa'.format(graphs_d),
+        done = '{}/{{sample}}/{{mapper}}/isoform_baseline/pafs/{{contig}}/done'.format(workspace_d),
+    wildcard_constraints:
+        contig = '|'.join(list({re.escape(c) for s in sample_tids for c in sample_tids[s]}))
+    threads:
+        32
+    resources:
+        mem  = 1024,
+        time = 360,
     shell:
-        'minimap2 -t 1 -c --MD --eqx --no-long-join {params.target} {params.reads} > {output.paf} 2> /dev/null'
+        'parallel --jobs {threads} < {input.jobs} && touch {output.done}'
 
+rule isoform_based_jobs:
+    output:
+        jobs = '{}/{{sample}}/{{mapper}}/isoform_baseline/cons_jobs/{{contig}}.txt'.format(workspace_d),
+    wildcard_constraints:
+        contig = '|'.join(list({re.escape(c) for s in sample_tids for c in sample_tids[s]}))
+    run:
+        target_template = ''
+        outfile = open(output.jobs, 'w+')
+        p_tmplt = '{p}/{s}/{m}/isoform_baseline/pafs/{c}/{c}_{{t}}_reads.paf'.format(
+            p=workspace_d,
+            s=wildcards.sample,
+            m=wildcards.mapper,
+            c=wildcards.contig,
+        )
+        o_tmplt = '{p}/{s}/{m}/isoform.transcripts/{c}/isoform_{c}_{{t}}.fa'.format(
+            p=graphs_d,
+            s=wildcards.sample,
+            m=wildcards.mapper,
+            c=wildcards.contig,
+        )
+        t_tmplt = '{p}/{s}/{m}/truth.transcripts/{c}/truth_{c}_{{t}}.fa'.format(
+            p=graphs_d,
+            s=wildcards.sample,
+            m=wildcards.mapper,
+            c=wildcards.contig,
+        )
+        for t in sample_tids[wildcards.sample][wildcards.contig]:
+            outfile.write('python3 extern/isoform_based.py {} {} {} {} {}\n'.format(
+                p_tmplt.format(t=t),
+                t_tmplt.format(t=t),
+                o_tmplt.format(t=t),
+                wildcards.contig,
+                t,
+            ))
+        outfile.close()
 
 rule isoform_based:
     input:
+        done = '{}/{{sample}}/{{mapper}}/isoform_baseline/pafs/{{contig}}/done'.format(workspace_d),
+        isoform_baseline_ready = '{}/{{sample}}/{{mapper}}/isoform_baseline/ready'.format(workspace_d),
         truth_contig_dirs = '{}/{{sample}}/{{mapper}}/truth.transcripts'.format(graphs_d),
-        paf    = '{}/{{sample}}/{{mapper}}/isoform_baseline/{{contig}}/{{contig}}_{{tid}}_reads.paf'.format(workspace_d),
+        jobs = '{}/{{sample}}/{{mapper}}/isoform_baseline/cons_jobs/{{contig}}.txt'.format(workspace_d),
     output:
-        fasta  = '{}/{{sample}}/{{mapper}}/isoform.transcripts/{{contig}}/isoform_{{contig}}_{{tid}}.fa'.format(graphs_d),
-    params:
-        target = '{}/{{sample}}/{{mapper}}/truth.transcripts/{{contig}}/truth_{{contig}}_{{tid}}.fa'.format(graphs_d),
-    run:
-        iso_seq = open(params.target).readlines()[1].rstrip()
-        locs = [0 for _ in range(len(iso_seq))]
-        rids = set()
-        for l in open(input.paf):
-            l = l.rstrip().split('\t')
-            rids.add(l[0])
-            assert len(locs) == int(l[6])
-            for i in range(int(l[7]),int(l[8])):
-                locs[i]+=1
-        
-        out_file = open(output.fasta, 'w+')
-        out_file.write('>isoform_{}_{}\n'.format(wildcards.contig, wildcards.tid))
-        for i,c in zip(locs,iso_seq):
-            if i/len(rids) > 0.3:
-                out_file.write(c)
-        out_file.write('\n')
-        out_file.close()
-
+        done = directory('{}/{{sample}}/{{mapper}}/isoform.transcripts/{{contig}}'.format(graphs_d)),
+    wildcard_constraints:
+        contig = '|'.join(list({re.escape(c) for s in sample_tids for c in sample_tids[s]}))
+    threads:
+        32
+    resources:
+        mem  = 1024,
+        time = 360,
+    shell:
+        'mkdir -p {output.done} && parallel --jobs {threads} < {input.jobs}'
 
 rule bed_overlaps:
     input:

@@ -96,11 +96,14 @@ rule all:
         ),
 
 
-rule align:
+rule align_to_transcript:
     input:
         target = '{}/{{sample}}/{{mapper}}/{{tool}}.transcripts/{{contig}}/{{i1}}.fa'.format(graphs_d),
     output:
         tsv    = '{}/{{sample}}/{{mapper}}/{{tool}}.alignments/{{contig}}/{{i1}}.tsv'.format(graphs_d),
+    resources:
+        mem  = "4G",
+        time = 15,
     run:
         query_template = '{p}/{s}/{m}/{{qt}}.transcripts/{c}/{{i2}}.fa'.format(
             p=graphs_d,
