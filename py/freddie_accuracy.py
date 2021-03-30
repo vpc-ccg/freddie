@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import argparse
 import glob
 
@@ -8,7 +9,7 @@ from networkx.algorithms import clique
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
-import plotly
+# import plotly
 
 
 BIP_TRUTH = 0
@@ -304,21 +305,23 @@ def plot_isoforms(stats, thresholds, tools, tool_labels, out_dir):
     for ax in axes[-1, :]:
         ax.set_xlabel('Alignment score threshold', fontsize=20)
     fig.savefig('{}/isoforms.pdf'.format(out_dir))
-    plotly_fig = plotly.tools.mpl_to_plotly(fig)
-    plotly_fig.update_layout(
-        # margin=dict(l=20, r=20, t=20, b=20),
-        font=dict(size=20),
-        title_font=dict(size=28),   
-    )
-    plotly.offline.plot(
-        plotly_fig,
-        filename='{}/isoforms.html'.format(out_dir),
-        auto_open=False,
-    )
+    # plotly_fig = plotly.tools.mpl_to_plotly(fig)
+    # plotly_fig.update_layout(
+    #     # margin=dict(l=20, r=20, t=20, b=20),
+    #     font=dict(size=20),
+    #     title_font=dict(size=28),   
+    # )
+    # plotly.offline.plot(
+    #     plotly_fig,
+    #     filename='{}/isoforms.html'.format(out_dir),
+    #     auto_open=False,
+    # )
 
 
 def main():
     args = parse_args()
+    os.makedirs(args.out_dir, exist_ok=False)
+
     nodes, edges = read_nodes_and_edges(args.input_dir)
     tools, tool_labels = sort_tool_names(edges.keys())
     comp_stats = dict()

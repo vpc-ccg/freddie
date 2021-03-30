@@ -56,9 +56,6 @@ for s in config['samples']:
     for contig in sample_tids[s]:
         sample_tids[s][contig] = {k for k,v in sample_tids[s][contig].items() if v >= config['min_cov']}
 
-def make_slurm():
-    os.makedirs('slurm'.format(outpath), mode=0o777, exist_ok=True)
-
 def get_which(command):
     result = subprocess.run(['which', command], stdout=subprocess.PIPE)
     return result.stdout.decode('ascii').rstrip()
@@ -70,7 +67,6 @@ output_d     = '{}/output'.format(outpath)
 graphs_d     = '{}/graphs'.format(outpath)
 
 gnu_time = get_which('time')
-make_slurm()
 
 tools = list()
 for tool in config['tools']:
@@ -345,13 +341,14 @@ rule tool_transcript_fastas:
             l = l.rstrip().split('\t')
             if l[2]!='exon':
                 continue
+            contig = l[0]
             info = l[8]
             info = [x.strip().split(' ') for x in info.strip(';').split(';')]
             info = {x[0]:x[1].strip('"') for x in info}
             iid = '{}_{}'.format(wildcards.tool, info['transcript_id'])
-            if not iid in tool_isoforms:
-                tool_isoforms[l[0]][iid] = list()
-            tool_isoforms[l[0]][iid].append((int(l[3]),int(l[4])))
+            if not iid in tool_isoforms[contig]:
+                tool_isoforms[contig][iid] = list()
+            tool_isoforms[contig][iid].append((int(l[3]),int(l[4])))
         for v1 in tool_isoforms.values():
             for v2 in v1.values():
                 v2.sort()

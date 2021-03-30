@@ -1,8 +1,7 @@
-name: freddie_bench_run_tools
+name: freddie_bench_snakemake
 channels:
   - anaconda
   - bioconda
-  - plotly
 dependencies:
   - bedtools=2.29.2=hc088bd4_0
   - minimap2=2.16=h84994c4_1
