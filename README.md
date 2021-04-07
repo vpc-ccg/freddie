@@ -3,8 +3,12 @@
 ## Running Freddie using Snakemake
 
 The whole Freddie pipeline is readily available using Snakemake.
-You can check the pipeile at the `Snakefile` and you can add samples to run Freddie on in the `config.yaml` file.
+You can check the pipeile at the `Snakefile` and you can add samples and other paths (e.g. Gurobi licence, reference genome) to run Freddie on in the `config.yaml` file.
 After editing `config.yaml`, you can run Snakemake with your specific settings, just make sure to use `--use-conda` to have all the requirements installed on the fly.
+Note that the cluster stage uses Gurobi solver which needs a license to use.
+If your affliation is academic, you can cost-free obtain a license [here](https://www.gurobi.com/downloads/end-user-license-agreement-academic/).
+Make sure to update the license path in `config.yaml` to point to the installed license file.
+
 
 ## Running Freddie manually
 
@@ -29,7 +33,7 @@ There are few scripts/stages in Freddie:
 ### Align
 
 ```
-minimap2 -a -x splice -t {threads} {genome FASTA} {reads FASTA/FASTQ} > <SAM>
+minimap2 -a -x splice -t {threads} {genome FASTA} {reads FASTA/FASTQ} > {SAM}
 ```
 
 
@@ -65,7 +69,7 @@ Align takes the following arguments:
 - `--threads/-t`: Number of threads. Default: 1
 - `--sigma/-sd`: Standard deviation parameter for the Gaussian filter. Default: 5.0
 - `--threshold-rate/-tp`: Coverage percentage threshold for segments. Default: 0.90
-- `--variance-factor/-vf`: Variance factor for heuristic of prefixing breakpoints. Any breakpoint with signal greater than `<-vf>` times the standard deviation plus the average of the signals will be prefixed. Default: 3.0
+- `--variance-factor/-vf`: Variance factor for heuristic of prefixing breakpoints. Any breakpoint with signal greater than `-vf` times the standard deviation plus the average of the signals will be prefixed. Default: 3.0
 - `--max-problem-size/-mps`: Maximum allowed problem size after which the problem will be broken down uniformly. Default: 50
 - `--min-read-support-outside`: Minimum contrasting coverage support required for a breakpoint. Default: 3
 - ``--outdir/-o`: Output directory of segment stage. Default: `freddie_segment/`
@@ -77,7 +81,7 @@ If your affliation is academic, you can cost-free obtain a license [here](https:
 
 ```
 export GRB_LICENSE_FILE={path to Gurobi v9 license}
-py/freddie_cluster.py --segment-dir <SEGMENT> --outdir <CLUSTER>
+py/freddie_cluster.py --segment-dir {SEGMENT} --outdir {CLUSTER}
 ```
 
 Align takes the following arguments:
@@ -95,7 +99,7 @@ Align takes the following arguments:
 ### Isoforms
 
 ```
-py/freddie_isoforms.py --segment-dir <SEGMENT> --cluster-dir <CLUSTER> --output <ISOFORMS.GTF> -t {threads}
+py/freddie_isoforms.py --segment-dir {SEGMENT} --cluster-dir {CLUSTER} --output {ISOFORMS.GTF} -t {threads}
 ```
 
 Align takes the following arguments:
