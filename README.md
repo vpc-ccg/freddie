@@ -72,7 +72,7 @@ Align takes the following arguments:
 - `--variance-factor/-vf`: Variance factor for heuristic of prefixing breakpoints. Any breakpoint with signal greater than `-vf` times the standard deviation plus the average of the signals will be prefixed. Default: 3.0
 - `--max-problem-size/-mps`: Maximum allowed problem size after which the problem will be broken down uniformly. Default: 50
 - `--min-read-support-outside`: Minimum contrasting coverage support required for a breakpoint. Default: 3
-- ``--outdir/-o`: Output directory of segment stage. Default: `freddie_segment/`
+- `--outdir/-o`: Output directory of segment stage. Default: `freddie_segment/`
 
 ### Cluster
 The cluster stage uses Gurobi solver which needs a license to use.
