@@ -327,6 +327,7 @@ def main():
     comp_stats = dict()
     isof_stats = dict()
     for tool in tools:
+        print('Building graphs for {}'.format(tool))
         comp_stats[tool] = dict()
         isof_stats[tool] = dict()
         for threshold in args.thresholds:
@@ -339,6 +340,7 @@ def main():
             cur_comp_stats, cur_isof_stats = get_stats(G)
             comp_stats[tool][threshold] = cur_comp_stats
             isof_stats[tool][threshold] = cur_isof_stats
+    print('Plotting components')
     plot_components(
         stats=comp_stats,
         tools=tools,
@@ -346,6 +348,7 @@ def main():
         threshold=0.97,
         out_dir=args.out_dir,
     )
+    print('Plotting isoforms')
     plot_isoforms(
         stats=isof_stats,
         thresholds=args.thresholds,

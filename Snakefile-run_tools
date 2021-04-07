@@ -90,13 +90,13 @@ rule all:
             mapper=config['mappers'],
             sample=config['samples'],
         ),
-        expand('{}/{{sample}}/{{mapper}}/{{tool}}.{{extension}}'.format(graphs_d),
-            tool=tools+['genome', 'segment','truth'],
+        expand('{}/{{sample}}/{{mapper}}/{{tool}}.transcripts'.format(graphs_d),
+            tool=tools+['segment','truth'],
             mapper=config['mappers'],
             sample=config['samples'],
-            extension=['bed', 'transcripts', 'overlaps.tsv'],
         ),
-        expand('{}/{{sample}}/{{mapper}}/isoform.{{extension}}'.format(graphs_d),
+        expand('{}/{{sample}}/{{mapper}}/{{tool}}.{{extension}}'.format(graphs_d),
+            tool=tools+['genome', 'isoform', 'segment','truth'],
             mapper=config['mappers'],
             sample=config['samples'],
             extension=['bed', 'overlaps.tsv'],
@@ -412,6 +412,8 @@ rule segment_transcript_fastas:
         for contig,tints in segment_isoforms.items():
             for tint,isoforms in tints.items():
                 for iid,isoform in isoforms.items():
+                    if isoform['count'] < 3:
+                        continue
                     seq = list()
                     cons = [(c/isoform['count'])>0.3 for c in isoform['cov']]
                     assert len(tint_segs[contig][tint])==len(cons)
@@ -431,62 +433,70 @@ rule segment_transcript_fastas:
                     fasta_file.close()
         bed_file.close()
 
-rule genome_transcript_fastas:
+rule genome_transcript_fastas_contig:
     input:
         bam    = '{}/{{sample}}.{{mapper}}.bam'.format(preprocess_d),
         genome = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['genome'],
     output:
-        contig_dirs = directory('{}/{{sample}}/{{mapper}}/genome.transcripts'.format(graphs_d)),
-        bed = '{}/{{sample}}/{{mapper}}/genome.bed'.format(graphs_d)
+        contig_dir = directory('{}/{{sample}}/{{mapper}}/genome.transcripts/{{contig}}'.format(graphs_d)),
+        bed = '{}/{{sample}}/{{mapper}}/genome.transcripts/{{contig}}.bed'.format(graphs_d)
+    resources:
+        mem_mb  = 16384,
+        time = 59,
     params:
         species = lambda wildcards: config['samples'][wildcards.sample]['ref']
-    resources:
-        mem  = "128G",
-        time = 119,
     run:
+        contig = wildcards.contig
         dna = pyfasta.Fasta(input.genome)
         contig_to_key = {k.split()[0]:k for k in dna.keys()}
-        for contig in contig_to_key.keys():
-            os.makedirs('{}/{}'.format(output.contig_dirs, contig), exist_ok=False)
-        genome_isoforms = {c:dict() for c in contig_to_key.keys()}
-        for read in pysam.AlignmentFile(input.bam):
+        os.makedirs(output.contig_dir, exist_ok=False)
+        isoforms = dict()
+        for read in pysam.AlignmentFile(input.bam).fetch(contig=contig):
             if read.is_unmapped:
                 continue
-            contig = read.reference_name
-            assert contig in genome_isoforms, (contig, genome_isoforms.keys())
             iid = read.query_name.split('_')[0]
-            if not iid in genome_isoforms[contig]:
-                genome_isoforms[contig][iid] = dict(read_count=0, pos_count=dict(), intervals=list())
-            genome_isoforms[contig][iid]['read_count']+=1
+            if not iid in isoforms:
+                isoforms[iid] = dict(read_count=0, pos_count=dict(), intervals=list())
+            isoforms[iid]['read_count']+=1
             for p in read.get_reference_positions():
-                genome_isoforms[contig][iid]['pos_count'][p] = genome_isoforms[contig][iid]['pos_count'].get(p,0) + 1
-        for contig in genome_isoforms:
-            for isoform in genome_isoforms[contig].values():
-                if isoform['read_count'] < 3:
-                    continue
-                positions = list()
-                for p,c in isoform['pos_count'].items():
-                    if p > isoform['read_count']/3.0:
-                        positions.append(p)
-                positions.sort()
-                for k, g in itertools.groupby(enumerate(positions), lambda t: t[1] - t[0]): 
-                    g = list(g)
-                    isoform['intervals'].append((g[0][1], g[-1][1]+1))                
+                isoforms[iid]['pos_count'][p] = isoforms[iid]['pos_count'].get(p,0) + 1
+
         bed_file = open(output.bed, 'w+')
-        for contig,isoforms in sorted(genome_isoforms.items()):
-            for iid,isoform in isoforms.items():
-                intervals = isoform['intervals']
-                if len(intervals) == 0:
-                    continue
-                seq = list()
-                for s,e in intervals:
-                    bed_file.write('{}\t{}\t{}\tgenome_{}_{}\n'.format(contig, s, e, contig, iid))
-                    seq.append(dna[contig_to_key[contig]][s:e])
-                fasta_file = open('{}/{}/genome_{}_{}.fa'.format(output.contig_dirs, contig, contig, iid), 'w+')
-                fasta_file.write('>genome_{}_{}\n'.format(contig, iid))
-                fasta_file.write('{}\n'.format(''.join(seq)))
-                fasta_file.close()
+        for iid,isoform in isoforms.items():
+            if isoform['read_count'] < 3:
+                continue
+            positions = list()
+            for p,c in isoform['pos_count'].items():
+                if c > isoform['read_count']/3.0:
+                    positions.append(p)
+            positions.sort()
+            for k, g in itertools.groupby(enumerate(positions), lambda t: t[1] - t[0]): 
+                g = list(g)
+                isoform['intervals'].append((g[0][1], g[-1][1]+1))                
+            isoform['intervals'] = isoform['intervals']
+            if len(isoform['intervals']) == 0:
+                continue
+            isoform_name = 'genome_{}_{}'.format(contig, iid)
+            seq = list()
+            for s,e in isoform['intervals']:
+                bed_file.write('{}\t{}\t{}\t{}\n'.format(contig, s, e, isoform_name))
+                seq.append(dna[contig_to_key[contig]][s:e])
+            fasta_file = open('{}/{}.fa'.format(output.contig_dir, isoform_name), 'w+')
+            fasta_file.write('>{}\n'.format(isoform_name))
+            fasta_file.write('{}\n'.format(''.join(seq)))
+            fasta_file.close()
         bed_file.close()
+
+rule genome_transcript_bed:
+    input:
+        beds = lambda wildcards: [ 
+            '{}/{{sample}}/{{mapper}}/genome.transcripts/{}.bed'.format(graphs_d,c) for c in sample_tids[wildcards.sample]
+        ],
+    output:
+        bed = '{}/{{sample}}/{{mapper}}/genome.bed'.format(graphs_d)
+    shell:
+        'cat {input} > {output}'
+
 
 rule truth_transcripts_fastas_and_isoform_baseline:
     input:
