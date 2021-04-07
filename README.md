@@ -16,78 +16,69 @@ conda activate freddie
 
 There are few scripts/stages in Freddie:
 
-- `py/freddie_align.py`: Align reads using `deSALT` mapper. (Optional since freddie accepts any SAM/BAM file for next stages)
 
 - `py/freddie_split.py`: Partitions the reads into independent sets that can be processed in parallel
--  `py/freddie_segment.py`: Computes the canonical segmentation for each read set
--  `py/freddie_cluster.py`: Clusters the reads using their canonical segmentation representation
--  `py/freddie_isoforms.py`: Generates consensus isoforms of each cluster and outputs them in `GTF` format
+- `py/freddie_segment.py`: Computes the canonical segmentation for each read set
+- `py/freddie_cluster.py`: Clusters the reads using their canonical segmentation representation
+- `py/freddie_isoforms.py`: Generates consensus isoforms of each cluster and outputs them in `GTF` format
 
 ### Align
 
 ```
-py/freddie_align.py --reads <FASTA/FASTQ> --genome <FASTA> --out-desalt-index <DIR> --output <SAM>
+minimap2 -a -x splice -t {threads} {genome FASTA} {reads FASTA/FASTQ} > <SAM>
 ```
 
-Align takes the following arguments:
-
-- `--reads/-r`: space separated list of FASTA/FASTQ files of the reads
-- `--genome/-g`: FASTA file of the genome. Only needed to deSALT index if `--desalt-index` is not provided.
-
-- `--out-desalt-index/-od`: Path to output directory to store deSALT index.  Only needed to deSALT index if `--desalt-index` is not provided.
-- `--desalt/-d`: Path to deSALT executable. Default: `deSALT`
-- `--desalt-index/-i`: Path to deSALT index if it exists.
-- `--temporary-prefix/-m`: Temporary prefix for deSALT alignment files. Default: `<--output>.temp`
-- `--sequencer/-s`: Sequencer option for deSALT: `null`, `ccs`, `clr`, `ont1d`, or `ont2d`. Default: `null`
-- `--output/-o`: Output SAM file 
 
 ### Sort
 Before running split stage, the SAM file needs to be sorted and indexed using SAMtools
 
 ```
-samtools sort <SAM> -m <memory per thread e.g. 2GB> -@ <threads> -O bam > <BAM>
-samtools index <BAM>
+samtools sort {SAM} -m {memory per thread e.g. 2GB} -@ {threads} -O bam > {BAM}
+samtools index {BAM}
 ```
-
 
 ### Split (aka partition)
 
 ```
-py/freddie_split.py --sam <SAM/BAM> --output <SPLIT.TSV>
+py/freddie_split.py --bam {sorted BAM} --outdir {SPLIT} -t {threads}
 ```
 
 Align takes the following arguments:
 
-- `--bam/-b`: `BAM` file of read alignments from deSALT or any other split/splice long-read mapper that are position sorted and indexed.
-- ``--output/-o`: Output TSV file of split stage. Default: `freddie_split.tsv`
+- `--reads/-r`: Space separated paths to reads in FASTQ or FASTA
+- `--bam/-b`: `BAM` file of read alignments from a split/splice long-read mapper that are position sorted and indexed.
+- `--outdir/-o`: Output TSV file of split stage. Default: `freddie_split/`
 
 ### Segment
 
 ```
-py/freddie_segment.py --split-tsv <SPLIT.TSV> --reads <FASTQ/FASTA> --output <SEGMENT.TSV>
+py/freddie_segment.py -s {SPLIT} --outdir  {SEGMENT} -t {threads}
 ```
 
 Align takes the following arguments:
 
-- `--split-tsv/-s`: `SPLIT.TSV` output of the split stage
-- `--reads/-r`: Space separated list of FASTA/FASTQ files of the reads
+- `--split-dir/-s`: `SPLIT` output directory of the split stage
 - `--threads/-t`: Number of threads. Default: 1
 - `--sigma/-sd`: Standard deviation parameter for the Gaussian filter. Default: 5.0
 - `--threshold-rate/-tp`: Coverage percentage threshold for segments. Default: 0.90
 - `--variance-factor/-vf`: Variance factor for heuristic of prefixing breakpoints. Any breakpoint with signal greater than `<-vf>` times the standard deviation plus the average of the signals will be prefixed. Default: 3.0
 - `--max-problem-size/-mps`: Maximum allowed problem size after which the problem will be broken down uniformly. Default: 50
 - `--min-read-support-outside`: Minimum contrasting coverage support required for a breakpoint. Default: 3
-- ``--output/-o`: Output TSV file of segment stage. Default: `freddie_segment.tsv`
+- ``--outdir/-o`: Output directory of segment stage. Default: `freddie_segment/`
 
 ### Cluster
+The cluster stage uses Gurobi solver which needs a license to use.
+If your affliation is academic, you can cost-free obtain a license [here](https://www.gurobi.com/downloads/end-user-license-agreement-academic/).
+
 
 ```
-py/freddie_cluster.py --segment-tsv <SEGMENT.TSV> --output <CLUSTER.TSV>
+export GRB_LICENSE_FILE={path to Gurobi v9 license}
+py/freddie_cluster.py --segment-dir <SEGMENT> --outdir <CLUSTER>
 ```
 
 Align takes the following arguments:
 
-- `--segment-tsv/-s`: `SEGMENT.TSV` output of the segment stage
+- `--segment-dir/-s`: `SEGMENT` output directory of the segment stage
 - `--gap-offset/-go`: Constant +/- slack used in unaligned gap condition. Default: 20
 - `--epsilon/-e`: +/- ratio of length as slack used in unaligned gap condition. Default: 0.2
 - `--max-rounds/-mr`: Maximum allowed number of rounds per sub-partition of a read set. Default: 30
@@ -95,18 +86,19 @@ Align takes the following arguments:
 - `--timeout/-to`: Gurobi timeout per isoform in minutes. Default: 4
 - `--threads/-t`: Number of threads. Default: 1
 - `--logs-dir/-l`: Directory path where logs will be outputted. Default: No logging
-- `--output/-o`: Output TSV file of cluster stage. Default: `freddie_cluster.tsv`
+- `--outdir/-o`: Output directory of cluster stage. Default: `freddie_cluster/`
 
 ### Isoforms
 
 ```
-py/freddie_isoforms.py --segment-tsv <SEGMENT.TSV> --cluster-tsv <CLUSTER.TSV> --output <ISOFORMS.GTF>
+py/freddie_isoforms.py --segment-dir <SEGMENT> --cluster-dir <CLUSTER> --output <ISOFORMS.GTF> -t {threads}
 ```
 
 Align takes the following arguments:
 
-- `--segment-tsv/-s`: `SEGMENT.TSV` output of the segment stage
-- `--cluster-tsv/-s`: `CLUSTER.TSV` output of the cluster stage
+- `--segment-dir/-s`: `SEGMENT` output directory of the segment stage
+- `--cluster-dir/-s`: `CLUSTER` output directory of the cluster stage
 - `--output/-o`: Output GTF file of isoforms stage. Default: `freddie_isoforms.gtf`
+- `--threads/-t`: Number of threads. Default: 1
 
 

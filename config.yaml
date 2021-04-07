@@ -1,27 +1,24 @@
 outpath:
-    test/benchmark/
+    test/dev/
 
 gurobi:
     license: gurobi.lic
     timeout: 15
 
 exec:
-    align    : py/freddie_align.py
     split    : py/freddie_split.py
     segment  : py/freddie_segment.py
     cluster  : py/freddie_cluster.py
     isoforms : py/freddie_isoforms.py
 
 samples:
-        seq_type : ont1d
+    S1:
         ref      : homo_sapiens
         reads    :
-            - extern/LTR-sim/output/reads/22Rv1.L-non.fastq
-        reads_info    :
-            - extern/LTR-sim/output/reads/22Rv1.L-non.tsv
+            - test/data/S1.fastq
+
 references:
     homo_sapiens:
-        annot      : extern/LTR-sim/refs/homo_sapiens/homo_sapiens.annot.gtf
-        genome     : extern/LTR-sim/refs/homo_sapiens/homo_sapiens.dna.fa
-        genome_fai : extern/LTR-sim/refs/homo_sapiens/homo_sapiens.dna.fa.fai
-        desalt_idx : test/mapping/homo_sapiens.dna.desalt_idx
+        annot      : test/refs/homo_sapiens.annot.gtf
+        genome     : test/refs/homo_sapiens.dna.fa
+        genome_fai : test/refs/homo_sapiens.dna.fa.fai

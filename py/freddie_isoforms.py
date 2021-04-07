@@ -59,6 +59,7 @@ def run_consensus(consensus_args):
     segments, reads, isoforms = read_cluster(cluster_tsv)
     isoforms_cons(isoforms, segments, reads)
     read_split(split_tsv, reads)
+
     correct_boundaries('starts', isoforms, reads,
                        majority_threshold, correction_window)
     correct_boundaries('ends', isoforms, reads,
@@ -152,6 +153,7 @@ def read_split(split_tsv, reads):
         reads[rid]['ends'] = ends
         for s, e in zip(starts, ends):
             assert s < e
+
 
 def read_cluster(cluster_tsv):
     segments = dict()

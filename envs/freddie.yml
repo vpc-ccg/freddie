@@ -1,4 +1,4 @@
-name: freddie_bench_freddie
+name: freddie
 channels:
   - conda-forge
   - bioconda
