@@ -48,7 +48,7 @@ samtools index {BAM}
 ### Split (aka partition)
 
 ```
-py/freddie_split.py --bam {sorted BAM} --outdir {SPLIT} -t {threads}
+py/freddie_split.py --reads {reads FASTQ} --bam {sorted BAM} --outdir {SPLIT} -t {threads}
 ```
 
 Align takes the following arguments:
