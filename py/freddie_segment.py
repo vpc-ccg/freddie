@@ -313,8 +313,8 @@ def get_unaligned_gaps_and_polyA(read, segs):
     (_, l_seg_idx) = intervals[-1]
     end = segs[l_seg_idx][1]
     q_esc_pos, _ = get_interval_end(end=end, read=read)
-    assert 0 <= q_ssc_pos < q_esc_pos <= read['length'], (
-        q_ssc_pos, q_esc_pos, read['length'], start, end, read)
+    assert 0 <= q_ssc_pos <= q_esc_pos <= read['length'], (
+        q_ssc_pos, q_esc_pos, read['length'], start, end, segs, read)
     s_polys = list()
     for char in ['A', 'T']:
         s = 0

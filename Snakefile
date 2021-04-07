@@ -100,7 +100,7 @@ rule cluster:
 rule isoforms:
     input:
         script  = config['exec']['isoforms'],
-        segment = '{}/{{sample}}/freddie.segment'.format(output_d),
+        split   = '{}/{{sample}}/freddie.split'.format(output_d),
         cluster = '{}/{{sample}}/freddie.cluster'.format(output_d),
     output:
         isoforms = protected('{}/{{sample}}/freddie.isoforms.gtf'.format(output_d)),
@@ -112,4 +112,4 @@ rule isoforms:
         mem  = "16G",
         time = 359,
     shell:
-        '{input.script} -s {input.segment} -c {input.cluster} -o {output.isoforms} -t {threads}'
+        '{input.script} -s {input.split} -c {input.cluster} -o {output.isoforms} -t {threads}'

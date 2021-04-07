@@ -99,13 +99,13 @@ Align takes the following arguments:
 ### Isoforms
 
 ```
-py/freddie_isoforms.py --segment-dir {SEGMENT} --cluster-dir {CLUSTER} --output {ISOFORMS.GTF} -t {threads}
+py/freddie_isoforms.py --split-dir {SPLIT} --cluster-dir {CLUSTER} --output {ISOFORMS.GTF} -t {threads}
 ```
 
 Align takes the following arguments:
 
-- `--segment-dir/-s`: `SEGMENT` output directory of the segment stage
-- `--cluster-dir/-s`: `CLUSTER` output directory of the cluster stage
+- `--split-dir/-s`: `SPLIT` output directory of the segment stage
+- `--cluster-dir/-c`: `CLUSTER` output directory of the cluster stage
 - `--output/-o`: Output GTF file of isoforms stage. Default: `freddie_isoforms.gtf`
 - `--threads/-t`: Number of threads. Default: 1
 

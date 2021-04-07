@@ -3,7 +3,7 @@ outpath:
 
 gurobi:
     license: gurobi.lic
-    timeout: 15
+    timeout: 1
 
 exec:
     split    : py/freddie_split.py
