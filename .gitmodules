@@ -1,6 +1,0 @@
-[submodule "extern/LTR-sim"]
-	path = extern/LTR-sim
-	url = https://github.com/vpc-ccg/LTR-sim.git
-[submodule "extern/flair"]
-	path = extern/flair
-	url = https://github.com/BrooksLabUCSC/flair/
