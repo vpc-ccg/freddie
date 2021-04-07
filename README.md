@@ -1,21 +1,25 @@
 # Freddie
-## Installation
+
+## Running Freddie using Snakemake
+
+The whole Freddie pipeline is readily available using Snakemake.
+You can check the pipeile at the `Snakefile` and you can add samples to run Freddie on in the `config.yaml` file.
+After editing `config.yaml`, you can run Snakemake with your specific settings, just make sure to use `--use-conda` to have all the requirements installed on the fly.
+
+## Running Freddie manually
+
+### Installation
 
 The simplest way to install the dependencies is using [Conda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/):
 
-```bash
-git clone https://baraaorabi@bitbucket.org/baraaorabi/freddie.git
+```
+git clone https://github.com/vpc-ccg/freddie.git
 cd freddie
-conda env create -f environment.yml
+conda env create -f envs/freddie.yml
 conda activate freddie
 ```
 
-
-
-## Running Freddie
-
 There are few scripts/stages in Freddie:
-
 
 - `py/freddie_split.py`: Partitions the reads into independent sets that can be processed in parallel
 - `py/freddie_segment.py`: Computes the canonical segmentation for each read set
