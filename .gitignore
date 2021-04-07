@@ -53,3 +53,4 @@ freddie_dbg
 *.mat
 *.data
 .vscode/
+gurobi.lic

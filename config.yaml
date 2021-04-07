@@ -1,17 +1,9 @@
 outpath:
-    test/dev-out/
+    test/benchmark/
 
 gurobi:
     license: gurobi.lic
     timeout: 15
-
-samples:
-    N_sim:
-        reads:
-            - /groups/hachgrp/projects/dev-ltr-simulator/analysis/ltr-sim-dev/reads/P000S000.L-non.fastq
-        seq_type: ont1d
-        data_type: sim
-        gtf: whole_genome
 
 exec:
     align    : py/freddie_align.py
@@ -20,5 +12,16 @@ exec:
     cluster  : py/freddie_cluster.py
     isoforms : py/freddie_isoforms.py
 
+samples:
+        seq_type : ont1d
+        ref      : homo_sapiens
+        reads    :
+            - extern/LTR-sim/output/reads/22Rv1.L-non.fastq
+        reads_info    :
+            - extern/LTR-sim/output/reads/22Rv1.L-non.tsv
 references:
-    dna_desalt : /groups/hachgrp/annotations/DNA/97/deSALT.index
+    homo_sapiens:
+        annot      : extern/LTR-sim/refs/homo_sapiens/homo_sapiens.annot.gtf
+        genome     : extern/LTR-sim/refs/homo_sapiens/homo_sapiens.dna.fa
+        genome_fai : extern/LTR-sim/refs/homo_sapiens/homo_sapiens.dna.fa.fai
+        desalt_idx : test/mapping/homo_sapiens.dna.desalt_idx

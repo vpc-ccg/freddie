@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-import argparse
-from itertools import groupby
 import os
 import glob
+from multiprocessing import Pool
+
+import argparse
+from itertools import groupby
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Extract alignment information from BAM/SAM file and splits reads into distinct transcriptional intervals")
     parser.add_argument("-s",
-                        "--segment-dir",
+                        "--split-dir",
                         type=str,
                         required=True,
                         help="Path to directory of Freddie segment")
@@ -18,295 +20,253 @@ def parse_args():
                         type=str,
                         required=True,
                         help="Path to directory of Freddie cluster")
-    parser.add_argument("-t",
-                        "--seqpare-threshold",
+    parser.add_argument("-m",
+                        "--majority-threshold",
                         type=float,
-                        default=0.95,
-                        help="Seqpare threshold to merge two isoforms")
+                        default=0.50,
+                        help="Majority threshold of reads to adjust exon boundary using the original alignments. Default: 0.5")
+    parser.add_argument("-w",
+                        "--correction-window",
+                        type=int,
+                        default=8,
+                        help="The +/- window around segment boundary to look for read alignment boundaries to use for correcting the exon boundaries. Value of 0 means no correction. Default 8.")
+    parser.add_argument("-t",
+                        "--threads",
+                        type=int,
+                        default=1,
+                        help="Number of threads to use")
     parser.add_argument("-o",
                         "--output",
                         type=str,
                         default='freddie_isoforms.gtf',
                         help="Path to output file. Default: freddie_isoforms.gtf")
     args = parser.parse_args()
-    assert 0.0 < args.seqpare_threshold <= 1.0
+    assert 0.5 <= args.majority_threshold <= 1.0
+    assert 0 <= args.correction_window <= 20
+    assert 0 < args.threads
     return args
 
 
-def get_tints(cluster_dir, segment_dir):
-    tints = dict()
-    rid_to_data = dict()
-    for contig in os.listdir(segment_dir):
-        if not os.path.isdir('{}/{}'.format(segment_dir, contig)):
-            continue
-        rid_to_data[contig] = dict()
-        for segment_tsv in glob.iglob('{}/{}/segment_*.tsv'.format(segment_dir, contig)):
-            for line in open(segment_tsv):
-                if line[0] == '#':
-                    continue
-                line = line.rstrip().split('\t')
-                rid_to_data[contig][int(line[0])] = line[5]
-    for contig in os.listdir(cluster_dir):
-        if not os.path.isdir('{}/{}'.format(cluster_dir, contig)):
-            continue
-        tints[contig] = dict()
-        for cluster_tsv in glob.iglob('{}/{}/cluster_*.tsv'.format(cluster_dir, contig)):
-            for line in open(cluster_tsv):
-                if line.startswith('#'):
-                    chrom, tint_id, segs = line.rstrip()[1:].split('\t')
-                    assert contig == chrom
-                    tint_id = int(tint_id)
-                    segs = segs.split(',')
-                    segs = [(int(s), int(e))
-                            for s, e in zip(segs[:-1], segs[1:])]
-                    tints[contig][tint_id] = dict(
-                        id=tint_id,
-                        chrom=chrom,
-                        segs=segs,
-                        partitions=dict()
-                    )
-                elif line.startswith('isoform_'):
-                    continue
-                else:
-                    line = line.rstrip().split('\t')
-                    rid = int(line[0])
-                    tint = int(line[4])
-                    pid = int(line[5])
-                    iid = line[7]
-                    if iid == '*':
-                        iid = 'garbage'
-                    if not pid in tints[contig][tint]['partitions']:
-                        tints[contig][tint]['partitions'][pid] = dict(
-                            id=pid,
-                            tids=set(),
-                            isoforms=dict(),
-                            seg_idxs=list()
-                        )
-                    if not iid in tints[contig][tint]['partitions'][pid]['isoforms']:
-                        tints[contig][tint]['partitions'][pid]['isoforms'][iid] = dict(
-                            id=iid,
-                            reads=list(),
-                        )
-                    data = rid_to_data[contig][rid]
-                    tints[contig][tint]['partitions'][pid]['isoforms'][iid]['reads'].append(dict(
-                        rid=rid,
-                        name=line[1],
-                        tid=line[1].split('_')[0],
-                        chrom=line[2],
-                        strand=line[3],
-                        tint=tint,
-                        pid=pid,
-                        poly_tail_category=line[6],
-                        iid=iid,
-                        data=data,
-                        gaps=[int(
-                            x[:-1].split('(')[1]) if '(' in x else 0 for x in line[8+1:8+1+len(data)]],
-                        poly_tail=line[8+1+len(data):],
-                    ))
-    for contig in tints.keys():
-        for tint_id in tints[contig].keys():
-            for pid in tints[contig][tint_id]['partitions'].keys():
-                M = len(tints[contig][tint_id]['segs'])
-                seg_content = [set() for _ in range(M)]
-                for isoform in tints[contig][tint_id]['partitions'][pid]['isoforms'].values():
-                    for read in isoform['reads']:
-                        tints[contig][tint_id]['partitions'][pid]['tids'].add(read['tid'])
-                        for j in range(M):
-                            seg_content[j].add(read['data'][j])
-    return tints
+def run_consensus(consensus_args):
+    (
+        contig,
+        tint_id,
+        cluster_tsv,
+        split_tsv,
+        majority_threshold,
+        correction_window,
+    ) = consensus_args
+    segments, reads, isoforms = read_cluster(cluster_tsv)
+    isoforms_cons(isoforms, segments, reads)
+    read_split(split_tsv, reads)
+    correct_boundaries('starts', isoforms, reads,
+                       majority_threshold, correction_window)
+    correct_boundaries('ends', isoforms, reads,
+                       majority_threshold, correction_window)
+
+    return get_gtf_records(isoforms)
 
 
-def gtf_intervals(tints):
-    for contig in tints.keys():
-        for tint in tints[contig].values():
-            for partition in tint['partitions'].values():
-                for isoform in partition['isoforms'].values():
-                    isoform['cons'] = [False for _ in tint['segs']]
-                    isoform['strand'] = '.'
-                    isoform['intervals'] = list()
-                    if isoform['id'] == 'garbage':
+def get_gtf_records(isoforms):
+    gtf_records = list()
+    for isoform_key, isoform in isoforms.items():
+        isoform_record = list()
+        if not 'starts' in isoform:
+            continue
+        chrom, tint, pid, iid = isoform_key
+        starts = isoform['starts']
+        ends = isoform['ends']
+        strand = isoform['strand']
+        transcript_name = '{chrom}_{tint}_{iid}'.format(
+            chrom=chrom,
+            tint=tint,
+            iid=iid,
+        )
+        gtf_record_key = (chrom, starts[0])
+
+        record = list()
+        record.append(chrom)
+        record.append('freddie')
+        record.append('transcript')
+        record.append(str(starts[0]+1))
+        record.append(str(ends[-1]))
+        record.append('.')
+        record.append(strand)
+        record.append('.')
+        record.append('transcript_id "{transcript_name}"; read_support "{read_support}";'.format(
+            transcript_name=transcript_name,
+            read_support=len(isoform['rids']),
+        ))
+        isoform_record.append('\t'.join(record))
+        for eid, (s, e) in enumerate(zip(starts, ends), start=1):
+            record = list()
+            record.append(chrom)
+            record.append('freddie')
+            record.append('exon')
+            record.append(str(s+1))
+            record.append(str(e))
+            record.append('.')
+            record.append(strand)
+            record.append('.')
+            record.append('transcript_id "{transcript_name}"; exon_number "{eid}"; exon_id "{transcript_name}_{eid}"; '.format(
+                transcript_name=transcript_name,
+                eid=eid,
+            ))
+            isoform_record.append('\t'.join(record))
+        gtf_records.append((gtf_record_key, '\n'.join(isoform_record)))
+    return gtf_records
+
+
+def correct_boundaries(side, isoforms, reads, majority_threshold, correction_window):
+    if correction_window == 0:
+        return
+    assert side in ['starts', 'ends']
+    for isoform in isoforms.values():
+        if not side in isoform:
+            continue
+        for idx, iso_s in enumerate(isoform[side]):
+            cur = {
+                x: 0 for x in range(-correction_window, correction_window+1)}
+            for rid in isoform['rids']:
+                for read_s in reads[rid][side]:
+                    x = read_s - iso_s
+                    if not x in cur:
                         continue
-                    cons = [0 for _ in tint['segs']]
-                    poly_tail_categories = {'N': 0, 'S': 0, 'E': 0}
-                    for read in isoform['reads']:
-                        for j in range(len(tint['segs'])):
-                            cons[j] += read['data'][j] == '1'
-                            poly_tail_categories[read['poly_tail_category']] += 1
-                    cons = [x/len(isoform['reads']) > 0.3 for x in cons]
-                    if not True in cons:
-                        continue
-                    isoform['cons'] = cons
-                    if poly_tail_categories['S'] > poly_tail_categories['E']:
-                        isoform['strand'] = '-'
-                    else:
-                        isoform['strand'] = '+'
-                    for d, group in groupby(enumerate(cons), lambda x: x[1]):
-                        if d != True:
-                            continue
-                        group = list(group)
-                        f_seg_idx = group[0][0]
-                        l_seg_idx = group[-1][0]
-                        isoform['intervals'].append((
-                            tint['segs'][f_seg_idx][0]+1,
-                            tint['segs'][l_seg_idx][1]
-                        ))
+                    cur[x] += 1
+            for x, v in cur.items():
+                if v/len(isoform['rids']) >= majority_threshold:
+                    isoform[side][idx] = x+iso_s
 
 
-def overlap(a, b):
-    e = min(a[1], b[1])
-    s = max(a[0], b[0])
-    return max(0, e-s)
-
-
-def seqpare(A, B):
-    if (not 'intervals' in A) or (not 'intervals' in B):
-        return 0.0
-    scores = list()
-    for i, a in enumerate(A['intervals']):
-        for j, b in enumerate(B['intervals']):
-            o = overlap(a, b)
-            la = a[1]-a[0]
-            lb = b[1]-b[0]
-            s = o/(la+lb-o)
-            scores.append((s, i, j))
-    scores.sort(reverse=True)
-    i_selected = set()
-    j_selected = set()
-    O = 0.0
-    for s, i, j in scores:
-        if i in i_selected or j in j_selected:
+def read_split(split_tsv, reads):
+    for line in open(split_tsv):
+        if line.startswith('#'):
             continue
-        O += s
-        i_selected.add(i)
-        j_selected.add(j)
-
-    return O/(len(A['intervals'])+len(B['intervals'])-O)
-
-
-def seqpare_matrix(tints):
-    for tint in tints.values():
-        for partition in tint['partitions'].values():
-            partition['scores'] = dict()
-            for a, A in partition['isoforms'].items():
-                for b, B in partition['isoforms'].items():
-                    if a >= b:
-                        continue
-                    s = seqpare(A, B)
-                    partition['scores'][(a, b)] = s
-
-
-def output_gtf(tints, outpath):
-    out_file = open(outpath, 'w+')
-    out_reads = open(outpath+'.reads.tsv', 'w+')
-    for contig in tints.keys():
-        for tint in tints[contig].values():
-            for partition in tint['partitions'].values():
-                for isoform in partition['isoforms'].values():
-                    if len(isoform['intervals']) == 0:
-                        continue
-                    transcript_name = '{chr}_{tint}_{iid}'.format(
-                        chr=tint['chrom'],
-                        tint=tint['id'],
-                        iid=isoform['id'],
-                    )
-                    for r in isoform['reads']:
-                        print('{}\t{}'.format(
-                            r['name'], transcript_name), file=out_reads)
-                    record = list()
-                    record.append(tint['chrom'])
-                    record.append('freddie')
-                    record.append('transcript')
-                    record.append(str(isoform['intervals'][0][0]))
-                    record.append(str(isoform['intervals'][-1][1]))
-                    record.append('.')
-                    record.append(isoform['strand'])
-                    record.append('.')
-                    record.append('transcript_id "{transcript_name}"; read_support "{read_support}";'.format(
-                        transcript_name=transcript_name,
-                        read_support=len(isoform['reads']),
-                    ))
-                    out_file.write('\t'.join(record))
-                    out_file.write('\n')
-                    for eid, (s, e) in enumerate(isoform['intervals'], start=1):
-                        record = list()
-                        record.append(tint['chrom'])
-                        record.append('freddie')
-                        record.append('exon')
-                        record.append(str(s))
-                        record.append(str(e))
-                        record.append('.')
-                        record.append(isoform['strand'])
-                        record.append('.')
-                        record.append('transcript_id "{transcript_name}"; exon_number "{eid}"; exon_id "{transcript_name}_{eid}"; '.format(
-                            transcript_name=transcript_name,
-                            eid=eid,
-                        ))
-                        out_file.write('\t'.join(record))
-                        out_file.write('\n')
-                        eid += 1
-    out_file.close()
-    out_reads.close()
-
-
-def connected_components(matrix, t):
-    # print('======')
-    iid_to_cid = dict()
-    comps = dict()
-    for (a, b), s in matrix.items():
-        comps[a] = [a]
-        iid_to_cid[a] = a
-        comps[b] = [b]
-        iid_to_cid[b] = b
-    for (a, b), s in matrix.items():
-        if not s > t:
+        line = line.rstrip().split('\t')
+        rid = int(line[0])
+        if not rid in reads:
             continue
-        a_cid = iid_to_cid[a]
-        b_cid = iid_to_cid[b]
-        if a_cid == b_cid:
+        intervals = [i.split(':')[0].split('-') for i in line[5:]]
+        starts, ends = zip(*[(int(i[0]), int(i[1])) for i in intervals])
+        reads[rid]['starts'] = starts
+        reads[rid]['ends'] = ends
+        for s, e in zip(starts, ends):
+            assert s < e
+
+def read_cluster(cluster_tsv):
+    segments = dict()
+    reads = dict()
+    isoforms = dict()
+    for line in open(cluster_tsv):
+        line = line.rstrip().split('\t')
+        if line[0][0] == '#':
+            chrom = line[0][1:]
+            tint = int(line[1])
+            segments[(chrom, tint)] = [int(x) for x in line[2].split(',')]
+            segments[(chrom, tint)] = [(s, e) for s, e in zip(
+                segments[(chrom, tint)][:-1], segments[(chrom, tint)][1:])]
             continue
-        # print('a', a, end=' ')
-        # print(comps[a_cid],)
-        # print('b', b, end=' ')
-        # print(comps[b_cid],)
-        for x in comps[b_cid]:
-            # print('{}: {} -> {}'.format(x, iid_to_cid[x], a_cid))
-            iid_to_cid[x] = a_cid
-        comps[a_cid].extend(comps.pop(b_cid))
-    return comps
+        if line[0].startswith('isoform_'):
+            continue
+        if line[7] == '*':
+            continue
+        read = dict()
+        read['rid'] = int(line[0])
+        read['rname'] = line[1]
+        read['chrom'] = line[2]
+        read['strand'] = line[3]
+        read['tint'] = int(line[4])
+        read['pid'] = int(line[5])
+        read['tail'] = line[6]
+        read['iid'] = int(line[7])
+        read['data'] = line[8]
+        assert len(read['data']) == len(
+            segments[(read['chrom'], read['tint'])])
+        reads[read['rid']] = read
+        isoform_key = (read['chrom'], read['tint'], read['pid'], read['iid'])
+        if not isoform_key in isoforms:
+            isoforms[isoform_key] = dict(rids=set())
+        isoforms[isoform_key]['rids'].add(read['rid'])
+
+    for isoform_key, isoform in isoforms.items():
+        l = set()
+        for rid in isoform['rids']:
+            l.add(len(reads[rid]['data']))
+        assert len(l) == 1
+
+    return segments, reads, isoforms
 
 
-def merge_isoforms(tints, t):
-    for tint in tints.values():
-        for partition in tint['partitions'].values():
-            if len(partition['scores']) == 0:
+def isoforms_cons(isoforms, segments, reads):
+    for isoform_key, isoform in isoforms.items():
+        chrom, tint, _, _ = isoform_key
+        cons = [0 for _ in segments[(chrom, tint)]]
+        M = len(segments[(chrom, tint)])
+        N = len(isoform['rids'])
+        tails = {'N': 0, 'S': 0, 'E': 0}
+        for rid in isoform['rids']:
+            read = reads[rid]
+            assert len(read['data']) == M, (M, isoform_key, read)
+            for j in range(M):
+                cons[j] += read['data'][j] == '1'
+                tails[read['tail']] += 1
+        cons = [x/N > 0.3 for x in cons]
+        if not True in cons:
+            continue
+        if tails['S'] > tails['E']:
+            isoform['strand'] = '-'
+        else:
+            isoform['strand'] = '+'
+        starts = list()
+        ends = list()
+        for d, group in groupby(enumerate(cons), lambda x: x[1]):
+            if d != True:
                 continue
-            cc = connected_components(partition['scores'], t)
-            # print('pid', partition['id'], cc)
-            for main_iid, other_iids in cc.items():
-                if len(other_iids) == 1:
-                    continue
-                # print(main_iid)
-                for iid in other_iids:
-                    if iid == main_iid:
-                        continue
-                    other_reads = partition['isoforms'][iid]['reads']
-                    for read in other_reads:
-                        read['iid'] = main_iid
-                    partition['isoforms'][main_iid]['reads'].extend(
-                        other_reads)
-                    partition['isoforms'].pop(iid)
-    gtf_intervals(tints)
+            group = list(group)
+            f_seg_idx = group[0][0]
+            l_seg_idx = group[-1][0]
+            starts.append(segments[(chrom, tint)][f_seg_idx][0])
+            ends.append(segments[(chrom, tint)][l_seg_idx][1])
+        isoform['starts'], isoform['ends'] = starts, ends
+        for s, e in zip(starts, ends):
+            assert s < e, (s, e)
 
 
 def main():
     args = parse_args()
 
-    tints = get_tints(cluster_dir=args.cluster_dir,
-                      segment_dir=args.segment_dir)
-    gtf_intervals(tints)
-    # seqpare_matrix(tints)
-    # merge_isoforms(tints, t=args.seqpare_threshold)
-    output_gtf(tints, args.output)
+    consensus_args = list()
+    for contig in os.listdir(args.cluster_dir):
+        if not os.path.isdir('{}/{}'.format(args.cluster_dir, contig)):
+            continue
+        for cluster_tsv in glob.iglob('{}/{}/cluster_*.tsv'.format(args.cluster_dir, contig)):
+            tint_id = int(cluster_tsv[:-4].split('/')[-1].split('_')[-1])
+            split_tsv = '{}/{}/split_{}_{}.tsv'.format(args.split_dir, contig, contig, tint_id)
+            assert os.path.isfile(split_tsv), split_tsv
+            consensus_args.append([
+                contig,
+                tint_id,
+                cluster_tsv,
+                split_tsv,
+                args.majority_threshold,
+                args.correction_window,
+            ])
+
+    gtf_records = list()
+    if args.threads > 1:
+        p = Pool(args.threads)
+        for idx, tint_gtf_records in enumerate(p.imap_unordered(run_consensus, consensus_args, chunksize=5)):
+            gtf_records.extend(tint_gtf_records)
+    else:
+        for idx, tint_gtf_records in enumerate(map(run_consensus, consensus_args)):
+            gtf_records.extend(tint_gtf_records)
+    gtf_records.sort()
+
+    outfile = open(args.output, 'w+')
+    for (k,record) in gtf_records:
+        outfile.write(record)
+        outfile.write('\n')
+    outfile.close()
 
 
 if __name__ == "__main__":

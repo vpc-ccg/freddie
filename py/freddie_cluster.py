@@ -244,8 +244,8 @@ def partition_reads(tint):
 
 
 def preprocess_ilp(tint, ilp_settings):
-    print('Preproessing ILP with {} read reps and the following settings:\n{}'.format(
-        len(tint['read_reps']), ilp_settings))
+    # print('Preproessing ILP with {} read reps and the following settings:\n{}'.format(
+    #     len(tint['read_reps']), ilp_settings))
     read_reps = tint['read_reps']
     N = len(read_reps)
     M = len(tint['segs'])
@@ -588,7 +588,7 @@ def run_ilp(tint, remaining_rids, incomp_rids, ilp_settings, log_prefix):
 
     isoforms = {k: dict()
                 for k in range(ISOFORM_INDEX_START, ilp_settings['K'])}
-    print('STATUS: {}'.format(ILP_ISOFORMS_STATUS))
+    # print('STATUS: {}'.format(ILP_ISOFORMS_STATUS))
     # if ILP_ISOFORMS_STATUS == GRB.Status.TIME_LIMIT:
     #     status = 'TIME_LIMIT'
     if ILP_ISOFORMS_STATUS != GRB.Status.OPTIMAL:
@@ -709,27 +709,27 @@ def cluster_tint(cluster_args):
     assert len(tints) == 1
     tint = list(tints.values())[0]
 
-    print('# Clustering tint {}'.format(tint['id']))
+    # print('# Clustering tint {}'.format(tint['id']))
     if logs_dir != None:
         os.makedirs('{}/{}'.format(logs_dir, tint['id']), exist_ok=True)
         timeout_log = open(
             '{}/{}/timeout.log'.format(logs_dir, tint['id']), 'w+')
     preprocess_ilp(tint, ilp_settings)
     partition_reads(tint)
-    print('# Paritions ({}) sizes: {}\n'.format(
-        len(tint['partitions']), [len(p) for p in tint['partitions']]))
+    # print('# Paritions ({}) sizes: {}\n'.format(
+    #     len(tint['partitions']), [len(p) for p in tint['partitions']]))
     tint['isoforms'] = list()
     tint['garbage_rids'] = list()
     for partition, (remaining_rids, incomp_rids) in enumerate(tint['partitions']):
         for rid in remaining_rids:
             for ridx in tint['read_reps'][rid]:
                 tint['reads'][ridx]['partition'] = partition
-        print(
-            '==========\ntint {}: Running {}-th partition...'.format(tint['id'], partition))
+        # print(
+        #     '==========\ntint {}: Running {}-th partition...'.format(tint['id'], partition))
         for round_num in range(ilp_settings['max_rounds']):
             actual_remaining_rids_len = sum(len(tint['read_reps'][i]) for i in remaining_rids)
-            print('==========\ntint {}: Running {}-th round with {} read reps and {} actual reads...'.format(
-                tint['id'], round_num, len(remaining_rids), actual_remaining_rids_len))
+            # print('==========\ntint {}: Running {}-th round with {} read reps and {} actual reads...'.format(
+            #     tint['id'], round_num, len(remaining_rids), actual_remaining_rids_len))
             if actual_remaining_rids_len < min_isoform_size:
                 break
             ILP_ISOFORMS_STATUS, status, round_isoforms = run_ilp(
@@ -748,12 +748,12 @@ def cluster_tint(cluster_args):
             number_of_clustered_reads = 0
             for i in round_isoforms.values():
                 number_of_clustered_reads += sum([len(tint['read_reps'][rid]) for i in round_isoforms.values() for rid in i['rid_to_corrections'].keys()])
-            print('Number of clustered reads:', number_of_clustered_reads)
+            # print('Number of clustered reads:', number_of_clustered_reads)
             if number_of_clustered_reads < min_isoform_size:
                 break
             for k, isoform in round_isoforms.items():
-                print('Isoform {} size: {}'.format(
-                    k, len(isoform['rid_to_corrections'])))
+                # print('Isoform {} size: {}'.format(
+                #     k, len(isoform['rid_to_corrections'])))
                 if sum(len(tint['read_reps'][rid]) for rid in isoform['rid_to_corrections'].keys()) < min_isoform_size:
                     continue
                 tint['isoforms'].append(isoform)
@@ -763,9 +763,9 @@ def cluster_tint(cluster_args):
                     for ridx in tint['read_reps'][rid]:
                         tint['reads'][ridx]['corrections'] = corrections
                         tint['reads'][ridx]['isoform'] = len(tint['isoforms'])-1
-            print('------->')
-            print('Remaining reads: {}\n'.format(len(remaining_rids)))
-            print('<-------')
+            # print('------->')
+            # print('Remaining reads: {}\n'.format(len(remaining_rids)))
+            # print('<-------')
         tint['garbage_rids'].extend(sorted(remaining_rids))
     if logs_dir != None:
         timeout_log.close()

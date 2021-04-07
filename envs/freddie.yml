@@ -1,0 +1,17 @@
+name: freddie_bench_freddie
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+  - anaconda
+  - gurobi
+dependencies:
+  - desalt==1.5.4
+  - gurobi>=9.0
+  - minimap2>=2.16
+  - networkx>=2
+  - numpy>=1.16
+  - pysam>=0.15
+  - python>=3.6
+  - scikit-learn>=0.20
+  - scipy>=1.2.1
