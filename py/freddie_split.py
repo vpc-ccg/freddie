@@ -142,7 +142,6 @@ def get_intervals(aln):
 
     for t, c in cigar:
         assert(0 <= t < 10)
-    for t, c in cigar:
         if t in target_consuming:
             tend += c
     qstart_c = qstart
@@ -153,6 +152,8 @@ def get_intervals(aln):
     intervals = list()
     interval_cigar = list()
     for t, c in cigar:
+        if t == pysam.CDEL and c > 20:
+            t = pysam.CREF_SKIP
         if t in exon_consuming:
             interval_cigar.append((t, c))
         if t == pysam.CDEL:
