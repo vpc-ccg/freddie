@@ -7,6 +7,7 @@ import numpy as np
 import networkx as nx
 from networkx.algorithms import clique
 import matplotlib as mpl
+mpl.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 # import plotly
@@ -17,8 +18,7 @@ BIP_TOOL = 1
 
 
 def parse_args():
-    default_thresholds = list(np.arange(0.85, 0.95, 0.05)) + \
-        list(np.arange(0.95, 1.00, 0.02))
+    default_thresholds = list(np.arange(0.90, 1.00, 0.01))
     default_thresholds = [round(t, 2) for t in default_thresholds]
     parser = argparse.ArgumentParser(
         description="Outputs accuracy plots for different tools against the simulated grount truth")
@@ -49,23 +49,31 @@ def read_nodes_and_edges(in_dir):
     tool_edges = dict()
     for bed in glob.iglob('{}/*.bed'.format(in_dir)):
         tool = bed.split('/')[-1][:-len('.bed')]
+        if tool == 'troth':
+            tool = 'truth'
         tool_nodes[tool] = set()
         for l in open(bed):
             n = l.rstrip().split('\t')[3]
             t = n.split('_')[0]
-            assert t == tool
+            assert t == tool or (t == 'troth' and tool == 'truth')
             tool_nodes[tool].add(n)
     assert 'truth' in tool_nodes
     for edge_tsv in glob.iglob('{}/*.edges.tsv'.format(in_dir)):
         tool = edge_tsv.split('/')[-1][:-len('.edges.tsv')]
+        if tool == 'troth':
+            tool = 'truth'
         tool_edges[tool] = dict()
         for l in open(edge_tsv):
             n1, n2, w = l.rstrip().split('\t')
             t1 = n1.split('_')[0]
+            if t1 == 'troth':
+                t1 = 'truth'
             t2 = n2.split('_')[0]
+            if t2 == 'troth':
+                t2 = 'truth'
 
-            assert t1 in [tool, 'truth']
-            assert t2 == tool
+            assert t1 in [tool, 'truth'], (t1,tool)
+            assert t2 == tool, (t2, tool)
             assert n1 in tool_nodes[tool] or tool_nodes['truth']
             assert n2 in tool_nodes[tool]
             k = (n1, n2)
@@ -272,7 +280,7 @@ def plot_isoforms(stats, thresholds, tools, tool_labels, out_dir):
         for tool in tools:
             if f.endswith('%'):
                 data = [
-                    stats[tool][t][f[:-1]]/stats[tool][t]['tool_count']
+                    100*stats[tool][t][f[:-1]]/stats[tool][t]['tool_count']
                     for t in thresholds
                 ]
             elif f.endswith('_truth') or f.endswith('FN'):
@@ -326,6 +334,15 @@ def main():
     tools, tool_labels = sort_tool_names(edges.keys())
     comp_stats = dict()
     isof_stats = dict()
+    graphs = list()
+    # for tool in tools:
+    #     for threshold in args.thresholds:
+    #         graphs.append(build_graph(
+    #             X_nodes=nodes['truth'],
+    #             Y_nodes=nodes[tool],
+    #             edges=edges[tool],
+    #             threshold=threshold,
+    #         ))
     for tool in tools:
         print('Building graphs for {}'.format(tool))
         comp_stats[tool] = dict()
@@ -341,13 +358,14 @@ def main():
             comp_stats[tool][threshold] = cur_comp_stats
             isof_stats[tool][threshold] = cur_isof_stats
     print('Plotting components')
-    plot_components(
-        stats=comp_stats,
-        tools=tools,
-        tool_labels=tool_labels,
-        threshold=0.97,
-        out_dir=args.out_dir,
-    )
+    for threshold in args.thresholds:
+        plot_components(
+            stats=comp_stats,
+            tools=tools,
+            tool_labels=tool_labels,
+            threshold=threshold,
+            out_dir=args.out_dir,
+        )
     print('Plotting isoforms')
     plot_isoforms(
         stats=isof_stats,
