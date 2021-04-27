@@ -136,9 +136,9 @@ def read_segment(segment_tsv):
                            for p in poly_gap_prog.findall(re_dict['gaps'])},
             )
             read_rep_key = [d for d in re_dict['data'].replace('2', '0')]
-            read_rep_key += ['.{}'.format(g[2] if int(g[2]) > 3 else 0)
+            read_rep_key += ['.{}'.format(g[2] if int(g[2]) > 10 else 0)
                              for g in internal_gap_prog.findall(re_dict['gaps'])]
-            read_rep_key += ['.{}{}'.format(p[0][0], p[2] if int(p[2]) > 3 else 0)
+            read_rep_key += ['.{}{}'.format(p[0][0], p[2] if int(p[2]) > 10 else 0)
                              for p in poly_gap_prog.findall(re_dict['gaps'])]
             read_rep_key = ''.join(read_rep_key)
             tind_id = read['tint']
@@ -232,14 +232,14 @@ def partition_reads(tint):
         c = list(c)
         for idx, i in enumerate(c):
             rids.extend(unique_data[i][1])
-            # for j in c[idx+1:]:
-            #     i,j = min(i,j),max(i,j)
-            #     assert i<j
-            #     if G.has_edge(i,j):
-            #         continue
-            #     for rid_1 in unique_data[i][1]:
-            #         for rid_2 in unique_data[j][1]:
-            #             incomp.append((rid_1,rid_2))
+            for j in c[idx+1:]:
+                i,j = min(i,j),max(i,j)
+                assert i<j
+                if G.has_edge(i,j):
+                    continue
+                for rid_1 in unique_data[i][1]:
+                    for rid_2 in unique_data[j][1]:
+                        incomp.append((rid_1,rid_2))
         tint['partitions'].append((rids, incomp))
 
 
@@ -684,7 +684,7 @@ def output_isoforms(tint, out_file):
             output.append(str((reads[ridx]['partition'])))
             output.append(str((reads[ridx]['poly_tail_category'])))
             output.append('*')
-            output.append('*')
+            output.append(''.join(map(str, reads[ridx]['data'])))
             exon_strs = [str(x) for x in reads[ridx]['data']]
             for (j1, j2), l in reads[ridx]['gaps'].items():
                 exon_strs[j1] += '({})'.format(l)
