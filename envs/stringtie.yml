@@ -4,3 +4,4 @@ channels:
   - anaconda
 dependencies:
   - stringtie=2.1.4
+  - time=1.8

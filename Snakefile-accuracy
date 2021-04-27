@@ -29,19 +29,26 @@ graphs_d     = '{}/graphs'.format(outpath)
 plots_d      = '{}/plots'.format(outpath)
 
 
-tools = ['truth', 'isoform', 'genome', 'segment']
+simu_tools = ['truth', 'isoform', 'genome', 'segment']
+real_tools = ['troth']
 for tool in config['tools']:
     if tool == 'flair':
         for r in config['gtf_sample_rates']:
-            tools.append('flair.{:.2f}'.format(r))
+            simu_tools.append('flair.{:.2f}'.format(r))
+            real_tools.append('flair.{:.2f}'.format(r))
     else:
-        tools.append(tool)
+        simu_tools.append(tool)
+        real_tools.append(tool)
 
 overlaps = dict()
 for s in config['samples']:
     overlaps[s]=dict()
     for m in config['mappers']:
         overlaps[s][m]=dict()
+        if config['samples'][s]['reads_info'] == 0:
+            tools = real_tools
+        else:
+            tools = simu_tools
         for t in tools:
             overlaps[s][m][t] = dict()
             for l in open('{}/{}/{}/{}.overlaps.tsv'.format(graphs_d, s, m, t)):
@@ -72,15 +79,27 @@ rule all:
                         for t in overlaps[s][m]
                             for c in overlaps[s][m][t]
         ],
-        expand('{}/{{sample}}/{{mapper}}/{{tool}}.edges.tsv'.format(graphs_d),
-            sample=config['samples'],
-            mapper=config['mappers'],
-            tool=tools,
-        ),
-        expand('{}/{{sample}}/{{mapper}}'.format(plots_d),
-            sample=config['samples'],
-            mapper=config['mappers'],
-        ),
+        [
+            '{p}/{s}/{m}/{t}.edges.tsv'.format(
+                p=graphs_d,
+                s=s,
+                m=m,
+                t=t,
+            )
+            for s in overlaps 
+                for m in overlaps[s] 
+                    for t in overlaps[s][m]
+        ],
+        [
+            '{p}/{s}/{m}'.format(
+                p=plots_d,
+                s=s,
+                m=m,
+                t=t,
+            )
+            for s in overlaps 
+                for m in overlaps[s] 
+        ],
 
 
 rule align_to_transcript_jobs:
@@ -126,6 +145,8 @@ rule edges_tsv:
     resources:
         mem_mb = 32*1024,
         time   = 60*24-1,
+    conda:
+        'envs/accuracy.yml'
     threads:
         32
     shell:
@@ -147,7 +168,7 @@ rule accuracy_plots:
         script = 'py/freddie_accuracy.py',
         graphs = lambda wildcards: [
             '{}/{}/{}/{}.edges.tsv'.format(graphs_d, wildcards.sample, wildcards.mapper, t)
-            for t in tools
+            for t in overlaps[wildcards.sample][wildcards.mapper]
         ],
     conda:
         'envs/accuracy.yml'

@@ -17,26 +17,43 @@ exec:
     bam2Bed12 : extern/flair/bin/bam2Bed12.py
 
 samples:
-    # ERR3588905:
-    #     seq_type : ont1d
-    #     ref      : drosophila_melanogaster
-    #     reads    :
-    #         - extern/LTR-sim/output/reads/ERR3588905.L-non.fastq
-    #    reads_info    :
-    #        - extern/LTR-sim/output/reads/ERR3588905.L-non.tsv
-    22Rv1:
-        seq_type : ont1d
-        ref      : homo_sapiens
-        reads    :
+    ERR3588905_sim:
+        ref        : drosophila_melanogaster
+        seq_type   : ont1d
+        reads_info : extern/LTR-sim/output/reads/ERR3588905.L-non.tsv
+        reads      :
+            - extern/LTR-sim/output/reads/ERR3588905.L-non.fastq
+    22Rv1_sim:
+        ref        : homo_sapiens
+        seq_type   : ont1d
+        reads_info : extern/LTR-sim/output/reads/22Rv1.L-non.tsv
+        reads      :
             - extern/LTR-sim/output/reads/22Rv1.L-non.fastq
-        reads_info    :
-            - extern/LTR-sim/output/reads/22Rv1.L-non.tsv
+    P001R511:
+        ref        : homo_sapiens
+        seq_type   : ont1d
+        reads_info : 0
+        reads      :
+            - test/data/P001R511.pass.fastq
+    P001R410:
+        ref        : homo_sapiens
+        seq_type   : ont1d
+        reads_info : 0
+        reads      :
+            - test/data/S1.fastq
+    22Rv1:
+        ref        : homo_sapiens
+        seq_type   : ont1d
+        reads_info : 0
+        reads      :
+            - /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/22RV1.pcr-free-cDNA.ONT.from-180525-to-180807.fastq
+
 references:
-    # drosophila_melanogaster:
-    #     annot      : extern/LTR-sim/refs/drosophila_melanogaster/drosophila_melanogaster.annot.gtf
-    #     genome     : extern/LTR-sim/refs/drosophila_melanogaster/drosophila_melanogaster.dna.fa
-    #     genome_fai : extern/LTR-sim/refs/drosophila_melanogaster/drosophila_melanogaster.dna.fa.fai
-    #     desalt_idx : test/mapping/drosophila_melanogaster.dna.desalt_idx
+    drosophila_melanogaster:
+        annot      : extern/LTR-sim/refs/drosophila_melanogaster/drosophila_melanogaster.annot.gtf
+        genome     : extern/LTR-sim/refs/drosophila_melanogaster/drosophila_melanogaster.dna.fa
+        genome_fai : extern/LTR-sim/refs/drosophila_melanogaster/drosophila_melanogaster.dna.fa.fai
+        desalt_idx : test/mapping/drosophila_melanogaster.dna.desalt_idx
     homo_sapiens:
         annot      : extern/LTR-sim/refs/homo_sapiens/homo_sapiens.annot.gtf
         genome     : extern/LTR-sim/refs/homo_sapiens/homo_sapiens.dna.fa
@@ -54,10 +71,10 @@ tools:
 
 gtf_sample_rates:
     - 1.00
-    # - 0.75
-    # - 0.50
-    # - 0.25
-    # - 0.01
+    - 0.75
+    - 0.50
+    - 0.25
+    - 0.01
 
 conda_env_names:
     freddie   : envs/freddie.yml

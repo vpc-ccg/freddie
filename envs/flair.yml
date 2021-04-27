@@ -26,6 +26,7 @@ dependencies:
   - matplotlib=3.3.2=h06a4308_0
   - seaborn=0.11.1=pyhd3eb1b0_0
   - pip=20.1.1=py_1
+  - time=1.8
   - pip:
     - cython==0.29.21
     - kerneltree

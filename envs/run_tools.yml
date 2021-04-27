@@ -10,3 +10,4 @@ dependencies:
   - pysam=0.15.2=py36hb06f55c_2
   - samtools=1.9=h8571acd_11
   - snakemake=6.*
+  - time=1.8
