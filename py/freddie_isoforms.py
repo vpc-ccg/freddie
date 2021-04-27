@@ -56,6 +56,7 @@ def run_consensus(consensus_args):
         majority_threshold,
         correction_window,
     ) = consensus_args
+    print(f'Building isoforms for contig {contig}')
     segments, reads, isoforms = read_cluster(cluster_tsv)
     isoforms_cons(isoforms, segments, reads)
     read_split(split_tsv, reads)
@@ -203,16 +204,31 @@ def isoforms_cons(isoforms, segments, reads):
     for isoform_key, isoform in isoforms.items():
         chrom, tint, _, _ = isoform_key
         cons = [0 for _ in segments[(chrom, tint)]]
+        cov = [0 for _ in segments[(chrom, tint)]]
         M = len(segments[(chrom, tint)])
         N = len(isoform['rids'])
         tails = {'N': 0, 'S': 0, 'E': 0}
         for rid in isoform['rids']:
             read = reads[rid]
             assert len(read['data']) == M, (M, isoform_key, read)
-            for j in range(M):
-                cons[j] += read['data'][j] == '1'
-                tails[read['tail']] += 1
-        cons = [x/N > 0.3 for x in cons]
+            if not '1' in read['data']:
+                continue
+            if read['tail'] == 'S':
+                first = 0
+            else:
+                first = read['data'].index('1')
+            if read['tail'] == 'S':
+                last = M - 1
+            else:
+                last = M - 1 - read['data'][::-1].index('1')
+            assert 0<=first<=last<M,f'first {first}, last {last}, M {M}'
+            for j in range(first,last+1):
+                X = read['data'][j] == '1'
+                cons[j] += X
+                cov[j] += 1
+            tails[read['tail']] += 1
+        
+        cons = [x/c > 0.3 if c > 0 else False for x,c in zip(cons,cov) ]
         if not True in cons:
             continue
         if tails['S'] > tails['E']:
