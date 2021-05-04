@@ -12,6 +12,12 @@ Then, download the repo and switch to `benchmarking` branch:
 (base)$ git submodule update --init --recursive
 ```
 
+## Gurobi license
+The clustering stage of Freddie uses Gurobi solver which needs a license to use.
+If your affliation is academic, you can cost-free obtain a license [here](https://www.gurobi.com/downloads/end-user-license-agreement-academic/).
+Make sure to update the license path in `config.yaml` to point to the installed license file.
+
+
 ## Generating the simulated reads:
 When downloading the repo, you will have downloaded the `LTR-sim` repo too. 
 We will use this to generate the simulated reads.
