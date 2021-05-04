@@ -2,6 +2,7 @@ name: freddie_bench_accuracy
 channels:
   - anaconda
   - plotly
+  - conda-forge
 dependencies:
   - matplotlib=3.3.2=h06a4308_0
   - matplotlib-base=3.3.2=py36h817c723_0
@@ -9,3 +10,4 @@ dependencies:
   - numpy=1.16.2=py36h8b7e671_1
   - plotly=4.14.3=py_0
   - minimap2=2.16=h84994c4_1
+  - upsetplot

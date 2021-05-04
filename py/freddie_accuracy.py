@@ -17,8 +17,48 @@ BIP_TRUTH = 0
 BIP_TOOL = 1
 
 
+tool_ls = {
+    'isoform' : 'solid',
+    'genome' : 'dashed',
+    'segment' : 'dotted',
+    'stringtie' : 'solid',
+    'freddie'   : 'solid',
+    'flair.0.01' : 'solid',
+    'flair.0.25' : 'solid',
+    'flair.0.50' : 'solid',
+    'flair.0.75' : 'solid',
+    'flair.1.00' : 'solid',
+}
+
+
+tool_colors = {
+    'isoform' : 'black',#'#cbc9e2',
+    'genome' : 'black',#'#9e9ac8',
+    'segment' : 'black',#'#6a51a3',
+    'stringtie'  : '#d95f02',
+    'freddie'    : '#7570b3',
+    'flair.0.01' : '#ccece6',
+    'flair.0.25' : '#99d8c9',
+    'flair.0.50' : '#66c2a4',
+    'flair.0.75' : '#2ca25f',
+    'flair.1.00' : '#006d2c',
+}
+names = {
+    'isoform' : 'Perfect clustering (isoform alignment)',
+    'genome' : 'Perfect clustering (genome alignment)',
+    'segment' : 'Perfect clustering (Freddie segmentation)',
+    'stringtie' : 'StringTie2',
+    'freddie'   : 'Freddie',
+    'flair.0.01' : 'FLAIR (1%)',
+    'flair.0.25' : 'FLAIR (25%)',
+    'flair.0.50' : 'FLAIR (50%)',
+    'flair.0.75' : 'FLAIR (75%)',
+    'flair.1.00' : 'FLAIR (100%)',
+}
+
+
 def parse_args():
-    default_thresholds = list(np.arange(0.90, 1.00, 0.01))
+    default_thresholds = list(np.arange(0.90, .99, 0.01))
     default_thresholds = [round(t, 2) for t in default_thresholds]
     parser = argparse.ArgumentParser(
         description="Outputs accuracy plots for different tools against the simulated grount truth")
@@ -209,6 +249,7 @@ def plot_components(stats, tools, tool_labels, threshold, out_dir):
                             xy=(rect.get_x() + rect.get_width() / 2, height),
                             xytext=(0, 3),
                             textcoords="offset points",
+                            color=tool_colors[tool],
                             ha='center', va='bottom')
     fig.legend(axes[-1].get_legend_handles_labels()[1], loc='right')
     fig.savefig('{}/comp_{}.pdf'.format(out_dir, threshold))
@@ -219,13 +260,13 @@ def sort_tool_names(tools):
     tool_to_name = dict()
     if 'isoform' in tools:
         sorted_tools.append('isoform')
-        tool_to_name['isoform'] = 'Isoform alignment'
+        tool_to_name['isoform'] = 'Perfect clustering (isoform alignment)'
     if 'genome' in tools:
         sorted_tools.append('genome')
-        tool_to_name['genome'] = 'Genome alignment'
+        tool_to_name['genome'] = 'Perfect clustering (genome alignment)'
     if 'segment' in tools:
         sorted_tools.append('segment')
-        tool_to_name['segment'] = 'Freddie segmentation'
+        tool_to_name['segment'] = 'Perfect clustering (freddie segmentation)'
     if 'freddie' in tools:
         sorted_tools.append('freddie')
         tool_to_name['freddie'] = 'Freddie'
@@ -242,7 +283,7 @@ def sort_tool_names(tools):
     return sorted_tools, tool_to_name
 
 
-def plot_isoforms(stats, thresholds, tools, tool_labels, out_dir):
+def plot_isoforms(stats, thresholds, tools, tool_labels, prefix):
     fig, axes = plt.subplots(2, 1, figsize=(25, 10), sharex=True)
     fig.suptitle('Connected components at alignment threshold={}'.format(0.97))
     plot_titles = [
@@ -268,6 +309,7 @@ def plot_isoforms(stats, thresholds, tools, tool_labels, out_dir):
     )
 
     for ax, (f, title) in zip(axes.flat, plot_titles):
+        print(title)
         ax.set_xticks(thresholds)
         ax.set_xticklabels(['{:2.2f}'.format(t) for t in thresholds])
         if f.endswith('_truth') or f.endswith('FN') or f.endswith('%'):
@@ -293,13 +335,13 @@ def plot_isoforms(stats, thresholds, tools, tool_labels, out_dir):
                     stats[tool][t][f]
                     for t in thresholds
                 ]
-            # print(f, tool, data)
+            print(tool, f, data[-2])
             ax.plot(thresholds,
                     data,
                     label=tool_labels[tool],
-                    # ls=ls[n],
+                    ls=tool_ls[tool],
                     lw=3,
-                    # color=c[n],
+                    color=tool_colors[tool],
                     )
         if f.endswith('_truth'):
             axsec = ax.secondary_yaxis(location='right', functions=(
@@ -308,22 +350,18 @@ def plot_isoforms(stats, thresholds, tools, tool_labels, out_dir):
 
     plt.subplots_adjust(bottom=0.15)
     axes_handles, axes_labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(axes_handles, axes_labels, ncol=len(tools), loc='lower center')
+    fig.legend(
+        axes_handles,
+        axes_labels,
+        ncol=len(tools),
+        loc='lower center',
+         bbox_to_anchor=(0.5, 0.075),
+    )
 
     for ax in axes[-1, :]:
         ax.set_xlabel('Alignment score threshold', fontsize=20)
-    fig.savefig('{}/isoforms.pdf'.format(out_dir))
-    # plotly_fig = plotly.tools.mpl_to_plotly(fig)
-    # plotly_fig.update_layout(
-    #     # margin=dict(l=20, r=20, t=20, b=20),
-    #     font=dict(size=20),
-    #     title_font=dict(size=28),   
-    # )
-    # plotly.offline.plot(
-    #     plotly_fig,
-    #     filename='{}/isoforms.html'.format(out_dir),
-    #     auto_open=False,
-    # )
+    fig.savefig('{}isoforms.pdf'.format(prefix))
+
 
 
 def main():
@@ -335,44 +373,49 @@ def main():
     comp_stats = dict()
     isof_stats = dict()
     graphs = list()
-    # for tool in tools:
-    #     for threshold in args.thresholds:
-    #         graphs.append(build_graph(
-    #             X_nodes=nodes['truth'],
-    #             Y_nodes=nodes[tool],
-    #             edges=edges[tool],
-    #             threshold=threshold,
-    #         ))
-    for tool in tools:
-        print('Building graphs for {}'.format(tool))
-        comp_stats[tool] = dict()
-        isof_stats[tool] = dict()
-        for threshold in args.thresholds:
-            G = build_graph(
-                X_nodes=nodes['truth'],
-                Y_nodes=nodes[tool],
-                edges=edges[tool],
-                threshold=threshold,
-            )
-            cur_comp_stats, cur_isof_stats = get_stats(G)
-            comp_stats[tool][threshold] = cur_comp_stats
-            isof_stats[tool][threshold] = cur_isof_stats
-    print('Plotting components')
-    for threshold in args.thresholds:
-        plot_components(
-            stats=comp_stats,
-            tools=tools,
-            tool_labels=tool_labels,
-            threshold=threshold,
-            out_dir=args.out_dir,
-        )
+    import pickle
+    try:
+        print('Trying to read from pickle')
+        (comp_stats,isof_stats) = pickle.load(open(f'{args.out_dir}.pickle','rb'))
+    except:
+        for tool in tools:
+            print('Building graphs for {}'.format(tool))
+            comp_stats[tool] = dict()
+            isof_stats[tool] = dict()
+            for threshold in args.thresholds:
+                G = build_graph(
+                    X_nodes=nodes['truth'],
+                    Y_nodes=nodes[tool],
+                    edges=edges[tool],
+                    threshold=threshold,
+                )
+                cur_comp_stats, cur_isof_stats = get_stats(G)
+                comp_stats[tool][threshold] = cur_comp_stats
+                isof_stats[tool][threshold] = cur_isof_stats
+        pickle.dump((comp_stats,isof_stats), open(f'{args.out_dir}.pickle','wb+'))
+    # print('Plotting components')
+    # for threshold in args.thresholds:
+    #     plot_components(
+    #         stats=comp_stats,
+    #         tools=tools,
+    #         tool_labels=tool_labels,
+    #         threshold=threshold,
+    #         out_dir=args.out_dir,
+    #     )
     print('Plotting isoforms')
     plot_isoforms(
         stats=isof_stats,
         thresholds=args.thresholds,
-        tools=tools,
+        tools=[t for t in tools if t.startswith('flair')],
         tool_labels=tool_labels,
-        out_dir=args.out_dir,
+        prefix=f'{args.out_dir}/all_flair.',
+    )
+    plot_isoforms(
+        stats=isof_stats,
+        thresholds=args.thresholds,
+        tools=[t for t in tools if not t in {'flair.0.75','flair.0.25','flair.0.01', 'genome', 'segment'}],
+        tool_labels=tool_labels,
+        prefix=f'{args.out_dir}/all_tools.',
     )
 
 

@@ -8,6 +8,8 @@ from collections import deque
 from multiprocessing import Pool
 
 import pysam
+import networkx as nx
+import numpy as np
 
 cigar_re = re.compile(r'(\d+)([M|I|D|N|S|H|P|=|X]{1})')
 
@@ -218,6 +220,56 @@ def read_sam(sam, contig):
     if len(reads) > 0:
         yield reads
 
+def break_tint(tint, reads):
+    rids = tint['rids']
+    intervals = tint['intervals']
+    start = intervals[0][0]
+    end = intervals[-1][1]
+    pos_to_intrv = np.zeros(end-start, dtype=int)
+    pos_to_intrv[:] = len(intervals)
+    intrv_to_rids = [set() for _ in intervals]
+    rid_to_intrvs = {rid:set() for rid in rids}
+    for idx,(s,e) in enumerate(intervals):
+        pos_to_intrv[s-start:e-start] = idx
+    edges = dict()
+    for rid in rids:
+        read = reads[rid]
+        alns = read['intervals']
+        for aln in alns:
+            s = aln[0]
+            v1 = pos_to_intrv[s-start]
+            intrv_to_rids[v1].add(rid)
+            rid_to_intrvs[rid].add(v1)
+        for a1,a2 in zip(alns[:-1],alns[1:]):
+            junc_start = a1[1]
+            junc_end = a2[0]
+            v1 = pos_to_intrv[junc_start-start-1]
+            v2 = pos_to_intrv[junc_end-start]
+            assert v1<=v2<len(intervals), (
+                junc_start,
+                junc_end,
+                v1,
+                v2,
+            )
+            edges[(v1,v2)] = edges.get((v1,v2), 0) + 1
+    
+    graph_edges = [(u,v) for (u,v),w in edges.items() if w >=2]
+    G = nx.Graph()
+    G.add_nodes_from(range(len(intervals)))
+    G.add_edges_from(graph_edges)
+    for c in nx.connected_components(G):
+        c_rids = set()
+        for i in c:
+            c_rids.update(intrv_to_rids[i])
+        if len(c_rids) > 2:
+            rid_intrvs = set()
+            for rid in c_rids:
+                rid_intrvs.update(rid_to_intrvs[rid])
+            rid_intrvs = sorted(rid_intrvs)
+            yield dict(
+                intervals=[intervals[i] for i in rid_intrvs],
+                rids=sorted(c_rids),
+            )
 
 def get_transcriptional_intervals(reads):
     intervals = list()
@@ -274,12 +326,21 @@ def get_transcriptional_intervals(reads):
                 (intervals[tint]['start'], intervals[tint]['end']))
         if len(rids) < 3:
             continue
-        for rid in rids:
-            reads[rid]['tint'] = len(multi_tints)
+        # for rid in rids:
+        #     reads[rid]['tint'] = len(multi_tints)
         multi_tints.append(dict(intervals=sorted(
             group_intervals), rids=sorted(rids)))
     assert all(enqueued)
-    return multi_tints
+    fin_multi_tints = list()
+    for tint in multi_tints:
+        if len(tint['intervals']) < 100 and len(tint['rids']) < 1500:
+            fin_multi_tints.append(tint)
+        else:
+            X = 0
+            for t in break_tint(tint,reads):
+                X+=1
+                fin_multi_tints.append(t)
+    return fin_multi_tints
 
 
 def split_reads(read_files, rname_to_tint, contigs, outdir):
@@ -297,17 +358,22 @@ def split_reads(read_files, rname_to_tint, contigs, outdir):
                     assert False, 'Invalid fasta/q file ' + read_file
             if idx % mod == 0:
                 rname = line.rstrip().split()[0][1:]
-                (contig, tint_id, rid) = rname_to_tint.get(
-                    rname, (None, None, None))
+                if rname in rname_to_tint:
+                    contig = rname_to_tint[rname]['contig']
+                    rid = rname_to_tint[rname]['rid']
+                    tint_ids = rname_to_tint[rname]['tint_ids']
+                else:
+                    contig = None
             if idx % mod == 1 and contig != None:
                 seq = line.rstrip()
-                record = list()
-                record.append(str(rid))
-                record.append(str(contig))
-                record.append(str(tint_id))
-                record.append(seq)
-                outfiles[contig].write('\t'.join(record))
-                outfiles[contig].write('\n')
+                for tint_id in tint_ids:
+                    record = list()
+                    record.append(str(rid))
+                    record.append(str(contig))
+                    record.append(str(tint_id))
+                    record.append(seq)
+                    outfiles[contig].write('\t'.join(record))
+                    outfiles[contig].write('\n')
     for outfile in outfiles.values():
         outfile.close()
     for c in contigs:
@@ -364,7 +430,15 @@ def write_tint(contig_outdir, contig, tint_id, tint, reads, rname_to_tint):
     outfile.write('\n')
     for rid in tint['rids']:
         read = reads[rid]
-        rname_to_tint[read['name']] = (contig, tint_id, rid)
+        if not read['name'] in rname_to_tint:
+            rname_to_tint[read['name']] = dict(
+                contig = contig,
+                rid = rid,
+                tint_ids = list()
+            )
+        assert rname_to_tint[read['name']]['contig'] == contig
+        assert rname_to_tint[read['name']]['rid'] == rid
+        rname_to_tint[read['name']]['tint_ids'].append(tint_id)
         record = list()
         record.append(str(read['id']))
         record.append(read['name'])
@@ -390,7 +464,7 @@ def main():
     print('[freddie_split.py] Running split with args:', args)
 
     contigs = {x['SN']: x['LN']
-               for x in pysam.AlignmentFile(args.bam, 'rb').header['SQ']}
+               for x in pysam.AlignmentFile(args.bam, 'rb').header['SQ'] if x['LN'] > 1000000}
     args.threads = min(args.threads, len(contigs))
     split_args = list()
     for contig, _ in sorted(contigs.items(), key=itemgetter(1), reverse=True):

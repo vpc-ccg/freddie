@@ -29,18 +29,6 @@ samples:
         reads_info : extern/LTR-sim/output/reads/22Rv1.L-non.tsv
         reads      :
             - extern/LTR-sim/output/reads/22Rv1.L-non.fastq
-    P001R511:
-        ref        : homo_sapiens
-        seq_type   : ont1d
-        reads_info : 0
-        reads      :
-            - test/data/P001R511.pass.fastq
-    P001R410:
-        ref        : homo_sapiens
-        seq_type   : ont1d
-        reads_info : 0
-        reads      :
-            - test/data/S1.fastq
     22Rv1:
         ref        : homo_sapiens
         seq_type   : ont1d

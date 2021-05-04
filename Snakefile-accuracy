@@ -31,14 +31,22 @@ plots_d      = '{}/plots'.format(outpath)
 
 simu_tools = ['truth', 'isoform', 'genome', 'segment']
 real_tools = ['troth']
+venn_tools = list()
 for tool in config['tools']:
     if tool == 'flair':
         for r in config['gtf_sample_rates']:
-            simu_tools.append('flair.{:.2f}'.format(r))
-            real_tools.append('flair.{:.2f}'.format(r))
+            t = 'flair.{:.2f}'.format(r)
+            simu_tools.append(t)
+            real_tools.append(t)
+            if r in [1.00]:
+                venn_tools.append((t, 'FLAIR ({:.0%})'.format(r)))
     else:
         simu_tools.append(tool)
         real_tools.append(tool)
+        if tool == 'freddie':
+            venn_tools.append((tool, 'Freddie'))  
+        elif tool == 'stringtie':
+            venn_tools.append((tool, 'StringTie2'))  
 
 overlaps = dict()
 for s in config['samples']:
@@ -91,7 +99,7 @@ rule all:
                     for t in overlaps[s][m]
         ],
         [
-            '{p}/{s}/{m}'.format(
+            '{p}/{s}/{m}/accuracy'.format(
                 p=plots_d,
                 s=s,
                 m=m,
@@ -100,6 +108,18 @@ rule all:
             for s in overlaps 
                 for m in overlaps[s] 
         ],
+        [
+            '{p}/{s}/{m}/venn.{f}.pdf'.format(
+                p=plots_d,
+                s=s,
+                m=m,
+                t=t,
+                f=f,
+            )
+            for s in overlaps 
+                for m in overlaps[s]
+                    for f in ['exons', 'introns']
+        ],        
 
 
 rule align_to_transcript_jobs:
@@ -173,8 +193,72 @@ rule accuracy_plots:
     conda:
         'envs/accuracy.yml'
     output:
-        direct = directory('{}/{{sample}}/{{mapper}}'.format(plots_d)),
+        direct = directory('{}/{{sample}}/{{mapper}}/accuracy'.format(plots_d)),
     params:
         in_direct = '{}/{{sample}}/{{mapper}}'.format(graphs_d),
     shell:
         '{input.script} -id {params.in_direct} -od {output.direct}'
+
+
+rule sim_gtf:
+    input:
+        bed = '{}/{{sample}}/{{mapper}}/truth.bed'.format(graphs_d),
+        gtf = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['annot'],
+    output:
+        gtf = '{}/{{sample}}/{{mapper}}/truth.gtf'.format(graphs_d),
+    run:
+        tids = set()
+        for l in open(input.bed):
+            l = l.rstrip().split('\t')
+            tid = l[3].split('_')[-1]
+            tids.add(tid)
+        print(f'There are {len(tids)} transcripts')
+        outfile = open(output.gtf, 'w+')
+        for line in open(input.gtf):
+            if line[0]=='#':
+                continue
+            l = line.rstrip().split('\t')
+            info = l[8]
+            info = [x.strip().split(' ') for x in info.strip(';').split(';')]
+            info = {x[0]:x[1].strip('"') for x in info}
+            if not 'transcript_id' in info:
+                continue
+            if not info['transcript_id'] in tids:
+                continue
+            outfile.write(line)
+        outfile.close()
+
+def get_t_annot(sample, mapper):
+    if config['samples'][sample]['reads_info'] == 0:
+        print('real')
+        ref = config['samples'][sample]['ref']
+        return config['references'][ref]['annot']
+    else:
+        print('sim')
+        return '{}/{}/{}/truth.gtf'.format(graphs_d,sample,mapper)
+
+
+rule venn_plots:
+    input:
+        script = 'py/freddie_venn.py',
+        tool_gtfs = lambda wildcards: [
+            f'{output_d}/{wildcards.sample}/{wildcards.mapper}/{t}.isoforms.gtf'
+            for t,_ in venn_tools
+        ],
+        t_gtf = lambda wildcards: get_t_annot(wildcards.sample, wildcards.mapper),
+    output:
+        exons_pdf = '{}/{{sample}}/{{mapper}}/venn.exons.pdf'.format(plots_d),
+        introns_pdf = '{}/{{sample}}/{{mapper}}/venn.introns.pdf'.format(plots_d),
+        exons_tsv = '{}/{{sample}}/{{mapper}}/venn.exons.tsv'.format(plots_d),
+        introns_tsv = '{}/{{sample}}/{{mapper}}/venn.introns.tsv'.format(plots_d),
+    params:
+        tool_names = ['"{}"'.format(n) for _,n in venn_tools],
+        t_name = lambda wildcards: 'Annotations' if config['samples'][wildcards.sample]['reads_info'] == 0 else 'Truth',
+        hides = lambda wildcards: '-x Annotations' if config['samples'][wildcards.sample]['reads_info'] == 0 else '',
+        prefix = '{}/{{sample}}/{{mapper}}/venn'.format(plots_d),
+    conda:
+        'envs/accuracy.yml'
+    params:
+        in_direct = '{}/{{sample}}/{{mapper}}'.format(graphs_d),
+    shell:
+        '{input.script} -o {params.prefix} -a {input.tool_gtfs} {input.t_gtf} -n {params.tool_names} {params.t_name} -T {params.t_name} {params.hides}'

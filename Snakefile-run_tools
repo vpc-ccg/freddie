@@ -184,6 +184,8 @@ rule desalt_index:
         index  = directory('test/mapping/{species}.dna.desalt_idx'),
     wildcard_constraints:
         species = '|'.join(re.escape(s) for s in config['references']),
+    conda:
+        config['conda_env_names']['freddie']
     resources:
         mem  = "128G",
         time = 179,
@@ -208,7 +210,7 @@ rule desalt:
         mem  = "128G",
         time = 179,
     shell:
-        'py/freddie_align.py -r {input.reads} -i {input.index}/ -s {params.seq_type} -o {output.sam} -t {threads} &&'
+        'deSALT aln -x {params.seq_type} --thread {threads} -f {output.sam}_temp -o {output.sam} {input.index} {input.reads} &&'
         '  samtools sort -T {output.bam}.tmp -m 2G -@ {threads} -O bam {output.sam} > {output.bam} && '
         '  samtools index {output.bam} '
 
@@ -236,7 +238,7 @@ rule freddie:
         split   = directory('{}/{{sample}}/{{mapper}}/freddie/split'.format(workspace_d)),
         segment = directory('{}/{{sample}}/{{mapper}}/freddie/segment'.format(workspace_d)),
         cluster = directory('{}/{{sample}}/{{mapper}}/freddie/cluster'.format(workspace_d)),
-        logs    = directory('{}/{{sample}}/{{mapper}}/freddie/cluster_logs'.format(workspace_d)),
+        # logs    = directory('{}/{{sample}}/{{mapper}}/freddie/cluster_logs'.format(workspace_d)),
         gtf     = protected('{}/{{sample}}/{{mapper}}/freddie.isoforms.gtf'.format(output_d)),
     params:
         gurobi   = config['gurobi']['license'],
@@ -253,7 +255,8 @@ rule freddie:
         'GNU_TIME=$(which time) && $GNU_TIME -f "freddie-segment\\t{wildcards.mapper}\\t%e\\t%U\\t%M"  -a -o {input.time} '
         '  py/freddie_segment.py -t {threads} -s {output.split} -o {output.segment} && '
         'GNU_TIME=$(which time) && $GNU_TIME -f "freddie-cluster\\t{wildcards.mapper}\\t%e\\t%U\\t%M"  -a -o {input.time} '
-        ' py/freddie_cluster.py  -t {threads} -s {output.segment} -o {output.cluster} -l {output.logs} && '
+        # ' py/freddie_cluster.py  -t {threads} -s {output.segment} -o {output.cluster} -l {output.logs} && '
+        ' py/freddie_cluster.py  -t {threads} -s {output.segment} -o {output.cluster} && '
         'GNU_TIME=$(which time) && $GNU_TIME -f "freddie-collapse\\t{wildcards.mapper}\\t%e\\t%U\\t%M" -a -o {input.time} '
         ' py/freddie_isoforms.py -t {threads} -s {output.split} -c {output.cluster} -o {output.gtf}'
 

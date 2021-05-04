@@ -785,7 +785,7 @@ def main():
             ))
     if args.threads > 1:
         p = Pool(args.threads)
-        for idx, tint_id in enumerate(p.imap_unordered(run_segment, segment_args, chunksize=10)):
+        for idx, tint_id in enumerate(p.imap_unordered(run_segment, segment_args, chunksize=1)):
             if not idx % ceil(len(segment_args)/100) == 0:
                 continue
             print('[freddie_segment] Done with {}/{} tints ({:.1%})'.format(
