@@ -1,112 +1,74 @@
-# Freddie
+# Freddie Benchmarking
+The branch is to be used for regenerating the benchmarking results of Freddie's paper.
 
-## Running Freddie using Snakemake
+## Installation
+To start off, please install [Conda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/).
 
-The whole Freddie pipeline is readily available using Snakemake.
-You can check the pipeile at the `Snakefile` and you can add samples and other paths (e.g. Gurobi licence, reference genome) to run Freddie on in the `config.yaml` file.
-After editing `config.yaml`, you can run Snakemake with your specific settings, just make sure to use `--use-conda` to have all the requirements installed on the fly.
-Note that the cluster stage uses Gurobi solver which needs a license to use.
-If your affliation is academic, you can cost-free obtain a license [here](https://www.gurobi.com/downloads/end-user-license-agreement-academic/).
-Make sure to update the license path in `config.yaml` to point to the installed license file.
-
-
-## Running Freddie manually
-
-### Installation
-
-The simplest way to install the dependencies is using [Conda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/):
-
-```
-git clone https://github.com/vpc-ccg/freddie.git
-cd freddie
-conda env create -f envs/freddie.yml
-conda activate freddie
+Then, download the repo and switch to `benchmarking` branch:
+```bash
+(base)$ git clone https://github.com/vpc-ccg/freddie.git freddie
+(base)$ cd freddie
+(base)$ git checkout benchmarking
+(base)$ git submodule update --init --recursive
 ```
 
-There are few scripts/stages in Freddie:
+## Generating the simulated reads:
+When downloading the repo, you will have downloaded the `LTR-sim` repo too. 
+We will use this to generate the simulated reads.
 
-- `py/freddie_split.py`: Partitions the reads into independent sets that can be processed in parallel
-- `py/freddie_segment.py`: Computes the canonical segmentation for each read set
-- `py/freddie_cluster.py`: Clusters the reads using their canonical segmentation representation
-- `py/freddie_isoforms.py`: Generates consensus isoforms of each cluster and outputs them in `GTF` format
-
-### Align
-
-```
-minimap2 -a -x splice -t {threads} {genome FASTA} {reads FASTA/FASTQ} > {SAM}
+First off, we will go the the `LTR-sim` submodule and install its Conda environment:
+```bash
+(base)$ cd extern/LTR-sim/
+(base)$ conda env create -f env.yml
+(base)$ conda activate ltr-sim
 ```
 
+Here, you can edit the `config.yaml` (in `LTR-sim` folder) including editing the samples and their simulated properties.
+Note that each sample depends on using a pre-existing real long-reads dataset.
+A real dataset can either be provided directly or it can be downloaded using its SRA number.
+Also, you may change the `batches` to speedup the parallalization of Badread simulator.
 
-### Sort
-Before running split stage, the SAM file needs to be sorted and indexed using SAMtools
+To make things easier, the transcript read expression counts for two datasets have already been added to the repo so you don't have to download them:
+- 22Rv1 cell line: `output/train/22Rv1.expression_rate.tsv`
+- Fruit fly (SRA #ERR3588905): `output/train/ERR3588905.expression_rate.tsv`
 
-```
-samtools sort {SAM} -m {memory per thread e.g. 2GB} -@ {threads} -O bam > {BAM}
-samtools index {BAM}
-```
+You will not need to download the real raw reads for these two datasets to reproduce the simulated results in the paper.
 
-### Split (aka partition)
-
-```
-py/freddie_split.py --reads {reads FASTQ} --bam {sorted BAM} --outdir {SPLIT} -t {threads}
-```
-
-Align takes the following arguments:
-
-- `--reads/-r`: Space separated paths to reads in FASTQ or FASTA
-- `--bam/-b`: `BAM` file of read alignments from a split/splice long-read mapper that are position sorted and indexed.
-- `--outdir/-o`: Output TSV file of split stage. Default: `freddie_split/`
-
-### Segment
-
-```
-py/freddie_segment.py -s {SPLIT} --outdir  {SEGMENT} -t {threads}
+Once you configured simulation, run Snakemake:
+```bash
+(ltr-sim)$ snakemake -j <threads>
+(ltr-sim)$ conda deactivate
+(base)$ cd ../..
 ```
 
-Align takes the following arguments:
+Note that you can change [Snakemake's execution parameters](https://snakemake.readthedocs.io/en/stable/executing/cli.html) to fit your server properties.
 
-- `--split-dir/-s`: `SPLIT` output directory of the split stage
-- `--threads/-t`: Number of threads. Default: 1
-- `--sigma/-sd`: Standard deviation parameter for the Gaussian filter. Default: 5.0
-- `--threshold-rate/-tp`: Coverage percentage threshold for segments. Default: 0.90
-- `--variance-factor/-vf`: Variance factor for heuristic of prefixing breakpoints. Any breakpoint with signal greater than `-vf` times the standard deviation plus the average of the signals will be prefixed. Default: 3.0
-- `--max-problem-size/-mps`: Maximum allowed problem size after which the problem will be broken down uniformly. Default: 50
-- `--min-read-support-outside`: Minimum contrasting coverage support required for a breakpoint. Default: 3
-- `--outdir/-o`: Output directory of segment stage. Default: `freddie_segment/`
-
-### Cluster
-The cluster stage uses Gurobi solver which needs a license to use.
-If your affliation is academic, you can cost-free obtain a license [here](https://www.gurobi.com/downloads/end-user-license-agreement-academic/).
+### Running the isoform detection tools
+The config file already points to the two simulated datasets.
+If you added any other datasets, or if you have a real dataset that you want to test, you need to add them to the `config.yaml` file that is in the root directory of the repo.
 
 
-```
-export GRB_LICENSE_FILE={path to Gurobi v9 license}
-py/freddie_cluster.py --segment-dir {SEGMENT} --outdir {CLUSTER}
+Now, first thing you need to do is to create an environment for running the tools:
+```bash
+(base)$ conda env create -f envs/run_tools.yml
+(base)$ conda activate freddie_bench_run_tools
 ```
 
-Align takes the following arguments:
-
-- `--segment-dir/-s`: `SEGMENT` output directory of the segment stage
-- `--gap-offset/-go`: Constant +/- slack used in unaligned gap condition. Default: 20
-- `--epsilon/-e`: +/- ratio of length as slack used in unaligned gap condition. Default: 0.2
-- `--max-rounds/-mr`: Maximum allowed number of rounds per sub-partition of a read set. Default: 30
-- `--min-isoform-size/-is`: Minimum read support allowed for an isoform. Default: 3
-- `--timeout/-to`: Gurobi timeout per isoform in minutes. Default: 4
-- `--threads/-t`: Number of threads. Default: 1
-- `--logs-dir/-l`: Directory path where logs will be outputted. Default: No logging
-- `--outdir/-o`: Output directory of cluster stage. Default: `freddie_cluster/`
-
-### Isoforms
-
-```
-py/freddie_isoforms.py --split-dir {SPLIT} --cluster-dir {CLUSTER} --output {ISOFORMS.GTF} -t {threads}
+Then create the environments for each specific tool:
+```bash
+(freddie_bench_run_tools)$ snakemake -s Snakefile-run_tools --use-conda --conda-create-envs-only -j  <threads>
 ```
 
-Align takes the following arguments:
 
-- `--split-dir/-s`: `SPLIT` output directory of the segment stage
-- `--cluster-dir/-c`: `CLUSTER` output directory of the cluster stage
-- `--output/-o`: Output GTF file of isoforms stage. Default: `freddie_isoforms.gtf`
-- `--threads/-t`: Number of threads. Default: 1
+Now, you can run the tools:
+```bash
+(freddie_bench_run_tools)$ snakemake -s Snakefile-run_tools --use-conda --conda-create-envs-only -j  <threads>
+```
+
+And you can run the accuracy assessment scripts:
+```bash
+(freddie_bench_run_tools)$ snakemake -s Snakefile-accuracy -j <threads>
+```
+
 
 
