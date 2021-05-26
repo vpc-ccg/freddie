@@ -27,37 +27,36 @@ workspace_d  = '{}/workspace'.format(outpath)
 output_d     = '{}/output'.format(outpath)
 graphs_d     = '{}/graphs'.format(outpath)
 plots_d      = '{}/plots'.format(outpath)
+short_d      = '{}/short'.format(outpath)
 
 
-simu_tools = ['truth', 'isoform', 'genome', 'segment']
-real_tools = ['troth']
+simu_tools = ['truth', 'isoform']
 venn_tools = list()
+overlaps = dict()
+simu_samples = set()
+
 for tool in config['tools']:
     if tool == 'flair':
         for r in config['gtf_sample_rates']:
             t = 'flair.{:.2f}'.format(r)
             simu_tools.append(t)
-            real_tools.append(t)
             if r in [1.00]:
                 venn_tools.append((t, 'FLAIR ({:.0%})'.format(r)))
     else:
         simu_tools.append(tool)
-        real_tools.append(tool)
         if tool == 'freddie':
             venn_tools.append((tool, 'Freddie'))  
         elif tool == 'stringtie':
             venn_tools.append((tool, 'StringTie2'))  
 
-overlaps = dict()
 for s in config['samples']:
     overlaps[s]=dict()
     for m in config['mappers']:
         overlaps[s][m]=dict()
         if config['samples'][s]['reads_info'] == 0:
-            tools = real_tools
-        else:
-            tools = simu_tools
-        for t in tools:
+            continue
+        simu_samples.add(s)
+        for t in simu_tools:
             overlaps[s][m][t] = dict()
             for l in open('{}/{}/{}/{}.overlaps.tsv'.format(graphs_d, s, m, t)):
                 c,i1,i2 = l.rstrip().split('\t')
@@ -68,7 +67,6 @@ for s in config['samples']:
                 if i1.startswith(t) and i2.startswith(t):
                     i1,i2 = sorted((i1,i2))
                 overlaps[s][m][t][c][i1] = overlaps[s][m][t][c].get(i1, set()) | {i2}
-
 
 rule all:
     input:
@@ -103,9 +101,8 @@ rule all:
                 p=plots_d,
                 s=s,
                 m=m,
-                t=t,
             )
-            for s in overlaps 
+            for s in simu_samples 
                 for m in overlaps[s] 
         ],
         [
@@ -113,14 +110,23 @@ rule all:
                 p=plots_d,
                 s=s,
                 m=m,
-                t=t,
                 f=f,
             )
             for s in overlaps 
                 for m in overlaps[s]
                     for f in ['exons', 'introns']
-        ],        
-
+        ],
+        [
+            '{p}/{s}/{m}/{t}.Aligned.sortedByCoord.out.bam'.format(
+                p=short_d,
+                s=s,
+                m=m,
+                t=t,
+            )
+            for s in overlaps 
+                for m in overlaps[s]
+                    for t,_ in venn_tools
+        ],
 
 rule align_to_transcript_jobs:
     input:
@@ -230,11 +236,9 @@ rule sim_gtf:
 
 def get_t_annot(sample, mapper):
     if config['samples'][sample]['reads_info'] == 0:
-        print('real')
         ref = config['samples'][sample]['ref']
         return config['references'][ref]['annot']
     else:
-        print('sim')
         return '{}/{}/{}/truth.gtf'.format(graphs_d,sample,mapper)
 
 
@@ -262,3 +266,40 @@ rule venn_plots:
         in_direct = '{}/{{sample}}/{{mapper}}'.format(graphs_d),
     shell:
         '{input.script} -o {params.prefix} -a {input.tool_gtfs} {input.t_gtf} -n {params.tool_names} {params.t_name} -T {params.t_name} {params.hides}'
+
+rule star_index:
+    input:
+        gtf = '{}/{{sample}}/{{mapper}}/{{tool}}.isoforms.gtf'.format(output_d),
+        genome = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['genome'],
+    output:
+        index = directory('{}/{{sample}}/{{mapper}}/{{tool}}.star_index'.format(short_d)),
+    threads:
+        32
+    conda:
+        'envs/star.yml'
+    shell:
+        'STAR'
+        ' --runMode genomeGenerate'
+        ' --genomeFastaFiles {input.genome}'
+        ' --sjdbGTFfile {input.gtf}'
+        ' --genomeDir {output.index}'
+        ' --runThreadN {threads}'
+
+rule star_map:
+    input:
+        reads  = lambda wildcards: config['samples'][wildcards.sample]['short-reads'],
+        index = '{}/{{sample}}/{{mapper}}/{{tool}}.star_index'.format(short_d),
+    output:
+        sam = '{}/{{sample}}/{{mapper}}/{{tool}}.Aligned.sortedByCoord.out.bam'.format(short_d),
+    params:
+        prefix = '{}/{{sample}}/{{mapper}}/{{tool}}.'.format(short_d),
+    conda:
+        'envs/star.yml'
+    shell:
+        'STAR'
+        ' --runMode alignReads'
+        ' --genomeDir {input.index}'
+        ' --readFilesIn {input.reads}'
+        ' --outSAMtype BAM SortedByCoordinate'
+        ' --outFileNamePrefix {params.prefix}'
+        ' --runThreadN {threads}'

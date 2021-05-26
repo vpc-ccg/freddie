@@ -247,8 +247,5 @@ def main():
     output_accuracy_stats(args.gtfs, feat_type_to_venn, args.truth, args.output)
 
 
-
-
-
 if __name__ == "__main__":
     main()
