@@ -106,58 +106,58 @@ rule all:
             mapper=config['mappers'],
             sample=config['samples'],
         ),
-        expand('{}/{{sample}}/{{mapper}}/{{tool}}.transcripts'.format(graphs_d),
-            tool=tools+[
-                'genome',
-                'segment',
-                'truth'
-            ],
-            mapper=config['mappers'],
-            sample=[s for s in config['samples'] if config['samples'][s]['reads_info']!=0],
-        ),
-        expand('{}/{{sample}}/{{mapper}}/{{tool}}.{{extension}}'.format(graphs_d),
-            tool=tools+[
-                # 'genome',
-                # 'segment',
-                'isoform',
-                'truth',
-            ],
-            mapper=config['mappers'],
-            sample=[s for s in config['samples'] if config['samples'][s]['reads_info']!=0],
-            extension=['bed', 'overlaps.tsv'],
-        ),
-        expand('{}/{{sample}}/{{mapper}}/{{tool}}.{{extension}}'.format(graphs_d),
-            tool=tools+[
-                'troth'
-            ],
-            mapper=config['mappers'],
-            sample=[s for s in config['samples'] if config['samples'][s]['reads_info']==0],
-            extension=['transcripts', 'bed', 'overlaps.tsv'],
-        ),
-        [
-            '{prefix}/{sample}/{mapper}/isoform_baseline/jobs/{contig}.txt'.format(
-                prefix=workspace_d,
-                sample=s,
-                mapper=m,
-                contig=c,
-            ) for m in config['mappers'] for s in config['samples'] if config['samples'][s]['reads_info']!=0 for c in sample_tids[s] 
-        ],
-        [
-            '{prefix}/{sample}/{mapper}/isoform_baseline/pafs/{contig}/done'.format(
-                prefix=workspace_d,
-                sample=s,
-                mapper=m,
-                contig=c,
-            ) for m in config['mappers'] for s in config['samples'] if config['samples'][s]['reads_info']!=0 for c in sample_tids[s] 
-        ],
-        [
-            '{prefix}/{sample}/{mapper}/isoform.transcripts/{contig}'.format(
-                prefix=graphs_d,
-                sample=s,
-                mapper=m,
-                contig=c,
-            ) for m in config['mappers'] for s in config['samples'] if config['samples'][s]['reads_info']!=0 for c in sample_tids[s] 
-        ],
+        # expand('{}/{{sample}}/{{mapper}}/{{tool}}.transcripts'.format(graphs_d),
+        #     tool=tools+[
+        #         'genome',
+        #         'segment',
+        #         'truth'
+        #     ],
+        #     mapper=config['mappers'],
+        #     sample=[s for s in config['samples'] if config['samples'][s]['reads_info']!=0],
+        # ),
+        # expand('{}/{{sample}}/{{mapper}}/{{tool}}.{{extension}}'.format(graphs_d),
+        #     tool=tools+[
+        #         # 'genome',
+        #         # 'segment',
+        #         'isoform',
+        #         'truth',
+        #     ],
+        #     mapper=config['mappers'],
+        #     sample=[s for s in config['samples'] if config['samples'][s]['reads_info']!=0],
+        #     extension=['bed', 'overlaps.tsv'],
+        # ),
+        # expand('{}/{{sample}}/{{mapper}}/{{tool}}.{{extension}}'.format(graphs_d),
+        #     tool=tools+[
+        #         'troth'
+        #     ],
+        #     mapper=config['mappers'],
+        #     sample=[s for s in config['samples'] if config['samples'][s]['reads_info']==0],
+        #     extension=['transcripts', 'bed', 'overlaps.tsv'],
+        # ),
+        # [
+        #     '{prefix}/{sample}/{mapper}/isoform_baseline/jobs/{contig}.txt'.format(
+        #         prefix=workspace_d,
+        #         sample=s,
+        #         mapper=m,
+        #         contig=c,
+        #     ) for m in config['mappers'] for s in config['samples'] if config['samples'][s]['reads_info']!=0 for c in sample_tids[s] 
+        # ],
+        # [
+        #     '{prefix}/{sample}/{mapper}/isoform_baseline/pafs/{contig}/done'.format(
+        #         prefix=workspace_d,
+        #         sample=s,
+        #         mapper=m,
+        #         contig=c,
+        #     ) for m in config['mappers'] for s in config['samples'] if config['samples'][s]['reads_info']!=0 for c in sample_tids[s] 
+        # ],
+        # [
+        #     '{prefix}/{sample}/{mapper}/isoform.transcripts/{contig}'.format(
+        #         prefix=graphs_d,
+        #         sample=s,
+        #         mapper=m,
+        #         contig=c,
+        #     ) for m in config['mappers'] for s in config['samples'] if config['samples'][s]['reads_info']!=0 for c in sample_tids[s] 
+        # ],
 
 
 rule minimap2:
@@ -229,16 +229,66 @@ rule make_time:
         outfile.write('\n')
         outfile.close()
 
-rule freddie:
+rule freddie_split:
     input:
         bam   = '{}/{{sample}}.{{mapper}}.bam'.format(preprocess_d),
         reads =  lambda wildcards: config['samples'][wildcards.sample]['reads'],
         time  = ancient('{}/{{sample}}/gtime.tsv'.format(output_d))
     output:
         split   = directory('{}/{{sample}}/{{mapper}}/freddie/split'.format(workspace_d)),
+    conda:
+        config['conda_env_names']['freddie']
+    threads:
+        64
+    wildcard_constraints:
+        mapper='desalt|minimap2'
+    shell:
+        'GNU_TIME=$(which time) && $GNU_TIME -f "freddie-split\\t{wildcards.mapper}\\t%e\\t%U\\t%M"    -a -o {input.time} '
+        '  py/freddie_split.py   -t {threads} -b {input.bam} -o {output.split} -r {input.reads}'
+
+
+rule freddie_segment:
+    input:
+        split   = '{}/{{sample}}/{{mapper}}/freddie/split'.format(workspace_d),
+        time  = ancient('{}/{{sample}}/gtime.tsv'.format(output_d))
+    output:
         segment = directory('{}/{{sample}}/{{mapper}}/freddie/segment'.format(workspace_d)),
+    conda:
+        config['conda_env_names']['freddie']
+    threads:
+        64
+    wildcard_constraints:
+        mapper='desalt|minimap2'
+    shell:
+        'GNU_TIME=$(which time) && $GNU_TIME -f "freddie-segment\\t{wildcards.mapper}\\t%e\\t%U\\t%M"  -a -o {input.time} '
+        '  py/freddie_segment.py -t {threads} -s {input.split} -o {output.segment} '
+
+
+rule freddie_cluster:
+    input:
+        segment = '{}/{{sample}}/{{mapper}}/freddie/segment'.format(workspace_d),
+        time  = ancient('{}/{{sample}}/gtime.tsv'.format(output_d))
+    output:
         cluster = directory('{}/{{sample}}/{{mapper}}/freddie/cluster'.format(workspace_d)),
-        # logs    = directory('{}/{{sample}}/{{mapper}}/freddie/cluster_logs'.format(workspace_d)),
+    params:
+        gurobi   = config['gurobi']['license'],
+    conda:
+        config['conda_env_names']['freddie']
+    threads:
+        64
+    wildcard_constraints:
+        mapper='desalt|minimap2'
+    shell:
+        'export GRB_LICENSE_FILE={params.gurobi} && '
+        'GNU_TIME=$(which time) && $GNU_TIME -f "freddie-cluster\\t{wildcards.mapper}\\t%e\\t%U\\t%M"  -a -o {input.time} '
+        ' py/freddie_cluster.py  -t {threads} -s {input.segment} -o {output.cluster} '
+
+rule freddie_cons:
+    input:
+        split   = '{}/{{sample}}/{{mapper}}/freddie/split'.format(workspace_d),
+        cluster = '{}/{{sample}}/{{mapper}}/freddie/cluster'.format(workspace_d),
+        time  = ancient('{}/{{sample}}/gtime.tsv'.format(output_d))
+    output:
         gtf     = protected('{}/{{sample}}/{{mapper}}/freddie.isoforms.gtf'.format(output_d)),
     params:
         gurobi   = config['gurobi']['license'],
@@ -249,16 +299,8 @@ rule freddie:
     wildcard_constraints:
         mapper='desalt|minimap2'
     shell:
-        'export GRB_LICENSE_FILE={params.gurobi} && '
-        'GNU_TIME=$(which time) && $GNU_TIME -f "freddie-split\\t{wildcards.mapper}\\t%e\\t%U\\t%M"    -a -o {input.time} '
-        '  py/freddie_split.py   -t {threads} -b {input.bam} -o {output.split} -r {input.reads} && '
-        'GNU_TIME=$(which time) && $GNU_TIME -f "freddie-segment\\t{wildcards.mapper}\\t%e\\t%U\\t%M"  -a -o {input.time} '
-        '  py/freddie_segment.py -t {threads} -s {output.split} -o {output.segment} && '
-        'GNU_TIME=$(which time) && $GNU_TIME -f "freddie-cluster\\t{wildcards.mapper}\\t%e\\t%U\\t%M"  -a -o {input.time} '
-        # ' py/freddie_cluster.py  -t {threads} -s {output.segment} -o {output.cluster} -l {output.logs} && '
-        ' py/freddie_cluster.py  -t {threads} -s {output.segment} -o {output.cluster} && '
         'GNU_TIME=$(which time) && $GNU_TIME -f "freddie-collapse\\t{wildcards.mapper}\\t%e\\t%U\\t%M" -a -o {input.time} '
-        ' py/freddie_isoforms.py -t {threads} -s {output.split} -c {output.cluster} -o {output.gtf}'
+        ' py/freddie_isoforms.py -t {threads} -s {input.split} -c {input.cluster} -o {output.gtf}'
 
 rule stringtie:
     input:

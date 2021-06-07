@@ -343,7 +343,7 @@ def get_transcriptional_intervals(reads):
     return fin_multi_tints
 
 
-def split_reads(read_files, rname_to_tint, contigs, outdir):
+def split_reads(read_files, rname_to_tint, contigs, outdir, threads):
     print('[freddie_split] Splitting reads...')
     outfiles = {c: open('{}/{}/reads.tsv'.format(outdir, c), 'w+')
                 for c in contigs}
@@ -497,8 +497,11 @@ def main():
         assert False, 'Number of contigs in reference is much larger than system hard limit on open files! {} vs {}'.format(len(contigs), RLIMIT_NOFILE_hard)
     if RLIMIT_NOFILE_soft < len(contigs)+10:
         resource.setrlimit(resource.RLIMIT_NOFILE, (len(contigs)+10, RLIMIT_NOFILE_hard))
+    # import pickle
+    # pickle.dump((rname_to_tint,final_contigs),open('TEST.PICKLE', 'wb'))
+    # exit()
     split_reads(read_files=args.reads,
-                rname_to_tint=rname_to_tint, contigs=final_contigs, outdir=args.outdir)
+                rname_to_tint=rname_to_tint, contigs=final_contigs, outdir=args.outdir, threads=args.threads)
 
 if __name__ == "__main__":
     main()

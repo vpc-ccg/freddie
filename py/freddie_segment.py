@@ -647,6 +647,8 @@ def run_segment(segment_args):
     tint = tints[0]
     read_sequence(
         tint=tint, reads_tsv='{}/{}/reads_{}_{}.tsv'.format(split_dir, contig, contig, tint_id))
+    out_file = open('{}/{}/segment_{}_{}.tsv'.format(outdir,
+                                                     contig, contig, tint_id), 'w+')
     segment(
         tint,
         sigma,
@@ -657,8 +659,6 @@ def run_segment(segment_args):
         min_read_support_outside
     )
 
-    out_file = open('{}/{}/segment_{}_{}.tsv'.format(outdir,
-                                                     contig, contig, tint_id), 'w+')
     record = list()
     record.append('#{}'.format(tint['chr']))
     record.append(str(tint['id']))
@@ -677,6 +677,7 @@ def run_segment(segment_args):
         out_file.write('\t'.join(record))
         out_file.write('\n')
     out_file.close()
+    return contig,tint_id
 
 
 def segment(tint, sigma, smoothed_threshold, threshold_rate, variance_factor, max_problem_size, min_read_support_outside):
@@ -708,8 +709,8 @@ def segment(tint, sigma, smoothed_threshold, threshold_rate, variance_factor, ma
         fixed_c_idxs, new_problems_total_count = break_large_problems(
             candidate_y_idxs, fixed_c_idxs, y, max_problem_size)
         fixed_c_idxs = sorted(fixed_c_idxs)
-        for s, e in zip(fixed_c_idxs[:-1], fixed_c_idxs[1:]):
-            assert e-s <= max_problem_size+5, (s,e,max_problem_size)
+        # for s, e in zip(fixed_c_idxs[:-1], fixed_c_idxs[1:]):
+        #     assert e-s <= max_problem_size+5, (s,e,max_problem_size)
 
         cumulative_coverage = get_cumulative_coverage(
             candidate_y_idxs, Yy_idx_to_r_idxs[Y_idx])
@@ -785,7 +786,7 @@ def main():
             ))
     if args.threads > 1:
         p = Pool(args.threads)
-        for idx, tint_id in enumerate(p.imap_unordered(run_segment, segment_args, chunksize=1)):
+        for idx, (contig,tint_id) in enumerate(p.imap_unordered(run_segment, segment_args, chunksize=1)):
             if not idx % ceil(len(segment_args)/100) == 0:
                 continue
             print('[freddie_segment] Done with {}/{} tints ({:.1%})'.format(
@@ -794,7 +795,7 @@ def main():
                 idx/len(segment_args)),
             )
     else:
-        for idx, tint_id in enumerate(map(run_segment, segment_args)):
+        for idx, (contig,tint_id) in enumerate(map(run_segment, segment_args)):
             if not idx % ceil(len(segment_args)/100) == 0:
                 continue
             print('[freddie_segment] Done with {}/{} tints ({:.1%})'.format(

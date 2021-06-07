@@ -117,7 +117,7 @@ rule all:
                     for f in ['exons', 'introns']
         ],
         [
-            '{p}/{s}/{m}/{t}.Aligned.sortedByCoord.out.bam'.format(
+            '{p}/{s}/{m}/{t}_SJ.out.tab'.format(
                 p=short_d,
                 s=s,
                 m=m,
@@ -272,27 +272,34 @@ rule star_index:
         gtf = '{}/{{sample}}/{{mapper}}/{{tool}}.isoforms.gtf'.format(output_d),
         genome = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['genome'],
     output:
-        index = directory('{}/{{sample}}/{{mapper}}/{{tool}}.star_index'.format(short_d)),
+        index = directory('{}/{{sample}}/{{mapper}}/{{tool}}_star_index'.format(short_d)),
+    params:
+        tmp_dir = '{}/{{sample}}/{{mapper}}/{{tool}}_star_tmp'.format(short_d),
     threads:
         32
     conda:
         'envs/star.yml'
     shell:
+        'rm -rf {params.tmp_dir} && '
+        'mkdir {output.index} && '
         'STAR'
         ' --runMode genomeGenerate'
         ' --genomeFastaFiles {input.genome}'
         ' --sjdbGTFfile {input.gtf}'
         ' --genomeDir {output.index}'
+        ' --outTmpDir {params.tmp_dir}'
         ' --runThreadN {threads}'
 
 rule star_map:
     input:
         reads  = lambda wildcards: config['samples'][wildcards.sample]['short-reads'],
-        index = '{}/{{sample}}/{{mapper}}/{{tool}}.star_index'.format(short_d),
+        index = '{}/{{sample}}/{{mapper}}/{{tool}}_star_index'.format(short_d),
     output:
-        sam = '{}/{{sample}}/{{mapper}}/{{tool}}.Aligned.sortedByCoord.out.bam'.format(short_d),
+        sam = '{}/{{sample}}/{{mapper}}/{{tool}}_SJ.out.tab'.format(short_d),
     params:
-        prefix = '{}/{{sample}}/{{mapper}}/{{tool}}.'.format(short_d),
+        prefix = '{}/{{sample}}/{{mapper}}/{{tool}}_'.format(short_d),
+    threads:
+        64
     conda:
         'envs/star.yml'
     shell:
@@ -300,6 +307,7 @@ rule star_map:
         ' --runMode alignReads'
         ' --genomeDir {input.index}'
         ' --readFilesIn {input.reads}'
-        ' --outSAMtype BAM SortedByCoordinate'
+        ' --outSAMtype SAM'
         ' --outFileNamePrefix {params.prefix}'
+        ' --readFilesCommand zcat'
         ' --runThreadN {threads}'
