@@ -705,8 +705,8 @@ def segment(tint, sigma, smoothed_threshold, threshold_rate, variance_factor, ma
         for c_idx, y_idx in enumerate(candidate_y_idxs):
             if y[y_idx] > variance_threhsold:
                 fixed_c_idxs.add(c_idx)
-        fixed_c_idxs, new_problems_total_count = break_large_problems(
-            candidate_y_idxs, fixed_c_idxs, y, max_problem_size)
+        # fixed_c_idxs, new_problems_total_count = break_large_problems(
+        #     candidate_y_idxs, fixed_c_idxs, y, max_problem_size)
         fixed_c_idxs = sorted(fixed_c_idxs)
         for s, e in zip(fixed_c_idxs[:-1], fixed_c_idxs[1:]):
             assert e-s+1 <= max_problem_size+5
