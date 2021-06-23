@@ -344,10 +344,10 @@ def get_transcriptional_intervals(reads):
 
 
 def split_reads(read_files, rname_to_tint, contigs, outdir, threads):
-    print('[freddie_split] Splitting reads...')
     outfiles = {c: open('{}/{}/reads.tsv'.format(outdir, c), 'w+')
                 for c in contigs}
     for read_file in read_files:
+        print('[freddie_split] Splitting reads:', read_file)
         for idx, line in enumerate(open(read_file)):
             if idx == 0:
                 if line[0] == '@':
