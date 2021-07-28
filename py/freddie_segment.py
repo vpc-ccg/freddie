@@ -561,7 +561,7 @@ def optimize(
         max_b = (-1, -1, -1)
         max_d = float('-inf')
         # Segment too small: y_idx[j]-y_idx[i] < 5 or
-        if candidate_y_idxs[j]-candidate_y_idxs[i] < 5 or candidate_y_idxs[k]-candidate_y_idxs[j] < 5:
+        if candidate_y_idxs[j]-candidate_y_idxs[i] < 30 or candidate_y_idxs[k]-candidate_y_idxs[j] < 30:
             D[(i, j, k)] = max_d
             B[(i, j, k)] = max_b
             return D[(i, j, k)]

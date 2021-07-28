@@ -37,12 +37,21 @@ samples:
     #         - /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/22RV1.pcr-free-cDNA.ONT.from-180525-to-180807.fastq
     #     short-reads:
     #         - /groups/hachgrp/projects/ana-22rv1/raw-data/wts/fastq/SRR8446406/SRR8446406.fastq
-    DHp:
+    # DHp:
+    #     ref        : homo_sapiens
+    #     seq_type   : ont1d
+    #     reads_info : 0
+    #     reads      :
+    #         - /groups/hachgrp/projects/col-dong-rna-splicing/raw-data/polyA/P003R000/fastq/P003R000_pass.fastq
+    #     short-reads:
+    #         - /groups/hachgrp/projects/col-dong-rna-splicing/raw-data/polyA/P003R001/fastq/P003R001_R1.fastq.gz
+    #         - /groups/hachgrp/projects/col-dong-rna-splicing/raw-data/polyA/P003R001/fastq/P003R001_R2.fastq.gz
+    DHp_select:
         ref        : homo_sapiens
         seq_type   : ont1d
         reads_info : 0
         reads      :
-            - /groups/hachgrp/projects/col-dong-rna-splicing/raw-data/polyA/P003R000/fastq/P003R000_pass.fastq
+            - /home/borabi/Freddie/selected_genes.fastq
         short-reads:
             - /groups/hachgrp/projects/col-dong-rna-splicing/raw-data/polyA/P003R001/fastq/P003R001_R1.fastq.gz
             - /groups/hachgrp/projects/col-dong-rna-splicing/raw-data/polyA/P003R001/fastq/P003R001_R2.fastq.gz
