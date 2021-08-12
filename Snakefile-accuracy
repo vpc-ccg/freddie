@@ -299,7 +299,7 @@ rule star_map:
     params:
         prefix = '{}/{{sample}}/{{mapper}}/{{tool}}_'.format(short_d),
     threads:
-        64
+        32
     conda:
         'envs/star.yml'
     shell:

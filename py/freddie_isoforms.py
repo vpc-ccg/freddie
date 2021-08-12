@@ -228,7 +228,7 @@ def isoforms_cons(isoforms, segments, reads):
                 cov[j] += 1
             tails[read['tail']] += 1
         
-        cons = [x/c > 0.3 if c > 0 else False for x,c in zip(cons,cov) ]
+        cons = [x/c > 0.5 if x >= 3 else False for x,c in zip(cons,cov) ]
         if not True in cons:
             continue
         if tails['S'] > tails['E']:
