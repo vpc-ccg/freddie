@@ -2,7 +2,7 @@
 import os
 from multiprocessing import Pool
 
-from math import ceil
+from math import ceil,floor
 import argparse
 import re
 import glob
@@ -67,6 +67,11 @@ def parse_args():
                         type=int,
                         default=3,
                         help="Minimum isoform size in terms of number supporting reads. Default {}".format(3))
+    parser.add_argument("-mi",
+                        "--max-ilp",
+                        type=int,
+                        default=1500,
+                        help="Maximum number of unique reads allowed for an ILP instance. ILP instances with more reads will have their input broken into evenly sized problems, each with less than the max. Default {}".format(1500))
     parser.add_argument("-to",
                         "--timeout",
                         type=int,
@@ -98,6 +103,12 @@ def parse_args():
     assert args.max_rounds >= 0
 
     return args
+
+def split_list_evenly(l, m):
+    p = ceil(len(l)/m)
+    s = ceil(len(l)/p)
+    for idx in range(0, p*s, s):
+        yield l[idx:idx+s]
 
 
 def read_segment(segment_tsv):
@@ -136,9 +147,9 @@ def read_segment(segment_tsv):
                            for p in poly_gap_prog.findall(re_dict['gaps'])},
             )
             read_rep_key = [d for d in re_dict['data'].replace('2', '0')]
-            read_rep_key += ['.{}'.format(g[2] if int(g[2]) > 3 else 0)
+            read_rep_key += ['.{}'.format(g[2] if int(g[2]) > 10 else 0)
                              for g in internal_gap_prog.findall(re_dict['gaps'])]
-            read_rep_key += ['.{}{}'.format(p[0][0], p[2] if int(p[2]) > 3 else 0)
+            read_rep_key += ['.{}{}'.format(p[0][0], p[2] if int(p[2]) > 10 else 0)
                              for p in poly_gap_prog.findall(re_dict['gaps'])]
             read_rep_key = ''.join(read_rep_key)
             tind_id = read['tint']
@@ -179,7 +190,7 @@ def garbage_cost_exons(I):
 # TO DO: think about better ways to define the cost to assign to the garbagte isoform
 
 
-def partition_reads(tint):
+def partition_reads(tint, maximum_ilp_size):
     reads = tint['reads']
     read_reps = tint['read_reps']
     I = tint['ilp_data']['I']
@@ -229,18 +240,18 @@ def partition_reads(tint):
     for c in components.connected_components(G):
         rids = list()
         incomp = list()
-        c = list(c)
-        for idx, i in enumerate(c):
-            rids.extend(unique_data[i][1])
-            # for j in c[idx+1:]:
-            #     i,j = min(i,j),max(i,j)
-            #     assert i<j
-            #     if G.has_edge(i,j):
-            #         continue
-            #     for rid_1 in unique_data[i][1]:
-            #         for rid_2 in unique_data[j][1]:
-            #             incomp.append((rid_1,rid_2))
-        tint['partitions'].append((rids, incomp))
+        for c in split_list_evenly(list(c), maximum_ilp_size):
+            for idx, i in enumerate(c):
+                rids.extend(unique_data[i][1])
+                for j in c[idx+1:]:
+                    i,j = min(i,j),max(i,j)
+                    assert i<j
+                    if G.has_edge(i,j):
+                        continue
+                    for rid_1 in unique_data[i][1]:
+                        for rid_2 in unique_data[j][1]:
+                            incomp.append((rid_1,rid_2))
+            tint['partitions'].append((rids, incomp))
 
 
 def preprocess_ilp(tint, ilp_settings):
@@ -684,7 +695,7 @@ def output_isoforms(tint, out_file):
             output.append(str((reads[ridx]['partition'])))
             output.append(str((reads[ridx]['poly_tail_category'])))
             output.append('*')
-            output.append('*')
+            output.append(''.join(map(str, reads[ridx]['data'])))
             exon_strs = [str(x) for x in reads[ridx]['data']]
             for (j1, j2), l in reads[ridx]['gaps'].items():
                 exon_strs[j1] += '({})'.format(l)
@@ -702,6 +713,7 @@ def cluster_tint(cluster_args):
         tint_id,
         ilp_settings,
         min_isoform_size,
+        max_ilp,
         logs_dir,
     ) = cluster_args
     tints = read_segment(
@@ -715,7 +727,7 @@ def cluster_tint(cluster_args):
         timeout_log = open(
             '{}/{}/timeout.log'.format(logs_dir, tint['id']), 'w+')
     preprocess_ilp(tint, ilp_settings)
-    partition_reads(tint)
+    partition_reads(tint, max_ilp)
     # print('# Paritions ({}) sizes: {}\n'.format(
     #     len(tint['partitions']), [len(p) for p in tint['partitions']]))
     tint['isoforms'] = list()
@@ -811,16 +823,17 @@ def main():
                 tint_id,
                 ilp_settings,
                 args.min_isoform_size,
+                args.max_ilp,
                 '{}/{}'.format(args.logs_dir, contig) if args.logs_dir != None else None,
             ])
     if args.threads > 1:
         p = Pool(args.threads)
-        for idx, tint_id in enumerate(p.imap_unordered(cluster_tint, cluster_args, chunksize=5)):
-            print('[freddie_cluster] Done with {}/{} tints ({:.1%})'.format(idx,
+        for idx, tint_id in enumerate(p.imap_unordered(cluster_tint, cluster_args, chunksize=1)):
+            print('[freddie_cluster] Done with {}/{} tints ({:.1%})'.format(idx+1,
                                                                             len(cluster_args), idx/len(cluster_args)))
     else:
         for idx, tint_id in enumerate(map(cluster_tint, cluster_args)):
-            print('[freddie_cluster] Done with {}/{} tints ({:.1%})'.format(idx,
+            print('[freddie_cluster] Done with {}/{} tints ({:.1%})'.format(idx+1,
                                                                             len(cluster_args), idx/len(cluster_args)))
 
 

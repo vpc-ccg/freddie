@@ -2,11 +2,13 @@
 from multiprocessing import Pool
 import os
 import glob
+import psutil
 
-from itertools import chain, groupby
+from itertools import combinations, groupby
 import argparse
 import re
 from math import exp, ceil
+import bisect
 
 import numpy as np
 from scipy.ndimage import gaussian_filter1d
@@ -48,6 +50,18 @@ dna_id = dict(
     T='T'
 )
 
+def tot_mem():
+    return psutil.Process(os.getpid()).memory_info().rss/1024**3
+
+def log_file_write_maker(tint_id, contig, LOG_FILE):
+    def log_file_write(stage, state):
+        LOG_FILE.write(f'{tint_id}\t')
+        LOG_FILE.write(f'{contig}\t')
+        LOG_FILE.write(f'{stage}\t')
+        LOG_FILE.write(f'{state}\t')
+        LOG_FILE.write(f'{tot_mem(): 6.4}\n')
+        LOG_FILE.flush()
+    return log_file_write
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -115,7 +129,8 @@ def read_split(split_tsv):
                 intervals=[(int(x[0]), int(x[1]))
                            for x in cinterval_prog.findall(re_dict['intervals'])],
                 read_count=int(re_dict['read_count']),
-                reads=list()
+                reads=list(),
+                read_reps=dict(),
             )
             assert not tint['id'] in tints, 'Transcriptional interval with id {} is repeated!'.format(
                 tint['id'])
@@ -146,6 +161,12 @@ def read_split(split_tsv):
             tints[read['tint']]['reads'].append(read)
     for tint in tints.values():
         assert len(tint['reads']) == tint['read_count']
+        for ridx,read in enumerate(tint['reads']):
+            k = tuple(((ts,te) for ts,te,_,_,_ in read['intervals']))
+            if not k in tint['read_reps']:
+                tint['read_reps'][k]=list()
+            tint['read_reps'][k].append(ridx)
+    tint['read_reps'] = list(tint['read_reps'].items())
     return list(tints.values())
 
 
@@ -161,14 +182,81 @@ def read_sequence(tint, reads_tsv):
         read['seq'] = rid_to_seq[read['id']]
         read['length'] = len(read['seq'])
     return
+    
 
+def get_cumulative_coverage(read_reps, candidate_y_idxs, y_idx_to_pos, pos_to_Yy_idx, Y_idx):
+    C = np.zeros((
+        len(candidate_y_idxs) + 1, # Cumulative coverage upto but excluding each candidate y_idx
+        len(read_reps),            # for each read_rep
+    ), dtype=np.uint32)
 
-def get_cumulative_coverage(candidate_y_idxs, y_idx_to_r_idxs):
-    C = np.zeros((len(candidate_y_idxs)+1,
-                  y_idx_to_r_idxs.shape[1]), dtype=np.uint32)
-    for C_idx, (cur_y_idx, nxt_y_idx) in enumerate(zip(candidate_y_idxs[:-1], candidate_y_idxs[1:]), start=1):
-        C[C_idx] = y_idx_to_r_idxs[cur_y_idx:nxt_y_idx].sum(axis=0)
-    for C_idx in range(1, len(C)):
+    # First, build a dictionary {pos : (Y_C index, coverage on that entry) }
+    total_coverage = 0
+    pos_to_C_idx = dict() 
+    for read_rep,_ in read_reps:
+        for ts, te in read_rep:
+            Y_idx_s, y_idx_s = pos_to_Yy_idx[ts]
+            Y_idx_e, y_idx_e = pos_to_Yy_idx[te]
+            assert Y_idx_s == Y_idx_e
+            # Checking if this interval of the read covers this tint interval
+            if Y_idx_s != Y_idx:
+                continue
+            # print('=======\n\n\n(ts, te)', (ts, te))
+            total_coverage += te-ts + 1
+            if not ts in pos_to_C_idx:
+                pos_to_C_idx[ts] = bisect.bisect_right(
+                    candidate_y_idxs,
+                    y_idx_s,
+                )
+            if not te in pos_to_C_idx:
+                pos_to_C_idx[te] = bisect.bisect_right(
+                    candidate_y_idxs,
+                    y_idx_e,
+                    lo = pos_to_C_idx[ts],
+                )
+    for rr_idx,(read_rep,_) in enumerate(read_reps):
+        for ts, te in read_rep:
+            if pos_to_Yy_idx[ts][0] != Y_idx:
+                continue
+            C_idx_s = pos_to_C_idx[ts]
+            C_idx_e = pos_to_C_idx[te]
+            assert 0 < C_idx_s <= C_idx_e <= len(candidate_y_idxs), (C_idx_s,C_idx_e,ts,te)
+            if C_idx_s == C_idx_e:
+                C[C_idx_s][rr_idx] += te-ts +1
+                continue
+            # print('===')
+            # print('candidate_y_idxs',candidate_y_idxs)
+            # print('ts',ts)
+            # print('te',te)
+            # print('pos_to_Yy_idx[ts]',pos_to_Yy_idx[ts])
+            # print('pos_to_Yy_idx[te]',pos_to_Yy_idx[te])            
+            # print('C_idx_s',C_idx_s)
+            # print('C_idx_e',C_idx_e)
+
+            cov_s = y_idx_to_pos[candidate_y_idxs[C_idx_s]] - ts
+            assert cov_s>0,cov_s
+            # print('cov_s',cov_s)
+            cov_e = te - y_idx_to_pos[candidate_y_idxs[C_idx_e-1]] + 1
+            assert cov_e>0,cov_e
+            # print('cov_e',cov_e)
+
+            # Adding coverge of the first candidate segment
+            C[C_idx_s][rr_idx] += cov_s
+            # Adding coverge of the last candidate segment
+            C[C_idx_e][rr_idx] += cov_e
+            # Adding full coverage for all segments in between 
+            for C_idx in range(C_idx_s+1, C_idx_e):
+                seg_len = candidate_y_idxs[C_idx] - candidate_y_idxs[C_idx-1]
+                assert seg_len > 0, seg_len
+                C[C_idx][rr_idx] += seg_len
+        # print('C[:,rr_idx]',C[:,rr_idx])
+        # print('(ts,te,te-ts+1)')
+        # print([(ts,te,te-ts+1) for (ts,te) in read_rep])
+    # Doubling checking we added the slack correctly
+    # print(C)
+    assert C.sum() == total_coverage, (C.sum(),total_coverage)
+    # Summing cumulatively over the candidate segments
+    for C_idx in range(1, C.shape[0]):
         C[C_idx] += C[C_idx-1]
     return C
 
@@ -399,24 +487,38 @@ def get_unaligned_gaps_and_polyA(read, segs):
     read['gaps'] = sorted(read['gaps'])
 
 
-def optimize(candidate_y_idxs, C, start, end, smoothed_threshold, threshold_rate, read_support):
-    cov_mem = dict()
+def optimize(
+    candidate_y_idxs, 
+    C, 
+    start, 
+    end, 
+    W, 
+    smoothed_threshold, 
+    threshold_rate, 
+    read_support, 
+    log_file_write
+):
     yea_mem = dict()
     nay_mem = dict()
     amb_mem = dict()
-
+    # print('candidate_y_idxs',candidate_y_idxs)
+    # print('C',C)
+    # print(start, end)
+    # print('W',W)
     # print('Precomputing coverage mems for {}...'.format((start,end)))
     for i in range(start, end):
         for j in range(i, end+1):
             seg_len = (candidate_y_idxs[j]-candidate_y_idxs[i]+1)
-            cov_mem[(i, j)] = (C[j]-C[i])/seg_len
             h = get_high_threshold(seg_len, smoothed_threshold, threshold_rate)
             l = 1-h
-            yea_mem[(i, j)] = cov_mem[(i, j)] > h
-            nay_mem[(i, j)] = cov_mem[(i, j)] < l
-            amb_mem[(i, j)] = np.logical_not(
+            c = (C[j]-C[i])/seg_len
+            yea_mem[(i, j)] = c > h
+            nay_mem[(i, j)] = c < l
+            amb_mem[(i, j)] = W*np.logical_not(
                 np.logical_or(yea_mem[(i, j)], nay_mem[(i, j)]))
-
+    # print('yea_mem',yea_mem)
+    # print('nay_mem',nay_mem)
+    # print('amb_mem',amb_mem)
     in_mem = dict()
 
     def inside(i, j):
@@ -433,16 +535,18 @@ def optimize(candidate_y_idxs, C, start, end, smoothed_threshold, threshold_rate
             if i == j or j == k:
                 out_mem[(i, j, k)] = 0
             else:
-                out_mem[(i, j, k)] = np.sum(np.logical_or(
-                    np.logical_and(
-                        yea_mem[(i, j)],
-                        nay_mem[(j, k)]
-                    ),
-                    np.logical_and(
-                        nay_mem[(i, j)],
-                        yea_mem[(j, k)]
-                    ),
-                ))
+                
+                X1 = np.logical_and(
+                    yea_mem[(i, j)],
+                    nay_mem[(j, k)]
+                )
+                X2 = np.logical_and(
+                    nay_mem[(i, j)],
+                    yea_mem[(j, k)]
+                )
+                X3 = np.logical_or(X1, X2)
+                X4 = W*X3
+                out_mem[(i, j, k)] = np.sum(X4)
                 if out_mem[(i, j, k)] < read_support:
                     out_mem[(i, j, k)] = float('-inf')
         return out_mem[(i, j, k)]
@@ -457,7 +561,7 @@ def optimize(candidate_y_idxs, C, start, end, smoothed_threshold, threshold_rate
         max_b = (-1, -1, -1)
         max_d = float('-inf')
         # Segment too small: y_idx[j]-y_idx[i] < 5 or
-        if candidate_y_idxs[j]-candidate_y_idxs[i] < 5 or candidate_y_idxs[k]-candidate_y_idxs[j] < 5:
+        if candidate_y_idxs[j]-candidate_y_idxs[i] < 30 or candidate_y_idxs[k]-candidate_y_idxs[j] < 30:
             D[(i, j, k)] = max_d
             B[(i, j, k)] = max_b
             return D[(i, j, k)]
@@ -487,23 +591,48 @@ def optimize(candidate_y_idxs, C, start, end, smoothed_threshold, threshold_rate
                 max_b = (start, j, k)
                 max_d = dp(*max_b)
     # print(max_b,max_d)
-    return D, B, max_d, max_b, in_mem, out_mem
+    # print('\n=====')
+    # print(f'C       : {C.shape}')
+    # print(f'e-s+1   : {end-start+1}')
+    # # print(f'end     : {end}')
+    # print(f'yea_mem : {len(yea_mem)}')
+    # print(f'in_mem  : {len(in_mem)}')
+    # print(f'out_mem : {len(out_mem)}')
+    # print(f'D       : {len(D)}')
+    # print(f'B       : {len(B)}')
+    # log_file_write('del-mem', 'before')
+    del yea_mem,nay_mem,amb_mem,in_mem,out_mem,D
+    # log_file_write('del-mem', 'after')
+    return B, max_b
 
 
-def run_optimize(candidate_y_idxs, fixed_c_idxs, coverage, smoothed_threshold, threshold_rate, min_read_support_outside):
+def run_optimize(
+    candidate_y_idxs,
+    fixed_c_idxs,
+    coverage,
+    read_rep_weights,
+    smoothed_threshold,
+    threshold_rate,
+    min_read_support_outside,
+    log_file_write
+):
     final_c_idxs = set(fixed_c_idxs)
     for idx, (start, end) in enumerate(zip(fixed_c_idxs[:-1], fixed_c_idxs[1:])):
         # print('{}/{}: {}'.format(idx+1, len(fixed_c_idxs)-1, end-start+1))
-        D, B, max_d, max_b, in_mem, out_mem = optimize(
+        # D, B, max_d, max_b, in_mem, out_mem = optimize(
+        # log_file_write(f'Optimize-{idx}', 'before')
+        B, max_b = optimize(
             candidate_y_idxs=candidate_y_idxs,
             C=coverage,
             start=start,
             end=end,
+            W=read_rep_weights,
             smoothed_threshold=smoothed_threshold,
             threshold_rate=threshold_rate,
-            # threshold_abs            = threshold_abs,
             read_support=min_read_support_outside,
+            log_file_write=log_file_write,
         )
+        # log_file_write(f'Optimize-{idx}', 'after')
         while max_b != (-1, -1, -1):
             final_c_idxs.update(max_b)
             # print('D:', D[max_b])
@@ -511,6 +640,7 @@ def run_optimize(candidate_y_idxs, fixed_c_idxs, coverage, smoothed_threshold, t
             # print('I:', in_mem[(max_b[0],max_b[1])])
             # print('O:', out_mem[max_b])
             max_b = B[max_b]
+        del B, max_b
     return sorted(final_c_idxs)
 
 
@@ -530,11 +660,12 @@ def non_desert(y, jump=10):
             l.append([f_idx, l_idx])
     return l
 
-
-def candidates_from_peaks(y, f_y_idx, l_y_idx):
-    # print('f_y_idx, l_y_idx',f_y_idx, l_y_idx)
-    c, _ = find_peaks(y[f_y_idx:l_y_idx+1])
-    c = [f_y_idx+y_idx for y_idx in c]
+def candidates_from_peaks(y):
+    c, _ = find_peaks(y)
+    c = list(c)
+    c.append(0)
+    c.append(len(y)-1)
+    c = sorted(set(c))       
     return c
 
 
@@ -595,9 +726,7 @@ def break_large_problems(candidate_y_idxs, fixed_c_idxs, y, max_problem_size, wi
 def process_splicing_data(tint):
     pos_to_Yy_idx = dict()
     Yy_idx_to_pos = list()
-    Yy_idx_to_r_idxs = list()
     Y_raw = list()
-    # print('Generating index for tint {} with {} intervals'.format(tint['id'], tint['intervals']))
     for s, e in tint['intervals']:
         y_idx_to_pos = list()
         for p in range(s, e+1):
@@ -605,25 +734,21 @@ def process_splicing_data(tint):
             pos_to_Yy_idx[p] = (len(Yy_idx_to_pos), len(y_idx_to_pos))
             y_idx_to_pos.append(p)
         Yy_idx_to_pos.append(y_idx_to_pos)
-        Yy_idx_to_r_idxs.append(
-            np.zeros((len(y_idx_to_pos), len(tint['reads'])), dtype=bool))
         Y_raw.append(np.zeros(len(y_idx_to_pos)))
     assert len(pos_to_Yy_idx) == sum(len(y_idx_to_pos)
                                      for y_idx_to_pos in Y_raw)
-    # print('Building per read coverage data for tint {}'.format(tint['id']))
-    for r_idx, read in enumerate(tint['reads']):
-        read['data'] = list()
-        for ts, te, _, _, cigar in read['intervals']:
+    for read_rep, r_idxes in tint['read_reps']:
+        for rid in r_idxes:
+            tint['reads'][rid]['data'] = list()
+        for ts, te in read_rep:
             Y_idx_s, y_idx_s = pos_to_Yy_idx[ts]
             Y_idx_e, y_idx_e = pos_to_Yy_idx[te]
             assert Y_idx_s == Y_idx_e, (Y_idx_s,Y_idx_e)
             Y_idx = Y_idx_s
-            Y_raw[Y_idx][y_idx_s] += 1
-            Y_raw[Y_idx][y_idx_e] += 1
-            Yy_idx_to_r_idxs[Y_idx][y_idx_s:y_idx_e,r_idx] = True
+            Y_raw[Y_idx][y_idx_s] += len(r_idxes)
+            Y_raw[Y_idx][y_idx_e] += len(r_idxes)
     return (
         Yy_idx_to_pos,
-        Yy_idx_to_r_idxs,
         Y_raw,
     )
 
@@ -641,12 +766,22 @@ def run_segment(segment_args):
         max_problem_size,
         min_read_support_outside
     ) = segment_args
+    LOG_FILE = open('{}/{}/segment_{}_{}.log'.format(outdir,
+                                                     contig, contig, tint_id), 'w+')
+    log_file_write = log_file_write_maker(tint_id, contig, LOG_FILE)
+    # log_file_write('read_split', 'before')
     tints = read_split(
         split_tsv='{}/{}/split_{}_{}.tsv'.format(split_dir, contig, contig, tint_id))
+    # log_file_write('read_split', 'after')
     assert len(tints) == 1
     tint = tints[0]
+    # log_file_write('read_sequence', 'before')
     read_sequence(
         tint=tint, reads_tsv='{}/{}/reads_{}_{}.tsv'.format(split_dir, contig, contig, tint_id))
+    out_file = open('{}/{}/segment_{}_{}.tsv'.format(outdir,
+                                                     contig, contig, tint_id), 'w+')
+    # log_file_write('read_sequence', 'after')
+    # log_file_write('segment', 'before')
     segment(
         tint,
         sigma,
@@ -654,11 +789,12 @@ def run_segment(segment_args):
         threshold_rate,
         variance_factor,
         max_problem_size,
-        min_read_support_outside
+        min_read_support_outside,
+        log_file_write,
     )
+    # log_file_write('segment', 'after')
 
-    out_file = open('{}/{}/segment_{}_{}.tsv'.format(outdir,
-                                                     contig, contig, tint_id), 'w+')
+    # log_file_write('output', 'before')
     record = list()
     record.append('#{}'.format(tint['chr']))
     record.append(str(tint['id']))
@@ -677,85 +813,142 @@ def run_segment(segment_args):
         out_file.write('\t'.join(record))
         out_file.write('\n')
     out_file.close()
+    # log_file_write('output', 'after')
+    # log_file_write('del-tint', 'before')
+    del tint
+    # log_file_write('del-tint', 'after')
+    LOG_FILE.close()
+    return contig,tint_id
 
 
-def segment(tint, sigma, smoothed_threshold, threshold_rate, variance_factor, max_problem_size, min_read_support_outside):
+def segment(tint, sigma, smoothed_threshold, threshold_rate, variance_factor, max_problem_size, min_read_support_outside, log_file_write):
+    # log_file_write('process_splicing_data', 'before')
     (
         Yy_idx_to_pos,
-        Yy_idx_to_r_idxs,
         Y_raw,
     ) = process_splicing_data(tint)
+    # log_file_write('process_splicing_data', 'after')
 
+    # Creating a smoothed version of the splicing signal
+    # log_file_write('gaussian_filter1d', 'before')
     Y = [gaussian_filter1d(y, sigma, truncate=4.0) for y in Y_raw]
+    # log_file_write('gaussian_filter1d', 'after')
+    # Extracting non-zero values to detect extremely high splicing signals
+    # log_file_write('Y_none_zero_vals', 'before')
     Y_none_zero_vals = np.array([v for y in Y for v in y if v > 0])
+    # log_file_write('Y_none_zero_vals', 'after')
     variance_threhsold = Y_none_zero_vals.mean() + variance_factor * \
         Y_none_zero_vals.std()
-
+    
     tint['final_positions'] = list()
-    for Y_idx, y in enumerate(Y):
-        candidate_y_idxs = list()
+    datas = [list() for _ in tint['read_reps']]
+    # log_file_write('segmentation', 'before')
+    for Y_idx in range(len(Y)):
+        # log_file_write(f'segmentation-{Y_idx}', 'before')
+        y = Y[Y_idx]
+        # Getting candidate splice locations for the current tint interval
+        # log_file_write(f'candidates_from_peaks-{Y_idx}', 'before')
+        candidate_y_idxs = candidates_from_peaks(y)
+        # log_file_write(f'candidates_from_peaks-{Y_idx}', 'after')
+        # Computing the cumulative coverage for each read rep on the intervals
+        # defined by the candidate locations
+        # log_file_write(f'get_cumulative_coverage-{Y_idx}', 'before')
+        C = get_cumulative_coverage(
+            read_reps        = tint['read_reps'],
+            candidate_y_idxs = candidate_y_idxs,
+            y_idx_to_pos     = Yy_idx_to_pos[Y_idx],
+            pos_to_Yy_idx    = pos_to_Yy_idx,
+            Y_idx            = Y_idx,
+        )
+        # log_file_write(f'get_cumulative_coverage-{Y_idx}', 'after')
         fixed_c_idxs = set()
-        for f_y_idx, l_y_idx in [[0, len(y)-1]]:
-            fixed_c_idxs.add(len(candidate_y_idxs))
-            current_candidates = candidates_from_peaks(y, f_y_idx, l_y_idx)
-            current_candidates = sorted(
-                set(current_candidates) | {f_y_idx, l_y_idx})
-            candidate_y_idxs.extend(current_candidates)
-            fixed_c_idxs.add(len(candidate_y_idxs)-1)
+        # First and last candidates are always fixed
+        fixed_c_idxs.add(0)
+        fixed_c_idxs.add(len(candidate_y_idxs)-1)
+        # Any candidate with signal above the threshold is fixed
         for c_idx, y_idx in enumerate(candidate_y_idxs):
             if y[y_idx] > variance_threhsold:
                 fixed_c_idxs.add(c_idx)
-        # fixed_c_idxs, new_problems_total_count = break_large_problems(
-        #     candidate_y_idxs, fixed_c_idxs, y, max_problem_size)
+        # If the number of consecutive unfixed candidate is large, 
+        # then add some fixed candidates in between 
+        fixed_c_idxs, new_problems_total_count = break_large_problems(
+            candidate_y_idxs, fixed_c_idxs, y, max_problem_size)
         fixed_c_idxs = sorted(fixed_c_idxs)
-        for s, e in zip(fixed_c_idxs[:-1], fixed_c_idxs[1:]):
-            assert e-s+1 <= max_problem_size+5
+        # for s, e in zip(fixed_c_idxs[:-1], fixed_c_idxs[1:]):
+        #     assert e-s <= max_problem_size+5, (s,e,max_problem_size)
 
-        cumulative_coverage = get_cumulative_coverage(
-            candidate_y_idxs, Yy_idx_to_r_idxs[Y_idx])
-        # print('Optimizing tint {} with:\n\tcandidate {} locations: {}\n\tfixed {} loations: {}'.format(tint['id'], len(candidate_y_idxs),candidate_y_idxs,len(fixed_c_idxs),[candidate_y_idxs[c_idx] for c_idx in fixed_c_idxs]))
+        # Getting final candidate indices by runin g a DP formulation
+        # log_file_write(f'run_optimize-{Y_idx}', 'before')
         final_c_idxs = run_optimize(
             candidate_y_idxs=candidate_y_idxs,
             fixed_c_idxs=fixed_c_idxs,
-            coverage=cumulative_coverage,
+            coverage=C,
+            read_rep_weights=np.array([len(ridxs) for _,ridxs in tint['read_reps']]),
             smoothed_threshold=smoothed_threshold,
             threshold_rate=threshold_rate,
             min_read_support_outside=min_read_support_outside,
+            log_file_write = log_file_write
         )
+        # log_file_write(f'run_optimize-{Y_idx}', 'after')
+        # print(final_c_idxs,fixed_c_idxs)
         final_y_idxs = [candidate_y_idxs[c_idx] for c_idx in final_c_idxs]
         refine_y_idxs = refine_segmentation(Y_raw[Y_idx], final_y_idxs, sigma)
         final_y_idxs.extend(refine_y_idxs)
         final_y_idxs.sort()
         tint['final_positions'].extend(
             [Yy_idx_to_pos[Y_idx][y_idx] for y_idx in final_y_idxs])
-        cumulative_coverage = get_cumulative_coverage(
-            final_y_idxs, Yy_idx_to_r_idxs[Y_idx])
+        # log_file_write(f'get_cumulative_coverage-fin-{Y_idx}', 'before')
+        C = get_cumulative_coverage(
+            read_reps        = tint['read_reps'],
+            candidate_y_idxs = final_y_idxs,
+            y_idx_to_pos     = Yy_idx_to_pos[Y_idx],
+            pos_to_Yy_idx    = pos_to_Yy_idx,
+            Y_idx            = Y_idx,
+        )
+        # log_file_write(f'get_cumulative_coverage-fin-{Y_idx}', 'after')
+        # print('final_y_idxs',final_y_idxs)
+        # print('NEW C:',C)
         for seg_idx, (s_yidx, e_yidx) in enumerate(zip(final_y_idxs[:-1], final_y_idxs[1:])):
-            seg_len = Yy_idx_to_pos[Y_idx][e_yidx] - \
-                Yy_idx_to_pos[Y_idx][s_yidx]+1
+            seg_len = e_yidx-s_yidx+1
             h = get_high_threshold(seg_len, smoothed_threshold, threshold_rate)
             l = 1-h
-            assert seg_len == e_yidx-s_yidx+1
-            for r_idx, read in enumerate(tint['reads']):
-                cov_ratio = (
-                    cumulative_coverage[seg_idx+1][r_idx]-cumulative_coverage[seg_idx][r_idx])/seg_len
-                assert 0 <= cov_ratio <= 1, (r_idx, seg_idx, s_yidx, e_yidx, seg_len, (
-                    cumulative_coverage[seg_idx][r_idx]-cumulative_coverage[seg_idx+1][r_idx]), cumulative_coverage[seg_idx][r_idx], cumulative_coverage[seg_idx+1][r_idx], cov_ratio, read)
+            # print('seg_idx', seg_idx)
+            # print('seg_len', seg_len)
+            # print('(h,l)', (h,l))
+            # assert seg_len == e_yidx-s_yidx+1
+            for rr_idx in range(len(tint['read_reps'])):
+                # print(tint['read_reps'][rr_idx][0])
+                # print(C[:,rr_idx])
+                # print(C.shape)
+                cov_ratio = (C[seg_idx+1][rr_idx] - C[seg_idx][rr_idx]) / seg_len
+                # print(cov_ratio)
+                assert 0 <= cov_ratio <= 1, (rr_idx, seg_idx, s_yidx, e_yidx, seg_len)
+
                 if cov_ratio > h:
-                    read['data'].append(1)
+                    datas[rr_idx].append(1)
                 elif cov_ratio < l:
-                    read['data'].append(0)
+                    datas[rr_idx].append(0)
                 else:
-                    read['data'].append(2)
-        for r_idx, read in enumerate(tint['reads']):
-            read['data'].append(0)
+                    datas[rr_idx].append(2)
+        for data in datas:
+            data.append(0)
+
+        # log_file_write(f'segmentation-{Y_idx}', 'after')
+        # for rr_idx in range(len(tint['read_reps'])):
+    # log_file_write('segmentation', 'after')
+    for data,(_,ridxs) in zip(datas, tint['read_reps']):
+        for ridx in ridxs:
+            tint['reads'][ridx]['data'] = data.copy()
     tint['segs'] = [(s, e) for s, e in zip(
-        tint['final_positions'][:-1], tint['final_positions'][1:])]
+        tint['final_positions'][:-1], 
+        tint['final_positions'][1:]
+    )]
     # print('Extracting unaligned gaps and polyA tail data from reads for tint {}'.format(tint['id']))
     for read in tint['reads']:
         read['data'].pop()
+        # print(read['data'])
         assert len(read['data']) == len(
-            tint['segs']), (read['data'], tint['segs'])
+            tint['segs']), (len(read['data']), len(tint['segs']))
         get_unaligned_gaps_and_polyA(read=read, segs=tint['segs'])
     return tint['id']
 
@@ -768,7 +961,7 @@ def main():
     for contig in os.listdir(args.split_dir):
         if not os.path.isdir('{}/{}'.format(args.split_dir, contig)):
             continue
-        os.makedirs('{}/{}'.format(args.outdir, contig), exist_ok=False)
+        os.makedirs('{}/{}'.format(args.outdir, contig), exist_ok=True)
         for tint_id in glob.iglob('{}/{}/split_*.tsv'.format(args.split_dir, contig)):
             tint_id = int(tint_id[:-4].split('/')[-1].split('_')[-1])
             segment_args.append((
@@ -785,7 +978,7 @@ def main():
             ))
     if args.threads > 1:
         p = Pool(args.threads)
-        for idx, tint_id in enumerate(p.imap_unordered(run_segment, segment_args, chunksize=10)):
+        for idx, (contig,tint_id) in enumerate(p.imap_unordered(run_segment, segment_args, chunksize=1)):
             if not idx % ceil(len(segment_args)/100) == 0:
                 continue
             print('[freddie_segment] Done with {}/{} tints ({:.1%})'.format(
@@ -794,7 +987,7 @@ def main():
                 idx/len(segment_args)),
             )
     else:
-        for idx, tint_id in enumerate(map(run_segment, segment_args)):
+        for idx, (contig,tint_id) in enumerate(map(run_segment, segment_args)):
             if not idx % ceil(len(segment_args)/100) == 0:
                 continue
             print('[freddie_segment] Done with {}/{} tints ({:.1%})'.format(
@@ -812,5 +1005,5 @@ if __name__ == "__main__":
     main()
     # profiler.disable()
     # stats = pstats.Stats(profiler, stream=open(
-    #     'segment.no_RC.cprof', 'w+')).sort_stats('tottime')
+    #     'test/SEGMENT/cprof', 'w+')).sort_stats('tottime')
     # stats.print_stats()
