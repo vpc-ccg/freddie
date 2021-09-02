@@ -35,7 +35,7 @@ A real dataset can either be provided directly or it can be downloaded using its
 Also, you may change the `batches` to speedup the parallalization of Badread simulator.
 
 To make things easier, the transcript read expression counts for two datasets have already been added to the repo so you don't have to download them:
-- 22Rv1 cell line: `output/train/22Rv1.expression_rate.tsv`
+- 22Rv1 cell line (SRA #SRR14374285): `output/train/22Rv1.expression_rate.tsv`
 - Fruit fly (SRA #ERR3588905): `output/train/ERR3588905.expression_rate.tsv`
 
 You will not need to download the real raw reads for these two datasets to reproduce the simulated results in the paper.
