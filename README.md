@@ -40,7 +40,7 @@ To make things easier, the transcript read expression counts for two datasets ha
 
 You will not need to download the real raw reads for these two datasets to reproduce the simulated results in the paper.
 
-Once you configured simulation, run Snakemake:
+Once you configured simulation, run Snakemake to generate the simulation reads:
 ```bash
 (ltr-sim)$ snakemake -j <threads>
 (ltr-sim)$ conda deactivate
