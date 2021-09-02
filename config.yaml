@@ -17,12 +17,12 @@ exec:
     bam2Bed12 : extern/flair/bin/bam2Bed12.py
 
 samples:
-    # ERR3588905_sim:
-    #     ref        : drosophila_melanogaster
-    #     seq_type   : ont1d
-    #     reads_info : extern/LTR-sim/output/reads/ERR3588905.L-non.tsv
-    #     reads      :
-    #         - extern/LTR-sim/output/reads/ERR3588905.L-non.fastq
+    ERR3588905_sim:
+        ref        : drosophila_melanogaster
+        seq_type   : ont1d
+        reads_info : extern/LTR-sim/output/reads/ERR3588905.L-non.tsv
+        reads      :
+            - extern/LTR-sim/output/reads/ERR3588905.L-non.fastq
     DHp_select:
         ref        : homo_sapiens_select_genes
         seq_type   : ont1d
