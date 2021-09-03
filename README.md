@@ -68,7 +68,7 @@ Then create the environments for each specific tool:
 
 Now, you can run the tools:
 ```bash
-(freddie_bench_run_tools)$ snakemake -s Snakefile-run_tools --use-conda --conda-create-envs-only -j  <threads>
+(freddie_bench_run_tools)$ snakemake -s Snakefile-run_tools --use-conda -j  <threads>
 ```
 
 And you can run the accuracy assessment scripts:
