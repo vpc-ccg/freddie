@@ -16,7 +16,7 @@ localrules:
     tool_bed,
     truth_and_isoform_baselines,
     isoform_baseline_align_jobs,
-    freddie,
+    freddie_cluster,
 
 for k in config.keys():
     if not k.startswith('override_'):
@@ -110,58 +110,50 @@ rule all:
             sample=config['samples'],
             stage=['split','segment','cluster'],
         ),
-        # expand('{}/{{sample}}/{{mapper}}/{{tool}}.transcripts'.format(graphs_d),
-        #     tool=tools+[
-        #         'genome',
-        #         'segment',
-        #         'truth'
-        #     ],
-        #     mapper=config['mappers'],
-        #     sample=[s for s in config['samples'] if config['samples'][s]['reads_info']!=0],
-        # ),
-        # expand('{}/{{sample}}/{{mapper}}/{{tool}}.{{extension}}'.format(graphs_d),
-        #     tool=tools+[
-        #         # 'genome',
-        #         # 'segment',
-        #         'isoform',
-        #         'truth',
-        #     ],
-        #     mapper=config['mappers'],
-        #     sample=[s for s in config['samples'] if config['samples'][s]['reads_info']!=0],
-        #     extension=['bed', 'overlaps.tsv'],
-        # ),
-        # expand('{}/{{sample}}/{{mapper}}/{{tool}}.{{extension}}'.format(graphs_d),
-        #     tool=tools+[
-        #         'troth'
-        #     ],
-        #     mapper=config['mappers'],
-        #     sample=[s for s in config['samples'] if config['samples'][s]['reads_info']==0],
-        #     extension=['transcripts', 'bed', 'overlaps.tsv'],
-        # ),
-        # [
-        #     '{prefix}/{sample}/{mapper}/isoform_baseline/jobs/{contig}.txt'.format(
-        #         prefix=workspace_d,
-        #         sample=s,
-        #         mapper=m,
-        #         contig=c,
-        #     ) for m in config['mappers'] for s in config['samples'] if config['samples'][s]['reads_info']!=0 for c in sample_tids[s] 
-        # ],
-        # [
-        #     '{prefix}/{sample}/{mapper}/isoform_baseline/pafs/{contig}/done'.format(
-        #         prefix=workspace_d,
-        #         sample=s,
-        #         mapper=m,
-        #         contig=c,
-        #     ) for m in config['mappers'] for s in config['samples'] if config['samples'][s]['reads_info']!=0 for c in sample_tids[s] 
-        # ],
-        # [
-        #     '{prefix}/{sample}/{mapper}/isoform.transcripts/{contig}'.format(
-        #         prefix=graphs_d,
-        #         sample=s,
-        #         mapper=m,
-        #         contig=c,
-        #     ) for m in config['mappers'] for s in config['samples'] if config['samples'][s]['reads_info']!=0 for c in sample_tids[s] 
-        # ],
+        expand('{}/{{sample}}/{{mapper}}/{{tool}}.transcripts'.format(graphs_d),
+            tool=tools+[
+                'genome',
+                'segment',
+                'truth'
+            ],
+            mapper=config['mappers'],
+            sample=[s for s in config['samples'] if config['samples'][s]['reads_info']!=0],
+        ),
+        expand('{}/{{sample}}/{{mapper}}/{{tool}}.{{extension}}'.format(graphs_d),
+            tool=tools+[
+                'genome',
+                'segment',
+                'isoform',
+                'truth',
+            ],
+            mapper=config['mappers'],
+            sample=[s for s in config['samples'] if config['samples'][s]['reads_info']!=0],
+            extension=['bed', 'overlaps.tsv'],
+        ),
+        [
+            '{prefix}/{sample}/{mapper}/isoform_baseline/jobs/{contig}.txt'.format(
+                prefix=workspace_d,
+                sample=s,
+                mapper=m,
+                contig=c,
+            ) for m in config['mappers'] for s in config['samples'] if config['samples'][s]['reads_info']!=0 for c in sample_tids[s] 
+        ],
+        [
+            '{prefix}/{sample}/{mapper}/isoform_baseline/pafs/{contig}/done'.format(
+                prefix=workspace_d,
+                sample=s,
+                mapper=m,
+                contig=c,
+            ) for m in config['mappers'] for s in config['samples'] if config['samples'][s]['reads_info']!=0 for c in sample_tids[s] 
+        ],
+        [
+            '{prefix}/{sample}/{mapper}/isoform.transcripts/{contig}'.format(
+                prefix=graphs_d,
+                sample=s,
+                mapper=m,
+                contig=c,
+            ) for m in config['mappers'] for s in config['samples'] if config['samples'][s]['reads_info']!=0 for c in sample_tids[s] 
+        ],
 
 
 rule minimap2:
@@ -249,7 +241,6 @@ rule freddie_split:
     shell:
         'GNU_TIME=$(which time) && $GNU_TIME -f "freddie-split\\t{wildcards.mapper}\\t%e\\t%U\\t%M"    -a -o {input.time} '
         '  py/freddie_split.py   -t {threads} -b {input.bam} -o {output.split} -r {input.reads}'
-
 
 rule freddie_segment:
     input:
@@ -436,6 +427,112 @@ rule tool_bed:
                     bed_file.write('{}\t{}\t{}\t{}\n'.format(contig, s, e, iid))
         bed_file.close()
 
+rule segment_bed:
+    input:
+        segment_dir = '{}/{{sample}}/{{mapper}}/freddie/segment'.format(workspace_d),
+    output:
+        bed = '{}/{{sample}}/{{mapper}}/segment.bed'.format(graphs_d)
+    resources:
+        mem  = "64G",
+        time = 179,
+    run:
+        segment_isoforms = dict() 
+        tint_segs = dict()
+        for segment_tsv in glob.iglob('{}/*/segment_*.tsv'.format(input.segment_dir)):
+            for line in open(segment_tsv):
+                line = line.rstrip().split('\t')
+                if line[0][0]=='#':
+                    segs = [int(i) for i in line[2].split(',')]
+                    segs = list(zip(segs[:-1],segs[1:]))
+                    contig = line[0][1:]
+                    if not contig in tint_segs:
+                        segment_isoforms[contig] = dict() 
+                        tint_segs[contig] = dict() 
+                    tint = line[1]
+                    tint_segs[contig][tint] = segs
+                    continue
+                rname = line[1]
+                contig = line[2]
+                tint = line[4]
+                iid = rname.split('_')[0]
+                data = line[5]
+                if not tint in segment_isoforms[contig]:
+                    segment_isoforms[contig][tint] = dict()
+                if not iid in segment_isoforms[contig][tint]:
+                    segment_isoforms[contig][tint][iid] = dict(cov=[0 for _ in data], count=0)
+                assert len(data) == len(segment_isoforms[contig][tint][iid]['cov'])
+                segment_isoforms[contig][tint][iid]['count']+=1
+                for idx,d in enumerate(data):
+                    segment_isoforms[contig][tint][iid]['cov'][idx] += (d =='1')
+        bed_file = open(output.bed, 'w+')
+        for contig,tints in segment_isoforms.items():
+            for tint,isoforms in tints.items():
+                for iid,isoform in isoforms.items():
+                    if isoform['count'] < 3:
+                        continue
+                    cons = [(c/isoform['count'])>0.3 for c in isoform['cov']]
+                    assert len(tint_segs[contig][tint])==len(cons)
+                    for d, group in itertools.groupby(enumerate(cons), lambda x: x[1]):
+                        if d != True:
+                            continue
+                        group = list(group)
+                        f_seg_idx = group[0][0]
+                        l_seg_idx = group[-1][0]
+                        s = tint_segs[contig][tint][f_seg_idx][0]
+                        e = tint_segs[contig][tint][l_seg_idx][1]
+                        bed_file.write('{}\t{}\t{}\tsegment_{}_{}_{}\n'.format(contig, s, e, contig, tint, iid))
+        bed_file.close()
+
+rule genome_bed:
+    input:
+        bam    = '{}/{{sample}}.{{mapper}}.bam'.format(preprocess_d),
+        genome = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['genome'],
+    output:
+        bed = temp('{}/{{sample}}/{{mapper}}/genome.{{contig}}.bed'.format(graphs_d))
+    resources:
+        mem_mb  = 16384,
+        time = 59,
+    run:
+        contig = wildcards.contig
+        isoforms = dict()
+        for read in pysam.AlignmentFile(input.bam).fetch(contig=contig):
+            if read.is_unmapped:
+                continue
+            iid = read.query_name.split('_')[0]
+            if not iid in isoforms:
+                isoforms[iid] = dict(read_count=0, pos_count=dict(), intervals=list())
+            isoforms[iid]['read_count']+=1
+            intervals = list(interval_extract(read.get_reference_positions(), r=20))
+            assert len(read.get_reference_positions())<=sum(e-s+1 for s,e in intervals) <= read.reference_end-read.reference_start, (
+                len(read.get_reference_positions()),
+                sum(e-s+1 for s,e in intervals),
+                read.reference_end-read.reference_start,
+                read.cigartuples,
+                read.query_name,
+            )
+            for s,e in intervals:
+                for p in range(s,e+1):
+                    isoforms[iid]['pos_count'][p] = isoforms[iid]['pos_count'].get(p,0) + 1
+
+        bed_file = open(output.bed, 'w+')
+        for iid,isoform in isoforms.items():
+            if isoform['read_count'] < 3:
+                continue
+            positions = list()
+            for p,c in isoform['pos_count'].items():
+                if c > isoform['read_count']/3.0:
+                    positions.append(p)
+            positions.sort()
+            for k, g in itertools.groupby(enumerate(positions), lambda t: t[1] - t[0]): 
+                g = list(g)
+                isoform['intervals'].append((g[0][1], g[-1][1]+1))                
+            isoform['intervals'] = isoform['intervals']
+            if len(isoform['intervals']) == 0:
+                continue
+            isoform_name = 'genome_{}_{}'.format(contig, iid)
+            for s,e in isoform['intervals']:
+                bed_file.write('{}\t{}\t{}\t{}\n'.format(contig, s, e, isoform_name))
+        bed_file.close()
 
 
 rule truth_and_isoform_baselines:
@@ -632,7 +729,7 @@ rule bed_merge:
     output:
         '{}/{{sample}}/{{mapper}}/{{tool}}.bed'.format(graphs_d),
     wildcard_constraints:
-        tool = 'genome|troth'
+        tool = 'genome'
     shell:
         'cat {input} > {output}'
 
@@ -644,7 +741,7 @@ rule bed_to_fasta:
     output:
         out_dir = directory('{}/{{sample}}/{{mapper}}/{{tool}}.transcripts'.format(graphs_d)),
     wildcard_constraints:
-        tool = '|'.join(re.escape(t) for t in tools+['genome', 'segment', 'truth', 'troth'])
+        tool = '|'.join(re.escape(t) for t in tools+['genome', 'segment', 'truth'])
     run:
         dna = pyfasta.Fasta(input.genome)
         contig_to_key = {k.split()[0]:k for k in dna.keys()}

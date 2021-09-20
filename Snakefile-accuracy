@@ -21,6 +21,13 @@ def get_which(command):
     result = subprocess.run(['which', command], stdout=subprocess.PIPE)
     return result.stdout.decode('ascii').rstrip()
 
+def get_t_annot(sample, mapper):
+    if config['samples'][sample]['reads_info'] == 0:
+        ref = config['samples'][sample]['ref']
+        return config['references'][ref]['annot']
+    else:
+        return '{}/{}/{}/truth.gtf'.format(graphs_d,sample,mapper)
+
 outpath      = config['outpath'].rstrip('/')
 preprocess_d = '{}/preprocess'.format(outpath)
 workspace_d  = '{}/workspace'.format(outpath)
@@ -121,11 +128,24 @@ rule all:
                 p=short_d,
                 s=s,
                 m=m,
-                t=t,
+                t=t[0],
             )
-            for s in overlaps 
-                for m in overlaps[s]
-                    for t,_ in venn_tools
+            for t in venn_tools
+                for s in config['samples']
+                    for m in config['mappers']
+                        if config['samples'][s]['reads_info'] == 0
+        ],
+        [
+            '{p}/{s}/{m}/sr-valid.{f}'.format(
+                p=plots_d,
+                s=s,
+                m=m,
+                f=f,
+            )
+            for f in ['isoform_intronic.pdf','introns.pdf','validation.tsv']
+                for s in config['samples']
+                    for m in config['mappers']
+                        if config['samples'][s]['reads_info'] == 0
         ],
 
 rule align_to_transcript_jobs:
@@ -163,6 +183,7 @@ rule align_to_transcript_jobs:
                         query,
                     )
                 )
+
 rule edges_tsv:
     input:
         jobs = '{}/{{sample}}/{{mapper}}/{{tool}}.alignments/{{contig}}.jobs'.format(graphs_d),
@@ -234,14 +255,6 @@ rule sim_gtf:
             outfile.write(line)
         outfile.close()
 
-def get_t_annot(sample, mapper):
-    if config['samples'][sample]['reads_info'] == 0:
-        ref = config['samples'][sample]['ref']
-        return config['references'][ref]['annot']
-    else:
-        return '{}/{}/{}/truth.gtf'.format(graphs_d,sample,mapper)
-
-
 rule venn_plots:
     input:
         script = 'py/freddie_venn.py',
@@ -295,7 +308,7 @@ rule star_map:
         reads  = lambda wildcards: config['samples'][wildcards.sample]['short-reads'],
         index = '{}/{{sample}}/{{mapper}}/{{tool}}_star_index'.format(short_d),
     output:
-        sam = '{}/{{sample}}/{{mapper}}/{{tool}}_SJ.out.tab'.format(short_d),
+        juncs = '{}/{{sample}}/{{mapper}}/{{tool}}_SJ.out.tab'.format(short_d),
     params:
         prefix = '{}/{{sample}}/{{mapper}}/{{tool}}_'.format(short_d),
     threads:
@@ -309,5 +322,43 @@ rule star_map:
         ' --readFilesIn {input.reads}'
         ' --outSAMtype SAM'
         ' --outFileNamePrefix {params.prefix}'
-        ' --readFilesCommand zcat'
+        # ' --readFilesCommand zcat'
         ' --runThreadN {threads}'
+
+rule merge_filter_sj:
+    input:
+        juncs = ['{}/{{sample}}/{{mapper}}/{}_SJ.out.tab'.format(short_d, tool) for tool,_ in venn_tools],
+        annot = lambda wildcards: config['references'][config['samples'][wildcards.sample]['ref']]['annot'],
+    output:
+        bed = '{}/{{sample}}/{{mapper}}/merged_sj.bed'.format(short_d),
+    shell:
+        'bedtools intersect '
+        '  -a <(cut -f1,2,3 {input.juncs} | sort -u)'
+        '  -b <(awk \'BEGIN{{OFS="\t"}}$3=="gene"{{print $1,$4-10000,$5+10000}}\' {input.annot})'
+        '  -wb  | cut -f1,2,3 > {output}'
+
+rule short_read_validation:
+    input:
+        script = 'py/freddie_short_validation.py',
+        tool_gtfs = lambda wildcards: [
+            f'{output_d}/{wildcards.sample}/{wildcards.mapper}/{t}.isoforms.gtf'
+            for t,_ in venn_tools
+        ],
+        short_juncs = '{}/{{sample}}/{{mapper}}/merged_sj.bed'.format(short_d),
+        t_gtf = lambda wildcards: get_t_annot(wildcards.sample, wildcards.mapper),
+    output:
+        isoforms_intronic = '{}/{{sample}}/{{mapper}}/sr-valid.isoform_intronic.pdf'.format(plots_d),
+        introns           = '{}/{{sample}}/{{mapper}}/sr-valid.introns.pdf'.format(plots_d),
+        validation        = '{}/{{sample}}/{{mapper}}/sr-valid.validation.tsv'.format(plots_d),
+    params:
+        tool_names = ['"{}"'.format(n) for _,n in venn_tools],
+        t_name = 'Annotations',
+        prefix = '{}/{{sample}}/{{mapper}}/sr-valid'.format(plots_d),
+    conda:
+        'envs/accuracy.yml'
+    shell:
+        '{input.script}'
+        '    -o  {params.prefix}'
+        '    -a  {input.tool_gtfs} {input.t_gtf}'
+        '    -sj {input.short_juncs}'
+        '    -n  {params.tool_names} {params.t_name}'

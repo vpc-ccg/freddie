@@ -17,21 +17,27 @@ exec:
     bam2Bed12 : extern/flair/bin/bam2Bed12.py
 
 samples:
-    ERR3588905_sim:
-        ref        : drosophila_melanogaster
-        seq_type   : ont1d
-        reads_info : extern/LTR-sim/output/reads/ERR3588905.L-non.tsv
-        reads      :
-            - extern/LTR-sim/output/reads/ERR3588905.L-non.fastq
+    # 22Rv1_sim:
+    #     ref        : homo_sapiens
+    #     seq_type   : ont1d
+    #     reads_info : extern/LTR-sim/output/reads/22Rv1.L-non.tsv
+    #     reads      :
+    #         - extern/LTR-sim/output/reads/22Rv1.L-non.fastq
+    # ERR3588905_sim:
+    #     ref        : drosophila_melanogaster
+    #     seq_type   : ont1d
+    #     reads_info : extern/LTR-sim/output/reads/ERR3588905.L-non.tsv
+    #     reads      :
+    #         - extern/LTR-sim/output/reads/ERR3588905.L-non.fastq
     DHp_select:
         ref        : homo_sapiens_select_genes
         seq_type   : ont1d
         reads_info : 0
         reads      :
-            - /home/borabi/Freddie/selected_genes.fastq
+            - /home/borabi/Freddie/selected_genes.LNCaP.lr.fastq
         short-reads:
-            - /groups/hachgrp/projects/col-dong-rna-splicing/raw-data/polyA/P003R001/fastq/P003R001_R1.fastq.gz
-            - /groups/hachgrp/projects/col-dong-rna-splicing/raw-data/polyA/P003R001/fastq/P003R001_R2.fastq.gz
+            - /home/borabi/Freddie/selected_genes.LNCaP.lr.sr.R1.fq
+            - /home/borabi/Freddie/selected_genes.LNCaP.lr.sr.R2.fq
 
 references:
     drosophila_melanogaster:
@@ -56,6 +62,7 @@ mappers:
 
 tools:
     - freddie
+    # - freddie-old
     - stringtie
     - flair
 
