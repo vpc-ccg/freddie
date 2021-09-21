@@ -2,7 +2,7 @@
 from multiprocessing import Pool
 import os
 import glob
-import psutil
+# import psutil
 
 from itertools import combinations, groupby
 import argparse
@@ -496,7 +496,7 @@ def optimize(
     smoothed_threshold, 
     threshold_rate, 
     read_support, 
-    log_file_write
+    log_file_write=None
 ):
     yea_mem = dict()
     nay_mem = dict()
@@ -561,7 +561,7 @@ def optimize(
         max_b = (-1, -1, -1)
         max_d = float('-inf')
         # Segment too small: y_idx[j]-y_idx[i] < 5 or
-        if candidate_y_idxs[j]-candidate_y_idxs[i] < 30 or candidate_y_idxs[k]-candidate_y_idxs[j] < 30:
+        if candidate_y_idxs[j]-candidate_y_idxs[i] < 5 or candidate_y_idxs[k]-candidate_y_idxs[j] < 5:
             D[(i, j, k)] = max_d
             B[(i, j, k)] = max_b
             return D[(i, j, k)]
@@ -614,7 +614,7 @@ def run_optimize(
     smoothed_threshold,
     threshold_rate,
     min_read_support_outside,
-    log_file_write
+    log_file_write=None
 ):
     final_c_idxs = set(fixed_c_idxs)
     for idx, (start, end) in enumerate(zip(fixed_c_idxs[:-1], fixed_c_idxs[1:])):
@@ -630,7 +630,7 @@ def run_optimize(
             smoothed_threshold=smoothed_threshold,
             threshold_rate=threshold_rate,
             read_support=min_read_support_outside,
-            log_file_write=log_file_write,
+            # log_file_write=log_file_write,
         )
         # log_file_write(f'Optimize-{idx}', 'after')
         while max_b != (-1, -1, -1):
@@ -748,6 +748,7 @@ def process_splicing_data(tint):
             Y_raw[Y_idx][y_idx_s] += len(r_idxes)
             Y_raw[Y_idx][y_idx_e] += len(r_idxes)
     return (
+        pos_to_Yy_idx,
         Yy_idx_to_pos,
         Y_raw,
     )
@@ -768,7 +769,7 @@ def run_segment(segment_args):
     ) = segment_args
     LOG_FILE = open('{}/{}/segment_{}_{}.log'.format(outdir,
                                                      contig, contig, tint_id), 'w+')
-    log_file_write = log_file_write_maker(tint_id, contig, LOG_FILE)
+    # log_file_write = log_file_write_maker(tint_id, contig, LOG_FILE)
     # log_file_write('read_split', 'before')
     tints = read_split(
         split_tsv='{}/{}/split_{}_{}.tsv'.format(split_dir, contig, contig, tint_id))
@@ -790,7 +791,7 @@ def run_segment(segment_args):
         variance_factor,
         max_problem_size,
         min_read_support_outside,
-        log_file_write,
+        # log_file_write,
     )
     # log_file_write('segment', 'after')
 
@@ -821,9 +822,10 @@ def run_segment(segment_args):
     return contig,tint_id
 
 
-def segment(tint, sigma, smoothed_threshold, threshold_rate, variance_factor, max_problem_size, min_read_support_outside, log_file_write):
+def segment(tint, sigma, smoothed_threshold, threshold_rate, variance_factor, max_problem_size, min_read_support_outside, log_file_write=None):
     # log_file_write('process_splicing_data', 'before')
     (
+        pos_to_Yy_idx,
         Yy_idx_to_pos,
         Y_raw,
     ) = process_splicing_data(tint)
@@ -887,7 +889,7 @@ def segment(tint, sigma, smoothed_threshold, threshold_rate, variance_factor, ma
             smoothed_threshold=smoothed_threshold,
             threshold_rate=threshold_rate,
             min_read_support_outside=min_read_support_outside,
-            log_file_write = log_file_write
+            # log_file_write = log_file_write
         )
         # log_file_write(f'run_optimize-{Y_idx}', 'after')
         # print(final_c_idxs,fixed_c_idxs)
