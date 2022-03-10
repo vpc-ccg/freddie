@@ -73,5 +73,5 @@ Now, you can run the tools:
 
 And you can run the accuracy assessment scripts:
 ```bash
-(freddie_bench_run_tools)$ snakemake -s Snakefile-accuracy -j <threads>
+(freddie_bench_run_tools)$ snakemake -s Snakefile-accuracy --use-conda -j <threads>
 ```
