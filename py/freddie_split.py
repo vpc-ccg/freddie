@@ -139,8 +139,8 @@ def get_intervals(aln):
     if cigar[-1][0] == pysam.CSOFT_CLIP:
         qend -= cigar[-1][1]
     assert qend > qstart
-    tstart = aln.reference_start
-    tend = tstart + 1
+    tstart = aln.reference_start + 1
+    tend = tstart 
 
     for t, c in cigar:
         assert(0 <= t < 10)
