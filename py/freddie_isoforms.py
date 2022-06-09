@@ -105,7 +105,7 @@ def get_gtf_records(isoforms):
             record.append(chrom)
             record.append('freddie')
             record.append('exon')
-            record.append(str(s+1))
+            record.append(str(s))
             record.append(str(e))
             record.append('.')
             record.append(strand)
