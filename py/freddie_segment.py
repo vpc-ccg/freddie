@@ -5,6 +5,7 @@ import glob
 # import psutil
 
 from itertools import combinations, groupby
+from collections import Counter
 import argparse
 import re
 from math import exp, ceil
@@ -55,11 +56,11 @@ def tot_mem():
 
 def log_file_write_maker(tint_id, contig, LOG_FILE):
     def log_file_write(stage, state):
-        LOG_FILE.write(f'{tint_id}\t')
-        LOG_FILE.write(f'{contig}\t')
-        LOG_FILE.write(f'{stage}\t')
-        LOG_FILE.write(f'{state}\t')
-        LOG_FILE.write(f'{tot_mem(): 6.4}\n')
+        # LOG_FILE.write(f'{tint_id}\t')
+        # LOG_FILE.write(f'{contig}\t')
+        LOG_FILE.write(f'{stage}\n')
+        # LOG_FILE.write(f'{state}\t')
+        # LOG_FILE.write(f'{tot_mem(): 6.4}\n')
         LOG_FILE.flush()
     return log_file_write
 
@@ -669,33 +670,6 @@ def candidates_from_peaks(y):
     return c
 
 
-def candidates_from_window(y, f_y_idx, l_y_idx, window=5):
-    # print('f_y_idx, l_y_idx',f_y_idx, l_y_idx)
-    c = list()
-    for y_idx in range(f_y_idx, l_y_idx+1, window):
-        max_y_idx = y_idx + np.argmax(y[y_idx:y_idx+window])
-        if y[max_y_idx] > 0.1:
-            c.append(max_y_idx)
-        peaks = find_peaks(y[y_idx:y_idx+window], distance=window)[0]
-        assert len(peaks) <= 1
-        if len(peaks) > 0:
-            peak_y_idx = peaks[0] + y_idx
-            if peak_y_idx != max_y_idx and y[peak_y_idx] > 0.1:
-                c.append(peak_y_idx)
-    c.sort()
-    c_keep = [True for _ in c]
-    c_idx = 0
-    # print('c', c)
-    while c_idx < len(c)-1:
-        if c[c_idx]+1 == c[c_idx+1]:
-            if y[c[c_idx]] > y[c[c_idx+1]]:
-                c_keep[c_idx+1] = False
-            else:
-                c_keep[c_idx] = False
-            c_idx += 1
-        c_idx += 1
-    c = [c[c_idx] for c_idx in range(len(c)) if c_keep[c_idx]]
-    return c
 
 
 def break_large_problems(candidate_y_idxs, fixed_c_idxs, y, max_problem_size, window=5):
@@ -769,7 +743,7 @@ def run_segment(segment_args):
     ) = segment_args
     LOG_FILE = open('{}/{}/segment_{}_{}.log'.format(outdir,
                                                      contig, contig, tint_id), 'w+')
-    # log_file_write = log_file_write_maker(tint_id, contig, LOG_FILE)
+    log_file_write = log_file_write_maker(tint_id, contig, LOG_FILE)
     # log_file_write('read_split', 'before')
     tints = read_split(
         split_tsv='{}/{}/split_{}_{}.tsv'.format(split_dir, contig, contig, tint_id))
@@ -791,7 +765,7 @@ def run_segment(segment_args):
         variance_factor,
         max_problem_size,
         min_read_support_outside,
-        # log_file_write,
+        log_file_write,
     )
     # log_file_write('segment', 'after')
 
@@ -851,6 +825,7 @@ def segment(tint, sigma, smoothed_threshold, threshold_rate, variance_factor, ma
         # Getting candidate splice locations for the current tint interval
         # log_file_write(f'candidates_from_peaks-{Y_idx}', 'before')
         candidate_y_idxs = candidates_from_peaks(y)
+        c_idxs_tracker = {i: 'Unselected' for i in range(len(candidate_y_idxs))}
         # log_file_write(f'candidates_from_peaks-{Y_idx}', 'after')
         # Computing the cumulative coverage for each read rep on the intervals
         # defined by the candidate locations
@@ -866,15 +841,23 @@ def segment(tint, sigma, smoothed_threshold, threshold_rate, variance_factor, ma
         fixed_c_idxs = set()
         # First and last candidates are always fixed
         fixed_c_idxs.add(0)
+        c_idxs_tracker[0] = 'Bound'
         fixed_c_idxs.add(len(candidate_y_idxs)-1)
+        c_idxs_tracker[len(candidate_y_idxs)-1] = 'Bound'
         # Any candidate with signal above the threshold is fixed
         for c_idx, y_idx in enumerate(candidate_y_idxs):
             if y[y_idx] > variance_threhsold:
                 fixed_c_idxs.add(c_idx)
+                c_idxs_tracker[c_idx] = 'Variance'
         # If the number of consecutive unfixed candidate is large, 
         # then add some fixed candidates in between 
         fixed_c_idxs, new_problems_total_count = break_large_problems(
             candidate_y_idxs, fixed_c_idxs, y, max_problem_size)
+        for c_idx in fixed_c_idxs:
+            if c_idxs_tracker[c_idx]=='Unselected':
+                c_idxs_tracker[c_idx] = 'Large'
+        # log_file_write(f'{new_problems_total_count}', 'after')
+
         fixed_c_idxs = sorted(fixed_c_idxs)
         # for s, e in zip(fixed_c_idxs[:-1], fixed_c_idxs[1:]):
         #     assert e-s <= max_problem_size+5, (s,e,max_problem_size)
@@ -891,6 +874,11 @@ def segment(tint, sigma, smoothed_threshold, threshold_rate, variance_factor, ma
             min_read_support_outside=min_read_support_outside,
             # log_file_write = log_file_write
         )
+        for c_idx in final_c_idxs:
+            if c_idxs_tracker[c_idx]=='Unselected':
+                c_idxs_tracker[c_idx] = 'Optimized'
+        for k,v in Counter(c_idxs_tracker).items():
+            log_file_write(f'{k}\t{v}', '')
         # log_file_write(f'run_optimize-{Y_idx}', 'after')
         # print(final_c_idxs,fixed_c_idxs)
         final_y_idxs = [candidate_y_idxs[c_idx] for c_idx in final_c_idxs]

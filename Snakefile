@@ -42,11 +42,12 @@ rule minimap2:
 
 rule split:
     input:
-        script = config['exec']['split'],
         reads  = lambda wildcards: config['samples'][wildcards.sample]['reads'],
         bam = '{}/{{sample}}/{{sample}}.sorted.bam'.format(output_d),
     output:
         split = directory('{}/{{sample}}/freddie.split'.format(output_d)),
+    params:
+        script = config['exec']['split'],
     conda:
         'envs/freddie.yml'
     threads:
@@ -55,7 +56,7 @@ rule split:
         mem  = "16G",
         time = 359,
     shell:
-        '{input.script} -b {input.bam} -r {input.reads} -o {output.split} -t {threads}'
+        '{params.script} -b {input.bam} -r {input.reads} -o {output.split} -t {threads}'
 
 rule segment:
     input:

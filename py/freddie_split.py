@@ -445,7 +445,7 @@ def write_tint(contig_outdir, contig, tint_id, tint, reads, rname_to_tint):
                 tint_ids = list()
             )
         assert rname_to_tint[read['name']]['contig'] == contig
-        assert rname_to_tint[read['name']]['rid'] == rid
+        assert rname_to_tint[read['name']]['rid'] == rid, (contig, rid, read['name'], rname_to_tint[read['name']]['rid'])
         rname_to_tint[read['name']]['tint_ids'].append(tint_id)
         record = list()
         record.append(str(read['id']))
