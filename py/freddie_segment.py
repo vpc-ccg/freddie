@@ -5,7 +5,6 @@ import glob
 # import psutil
 
 from itertools import combinations, groupby
-from collections import Counter
 import argparse
 import re
 from math import exp, ceil
@@ -50,19 +49,6 @@ dna_id = dict(
     G='G',
     T='T'
 )
-
-def tot_mem():
-    return psutil.Process(os.getpid()).memory_info().rss/1024**3
-
-def log_file_write_maker(tint_id, contig, LOG_FILE):
-    def log_file_write(stage, state):
-        # LOG_FILE.write(f'{tint_id}\t')
-        # LOG_FILE.write(f'{contig}\t')
-        LOG_FILE.write(f'{stage}\n')
-        # LOG_FILE.write(f'{state}\t')
-        # LOG_FILE.write(f'{tot_mem(): 6.4}\n')
-        LOG_FILE.flush()
-    return log_file_write
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -202,7 +188,6 @@ def get_cumulative_coverage(read_reps, candidate_y_idxs, y_idx_to_pos, pos_to_Yy
             # Checking if this interval of the read covers this tint interval
             if Y_idx_s != Y_idx:
                 continue
-            # print('=======\n\n\n(ts, te)', (ts, te))
             total_coverage += te-ts + 1
             if not ts in pos_to_C_idx:
                 pos_to_C_idx[ts] = bisect.bisect_right(
@@ -225,22 +210,11 @@ def get_cumulative_coverage(read_reps, candidate_y_idxs, y_idx_to_pos, pos_to_Yy
             if C_idx_s == C_idx_e:
                 C[C_idx_s][rr_idx] += te-ts +1
                 continue
-            # print('===')
-            # print('candidate_y_idxs',candidate_y_idxs)
-            # print('ts',ts)
-            # print('te',te)
-            # print('pos_to_Yy_idx[ts]',pos_to_Yy_idx[ts])
-            # print('pos_to_Yy_idx[te]',pos_to_Yy_idx[te])            
-            # print('C_idx_s',C_idx_s)
-            # print('C_idx_e',C_idx_e)
 
             cov_s = y_idx_to_pos[candidate_y_idxs[C_idx_s]] - ts
             assert cov_s>0,cov_s
-            # print('cov_s',cov_s)
             cov_e = te - y_idx_to_pos[candidate_y_idxs[C_idx_e-1]] + 1
             assert cov_e>0,cov_e
-            # print('cov_e',cov_e)
-
             # Adding coverge of the first candidate segment
             C[C_idx_s][rr_idx] += cov_s
             # Adding coverge of the last candidate segment
@@ -250,11 +224,7 @@ def get_cumulative_coverage(read_reps, candidate_y_idxs, y_idx_to_pos, pos_to_Yy
                 seg_len = candidate_y_idxs[C_idx] - candidate_y_idxs[C_idx-1]
                 assert seg_len > 0, seg_len
                 C[C_idx][rr_idx] += seg_len
-        # print('C[:,rr_idx]',C[:,rr_idx])
-        # print('(ts,te,te-ts+1)')
-        # print([(ts,te,te-ts+1) for (ts,te) in read_rep])
     # Doubling checking we added the slack correctly
-    # print(C)
     assert C.sum() == total_coverage, (C.sum(),total_coverage)
     # Summing cumulatively over the candidate segments
     for C_idx in range(1, C.shape[0]):
@@ -497,16 +467,10 @@ def optimize(
     smoothed_threshold, 
     threshold_rate, 
     read_support, 
-    log_file_write=None
 ):
     yea_mem = dict()
     nay_mem = dict()
     amb_mem = dict()
-    # print('candidate_y_idxs',candidate_y_idxs)
-    # print('C',C)
-    # print(start, end)
-    # print('W',W)
-    # print('Precomputing coverage mems for {}...'.format((start,end)))
     for i in range(start, end):
         for j in range(i, end+1):
             seg_len = (candidate_y_idxs[j]-candidate_y_idxs[i]+1)
@@ -517,9 +481,6 @@ def optimize(
             nay_mem[(i, j)] = c < l
             amb_mem[(i, j)] = W*np.logical_not(
                 np.logical_or(yea_mem[(i, j)], nay_mem[(i, j)]))
-    # print('yea_mem',yea_mem)
-    # print('nay_mem',nay_mem)
-    # print('amb_mem',amb_mem)
     in_mem = dict()
 
     def inside(i, j):
@@ -581,8 +542,6 @@ def optimize(
         D[(i, j, k)] = max_d
         B[(i, j, k)] = max_b
         return D[(i, j, k)]
-
-    # print('DP...')
     # Lower bound on score is no segmentation
     max_d = inside(start, end)
     max_b = (-1, -1, -1)
@@ -591,19 +550,7 @@ def optimize(
             if dp(start, j, k) > max_d:
                 max_b = (start, j, k)
                 max_d = dp(*max_b)
-    # print(max_b,max_d)
-    # print('\n=====')
-    # print(f'C       : {C.shape}')
-    # print(f'e-s+1   : {end-start+1}')
-    # # print(f'end     : {end}')
-    # print(f'yea_mem : {len(yea_mem)}')
-    # print(f'in_mem  : {len(in_mem)}')
-    # print(f'out_mem : {len(out_mem)}')
-    # print(f'D       : {len(D)}')
-    # print(f'B       : {len(B)}')
-    # log_file_write('del-mem', 'before')
     del yea_mem,nay_mem,amb_mem,in_mem,out_mem,D
-    # log_file_write('del-mem', 'after')
     return B, max_b
 
 
@@ -615,13 +562,9 @@ def run_optimize(
     smoothed_threshold,
     threshold_rate,
     min_read_support_outside,
-    log_file_write=None
 ):
     final_c_idxs = set(fixed_c_idxs)
     for idx, (start, end) in enumerate(zip(fixed_c_idxs[:-1], fixed_c_idxs[1:])):
-        # print('{}/{}: {}'.format(idx+1, len(fixed_c_idxs)-1, end-start+1))
-        # D, B, max_d, max_b, in_mem, out_mem = optimize(
-        # log_file_write(f'Optimize-{idx}', 'before')
         B, max_b = optimize(
             candidate_y_idxs=candidate_y_idxs,
             C=coverage,
@@ -631,15 +574,9 @@ def run_optimize(
             smoothed_threshold=smoothed_threshold,
             threshold_rate=threshold_rate,
             read_support=min_read_support_outside,
-            # log_file_write=log_file_write,
         )
-        # log_file_write(f'Optimize-{idx}', 'after')
         while max_b != (-1, -1, -1):
             final_c_idxs.update(max_b)
-            # print('D:', D[max_b])
-            # print('B:', max_b)
-            # print('I:', in_mem[(max_b[0],max_b[1])])
-            # print('O:', out_mem[max_b])
             max_b = B[max_b]
         del B, max_b
     return sorted(final_c_idxs)
@@ -668,9 +605,6 @@ def candidates_from_peaks(y):
     c.append(len(y)-1)
     c = sorted(set(c))       
     return c
-
-
-
 
 def break_large_problems(candidate_y_idxs, fixed_c_idxs, y, max_problem_size, window=5):
     fixed_c_idxs_pairs = sorted(fixed_c_idxs)
@@ -743,20 +677,14 @@ def run_segment(segment_args):
     ) = segment_args
     LOG_FILE = open('{}/{}/segment_{}_{}.log'.format(outdir,
                                                      contig, contig, tint_id), 'w+')
-    log_file_write = log_file_write_maker(tint_id, contig, LOG_FILE)
-    # log_file_write('read_split', 'before')
     tints = read_split(
         split_tsv='{}/{}/split_{}_{}.tsv'.format(split_dir, contig, contig, tint_id))
-    # log_file_write('read_split', 'after')
     assert len(tints) == 1
     tint = tints[0]
-    # log_file_write('read_sequence', 'before')
     read_sequence(
         tint=tint, reads_tsv='{}/{}/reads_{}_{}.tsv'.format(split_dir, contig, contig, tint_id))
     out_file = open('{}/{}/segment_{}_{}.tsv'.format(outdir,
                                                      contig, contig, tint_id), 'w+')
-    # log_file_write('read_sequence', 'after')
-    # log_file_write('segment', 'before')
     segment(
         tint,
         sigma,
@@ -765,11 +693,7 @@ def run_segment(segment_args):
         variance_factor,
         max_problem_size,
         min_read_support_outside,
-        log_file_write,
     )
-    # log_file_write('segment', 'after')
-
-    # log_file_write('output', 'before')
     record = list()
     record.append('#{}'.format(tint['chr']))
     record.append(str(tint['id']))
@@ -788,48 +712,33 @@ def run_segment(segment_args):
         out_file.write('\t'.join(record))
         out_file.write('\n')
     out_file.close()
-    # log_file_write('output', 'after')
-    # log_file_write('del-tint', 'before')
     del tint
-    # log_file_write('del-tint', 'after')
     LOG_FILE.close()
     return contig,tint_id
 
 
-def segment(tint, sigma, smoothed_threshold, threshold_rate, variance_factor, max_problem_size, min_read_support_outside, log_file_write=None):
-    # log_file_write('process_splicing_data', 'before')
+def segment(tint, sigma, smoothed_threshold, threshold_rate, variance_factor, max_problem_size, min_read_support_outside):
+
     (
         pos_to_Yy_idx,
         Yy_idx_to_pos,
         Y_raw,
     ) = process_splicing_data(tint)
-    # log_file_write('process_splicing_data', 'after')
-
     # Creating a smoothed version of the splicing signal
-    # log_file_write('gaussian_filter1d', 'before')
     Y = [gaussian_filter1d(y, sigma, truncate=4.0) for y in Y_raw]
-    # log_file_write('gaussian_filter1d', 'after')
     # Extracting non-zero values to detect extremely high splicing signals
-    # log_file_write('Y_none_zero_vals', 'before')
     Y_none_zero_vals = np.array([v for y in Y for v in y if v > 0])
-    # log_file_write('Y_none_zero_vals', 'after')
     variance_threhsold = Y_none_zero_vals.mean() + variance_factor * \
         Y_none_zero_vals.std()
     
     tint['final_positions'] = list()
     datas = [list() for _ in tint['read_reps']]
-    # log_file_write('segmentation', 'before')
     for Y_idx in range(len(Y)):
-        # log_file_write(f'segmentation-{Y_idx}', 'before')
         y = Y[Y_idx]
         # Getting candidate splice locations for the current tint interval
-        # log_file_write(f'candidates_from_peaks-{Y_idx}', 'before')
         candidate_y_idxs = candidates_from_peaks(y)
-        c_idxs_tracker = {i: 'Unselected' for i in range(len(candidate_y_idxs))}
-        # log_file_write(f'candidates_from_peaks-{Y_idx}', 'after')
         # Computing the cumulative coverage for each read rep on the intervals
         # defined by the candidate locations
-        # log_file_write(f'get_cumulative_coverage-{Y_idx}', 'before')
         C = get_cumulative_coverage(
             read_reps        = tint['read_reps'],
             candidate_y_idxs = candidate_y_idxs,
@@ -837,33 +746,23 @@ def segment(tint, sigma, smoothed_threshold, threshold_rate, variance_factor, ma
             pos_to_Yy_idx    = pos_to_Yy_idx,
             Y_idx            = Y_idx,
         )
-        # log_file_write(f'get_cumulative_coverage-{Y_idx}', 'after')
         fixed_c_idxs = set()
         # First and last candidates are always fixed
         fixed_c_idxs.add(0)
-        c_idxs_tracker[0] = 'Bound'
         fixed_c_idxs.add(len(candidate_y_idxs)-1)
-        c_idxs_tracker[len(candidate_y_idxs)-1] = 'Bound'
         # Any candidate with signal above the threshold is fixed
         for c_idx, y_idx in enumerate(candidate_y_idxs):
             if y[y_idx] > variance_threhsold:
                 fixed_c_idxs.add(c_idx)
-                c_idxs_tracker[c_idx] = 'Variance'
         # If the number of consecutive unfixed candidate is large, 
         # then add some fixed candidates in between 
         fixed_c_idxs, new_problems_total_count = break_large_problems(
             candidate_y_idxs, fixed_c_idxs, y, max_problem_size)
-        for c_idx in fixed_c_idxs:
-            if c_idxs_tracker[c_idx]=='Unselected':
-                c_idxs_tracker[c_idx] = 'Large'
-        # log_file_write(f'{new_problems_total_count}', 'after')
-
         fixed_c_idxs = sorted(fixed_c_idxs)
         # for s, e in zip(fixed_c_idxs[:-1], fixed_c_idxs[1:]):
         #     assert e-s <= max_problem_size+5, (s,e,max_problem_size)
 
         # Getting final candidate indices by runin g a DP formulation
-        # log_file_write(f'run_optimize-{Y_idx}', 'before')
         final_c_idxs = run_optimize(
             candidate_y_idxs=candidate_y_idxs,
             fixed_c_idxs=fixed_c_idxs,
@@ -872,22 +771,13 @@ def segment(tint, sigma, smoothed_threshold, threshold_rate, variance_factor, ma
             smoothed_threshold=smoothed_threshold,
             threshold_rate=threshold_rate,
             min_read_support_outside=min_read_support_outside,
-            # log_file_write = log_file_write
         )
-        for c_idx in final_c_idxs:
-            if c_idxs_tracker[c_idx]=='Unselected':
-                c_idxs_tracker[c_idx] = 'Optimized'
-        for k,v in Counter(c_idxs_tracker).items():
-            log_file_write(f'{k}\t{v}', '')
-        # log_file_write(f'run_optimize-{Y_idx}', 'after')
-        # print(final_c_idxs,fixed_c_idxs)
         final_y_idxs = [candidate_y_idxs[c_idx] for c_idx in final_c_idxs]
         refine_y_idxs = refine_segmentation(Y_raw[Y_idx], final_y_idxs, sigma)
         final_y_idxs.extend(refine_y_idxs)
         final_y_idxs.sort()
         tint['final_positions'].extend(
             [Yy_idx_to_pos[Y_idx][y_idx] for y_idx in final_y_idxs])
-        # log_file_write(f'get_cumulative_coverage-fin-{Y_idx}', 'before')
         C = get_cumulative_coverage(
             read_reps        = tint['read_reps'],
             candidate_y_idxs = final_y_idxs,
@@ -895,23 +785,12 @@ def segment(tint, sigma, smoothed_threshold, threshold_rate, variance_factor, ma
             pos_to_Yy_idx    = pos_to_Yy_idx,
             Y_idx            = Y_idx,
         )
-        # log_file_write(f'get_cumulative_coverage-fin-{Y_idx}', 'after')
-        # print('final_y_idxs',final_y_idxs)
-        # print('NEW C:',C)
         for seg_idx, (s_yidx, e_yidx) in enumerate(zip(final_y_idxs[:-1], final_y_idxs[1:])):
             seg_len = e_yidx-s_yidx+1
             h = get_high_threshold(seg_len, smoothed_threshold, threshold_rate)
             l = 1-h
-            # print('seg_idx', seg_idx)
-            # print('seg_len', seg_len)
-            # print('(h,l)', (h,l))
-            # assert seg_len == e_yidx-s_yidx+1
             for rr_idx in range(len(tint['read_reps'])):
-                # print(tint['read_reps'][rr_idx][0])
-                # print(C[:,rr_idx])
-                # print(C.shape)
                 cov_ratio = (C[seg_idx+1][rr_idx] - C[seg_idx][rr_idx]) / seg_len
-                # print(cov_ratio)
                 assert 0 <= cov_ratio <= 1, (rr_idx, seg_idx, s_yidx, e_yidx, seg_len)
 
                 if cov_ratio > h:
@@ -923,9 +802,6 @@ def segment(tint, sigma, smoothed_threshold, threshold_rate, variance_factor, ma
         for data in datas:
             data.append(0)
 
-        # log_file_write(f'segmentation-{Y_idx}', 'after')
-        # for rr_idx in range(len(tint['read_reps'])):
-    # log_file_write('segmentation', 'after')
     for data,(_,ridxs) in zip(datas, tint['read_reps']):
         for ridx in ridxs:
             tint['reads'][ridx]['data'] = data.copy()
@@ -933,10 +809,8 @@ def segment(tint, sigma, smoothed_threshold, threshold_rate, variance_factor, ma
         tint['final_positions'][:-1], 
         tint['final_positions'][1:]
     )]
-    # print('Extracting unaligned gaps and polyA tail data from reads for tint {}'.format(tint['id']))
     for read in tint['reads']:
         read['data'].pop()
-        # print(read['data'])
         assert len(read['data']) == len(
             tint['segs']), (len(read['data']), len(tint['segs']))
         get_unaligned_gaps_and_polyA(read=read, segs=tint['segs'])
@@ -988,12 +862,4 @@ def main():
 
 
 if __name__ == "__main__":
-    # import cProfile
-    # import pstats
-    # profiler = cProfile.Profile()
-    # profiler.enable()
     main()
-    # profiler.disable()
-    # stats = pstats.Stats(profiler, stream=open(
-    #     'test/SEGMENT/cprof', 'w+')).sort_stats('tottime')
-    # stats.print_stats()
