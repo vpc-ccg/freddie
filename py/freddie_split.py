@@ -4,12 +4,61 @@ import os
 import resource
 import re
 from operator import itemgetter
+import functools
 from collections import deque
 from multiprocessing import Pool
+import gzip
 
 import pysam
 import networkx as nx
 import numpy as np
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Extract alignment information from BAM/SAM file and splits reads into distinct transcriptional intervals")
+    parser.add_argument("-b",
+                        "--bam",
+                        type=str,
+                        required=True,
+                        help="Path to sorted and indexed BAM file of reads. Assumes splice aligner is used to the genome. Prefers deSALT")
+    parser.add_argument("--consider-nonspliced",
+                        type=str_to_bool,
+                        nargs='?',
+                        const=True,
+                        default=False,
+                        help="Consider reads with no splicing")
+    parser.add_argument("-r",
+                        "--reads",
+                        nargs="+",
+                        type=str,
+                        required=True,
+                        help="Space separated paths to reads in FASTQ or FASTA format used to extract polyA tail information. If the file ends with .gz, it will be read using gzip")
+    parser.add_argument("-t",
+                        "--threads",
+                        default=1,
+                        type=int,
+                        help="Number of threads. Max # of threads used is # of contigs. Default: 1")
+    parser.add_argument("--contig-min-size",
+                        default=1_000_000,
+                        type=int,
+                        help="Minimum contig size. Any contig with less size will not be processes. Default: 1,000,000")
+    parser.add_argument("-o",
+                        "--outdir",
+                        type=str,
+                        default='freddie_split/',
+                        help="Path to output directory. Default: freddie_split/")
+    args = parser.parse_args()
+    assert args.threads > 0
+    return args
+
+def str_to_bool(value):
+    if isinstance(value, bool):
+        return value
+    if value.lower() in {'false', 'f', '0', 'no', 'n'}:
+        return False
+    elif value.lower() in {'true', 't', '1', 'yes', 'y'}:
+        return True
+    raise ValueError(f'{value} is not a valid boolean value')
 
 cigar_re = re.compile(r'(\d+)([M|I|D|N|S|H|P|=|X]{1})')
 
@@ -62,51 +111,6 @@ cop_to_str = [
     'B',
 ]
 
-
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Extract alignment information from BAM/SAM file and splits reads into distinct transcriptional intervals")
-    parser.add_argument("-b",
-                        "--bam",
-                        type=str,
-                        required=True,
-                        help="Path to sorted and indexed BAM file of reads. Assumes splice aligner is used to the genome. Prefers deSALT")
-    parser.add_argument("-r",
-                        "--reads",
-                        nargs="+",
-                        type=str,
-                        required=True,
-                        help="Space separated paths to reads in FASTQ or FASTA format used to extract polyA tail information")
-    parser.add_argument("-t",
-                        "--threads",
-                        default=1,
-                        type=int,
-                        help="Number of threads. Max # of threads used is # of contigs. Default: 1")
-    parser.add_argument("-o",
-                        "--outdir",
-                        type=str,
-                        default='freddie_split/',
-                        help="Path to output directory. Default: freddie_split/")
-    args = parser.parse_args()
-    assert args.threads > 0
-    return args
-
-
-# def fix_cigar(cigar):
-#     fixed_cigar = list()
-#     fixed_cigar.append(cigar[0])
-#     for t, c in cigar[1:]:
-#         last_t, last_c = fixed_cigar[-1]
-#         if t == last_t:
-#             fixed_cigar[-1] = (t, last_c+c)
-#             continue
-#         if t in target_skipping and last_t in target_skipping:
-#             fixed_cigar[-1] = (pysam.CREF_SKIP, c+last_c)
-#             continue
-#         fixed_cigar.append((t, c))
-#     return fixed_cigar
-
-
 def fix_intervals(intervals):
     for ts, te, qs, qe, cigar in intervals:
         if len(cigar) == 0:
@@ -124,8 +128,9 @@ def fix_intervals(intervals):
         if ts < te:
             yield (ts, te, qs, qe, cigar)
 
-
-def get_intervals(aln):
+# Both query and target intervals are 0-based, start inclusive, and end explusive
+# E.g. the interval 0-10 is 10bp long, includes the base at index 0 but not the base at index 10
+def get_intervals(aln, max_del_size=20):
     cigar = aln.cigartuples
     qstart = 0
     if cigar[0][0] == pysam.CSOFT_CLIP:
@@ -139,32 +144,31 @@ def get_intervals(aln):
     if cigar[-1][0] == pysam.CSOFT_CLIP:
         qend -= cigar[-1][1]
     assert qend > qstart
-    tstart = aln.reference_start + 1
-    tend = tstart 
 
-    for t, c in cigar:
-        assert(0 <= t < 10)
-        if t in target_consuming:
-            tend += c
-    qstart_c = qstart
-    qend_c = qstart
-    tstart_c = tstart
-    tend_c = tstart
+    # aln.reference_start is 0-indexed 
+    tstart = aln.reference_start
 
-    intervals = list()
-    interval_cigar = list()
+    intervals = list() # list of exonic intervals of the alignment
+    qstart_c = qstart # current interval's start on query
+    qend_c = qstart # current interval's end on query
+    tstart_c = tstart  # current interval's start on target
+    tend_c = tstart # current interval's end on target
+    interval_cigar = list() # current interval's list of cigar operations 
     for t, c in cigar:
-        if t == pysam.CDEL and c > 20:
+        assert(0 <= t < 10), t
+        # Treat any deletion (cigar D) longer than max_del_size as a target skip (cigar N)
+        if t == pysam.CDEL and c > max_del_size:
             t = pysam.CREF_SKIP
         if t in exon_consuming:
             interval_cigar.append((t, c))
         if t == pysam.CDEL:
             tend_c += c
-        if t == pysam.CINS:
+        elif t == pysam.CINS:
             qend_c += c
-        if t in target_and_query_consuming:
+        elif t in target_and_query_consuming:
             tend_c += c
             qend_c += c
+        # End of the current interval
         if t == pysam.CREF_SKIP:
             intervals.append((
                 tstart_c,
@@ -173,6 +177,8 @@ def get_intervals(aln):
                 qend_c,
                 interval_cigar,
             ))
+            assert(sum(c for t,c in interval_cigar if t in query_consuming) == qend_c-qstart_c)
+            assert(sum(c for t,c in interval_cigar if t in target_consuming) == tend_c-tstart_c)
             interval_cigar = list()
             tend_c += c
             tstart_c = tend_c
@@ -185,10 +191,23 @@ def get_intervals(aln):
             qend_c,
             interval_cigar,
         ))
-    return list(fix_intervals(intervals))
+        assert(sum(c for t,c in interval_cigar if t in query_consuming) == qend_c-qstart_c)
+        assert(sum(c for t,c in interval_cigar if t in target_consuming) == tend_c-tstart_c)
+    # X = sum(c for t, c in cigar if t in target_consuming)
+    # Y = sum(e-s for s,e,_,_,_ in intervals)
+    # if X!=Y:
+    #     print(X,Y,X-Y)
+    #     print(aln.cigarstring)
+    #     print(aln.query_name)
+    #     for idx,(ts,te,qs,qe,C) in enumerate(intervals):
+    #         print(idx,te-ts,sum(c for t,c in C if t in target_consuming))
+    #         print(idx,qe-qs,sum(c for t,c in C if t in query_consuming))
+    #     assert False
+    return intervals
+    # return list(fix_intervals(intervals))
 
 
-def read_sam(sam, contig):
+def read_sam(sam, contig, ignore_nonspliced):
     reads = list()
     start, end = None, None
     for aln in sam.fetch(contig=contig):
@@ -206,6 +225,8 @@ def read_sam(sam, contig):
             intervals=[(st, et, sr, er, c) for (st, et, sr, er, c)
                        in get_intervals(aln) if st != et and sr != er],
         )
+        if ignore_nonspliced and len(read['intervals']) == 1:
+            continue
         s, _, _, _, _ = read['intervals'][0]
         _, e, _, _, _ = read['intervals'][-1]
         if (start, end) == (None, None):
@@ -348,7 +369,11 @@ def split_reads(read_files, rname_to_tint, contigs, outdir, threads):
                 for c in contigs}
     for read_file in read_files:
         print('[freddie_split] Splitting reads:', read_file)
-        for idx, line in enumerate(open(read_file)):
+        if read_file.endswith('.gz'):
+            read_file_open = gzip.open(read_file, 'rt')
+        else:
+            read_file_open = open(read_file, 'r')
+        for idx, line in enumerate(read_file_open):
             if idx == 0:
                 if line[0] == '@':
                     mod = 4
@@ -400,12 +425,12 @@ def split_reads(read_files, rname_to_tint, contigs, outdir, threads):
 
 
 def run_split(split_args):
-    bam, contig, outdir = split_args
+    bam, contig, ignore_nonspliced, outdir = split_args
     sam = pysam.AlignmentFile(bam, 'rb')
     rname_to_tint = dict()
     tint_id = 0
     contig_outdir = '{}/{}'.format(outdir, contig)
-    for reads in read_sam(sam=sam, contig=contig):
+    for reads in read_sam(sam=sam, contig=contig, ignore_nonspliced=ignore_nonspliced):
         tints = get_transcriptional_intervals(reads=reads)
         for tint in tints:
             if tint_id == 0:
@@ -437,7 +462,7 @@ def write_tint(contig_outdir, contig, tint_id, tint, reads, rname_to_tint):
                 tint_ids = list()
             )
         assert rname_to_tint[read['name']]['contig'] == contig
-        assert rname_to_tint[read['name']]['rid'] == rid
+        assert rname_to_tint[read['name']]['rid'] == rid, (contig, rid, read['name'], rname_to_tint[read['name']]['rid'])
         rname_to_tint[read['name']]['tint_ids'].append(tint_id)
         record = list()
         record.append(str(read['id']))
@@ -463,43 +488,42 @@ def main():
     os.makedirs(args.outdir, exist_ok=True)
     print('[freddie_split.py] Running split with args:', args)
 
-    contigs = {x['SN']: x['LN']
-               for x in pysam.AlignmentFile(args.bam, 'rb').header['SQ'] if x['LN'] > 1000000}
+    contigs = {
+        x['SN']
+        for x in pysam.AlignmentFile(args.bam, 'rb').header['SQ']
+        if x['LN'] > args.contig_min_size 
+    }
+    assert len(contigs) > 0, f'No contigs are left! Try checking BAM header or --contig-min-size parameter'
     args.threads = min(args.threads, len(contigs))
     split_args = list()
-    for contig, _ in sorted(contigs.items(), key=itemgetter(1), reverse=True):
+    for contig in sorted(contigs, reverse=True):
         split_args.append((
             args.bam,
             contig,
+            not args.consider_nonspliced,
             args.outdir,
         ))
     rname_to_tint = dict()
     final_contigs = list()
     if args.threads > 1:
         p = Pool(args.threads)
-        for contig, rname_to_tint_thread in p.imap_unordered(run_split, split_args, chunksize=1):
-            if len(rname_to_tint_thread) == 0:
-                continue
-            print('[freddie_split] Done with contig {}'.format(contig))
-            rname_to_tint = {**rname_to_tint, **rname_to_tint_thread}
-            final_contigs.append(contig)
-        p.close()
+        mapper = functools.partial(p.imap_unordered, chunksize=1)
     else:
-        for contig, rname_to_tint_thread in map(run_split, split_args):
-            if len(rname_to_tint_thread) == 0:
-                continue
-            print('[freddie_split] Done with contig {}'.format(contig))
-            rname_to_tint = {**rname_to_tint, **rname_to_tint_thread}
-            final_contigs.append(contig)
+        mapper = map
+    for contig, contig_rname_to_tint in mapper(run_split, split_args):
+        if len(contig_rname_to_tint) == 0:
+            continue
+        print('[freddie_split] Done with contig {}'.format(contig))
+        rname_to_tint = {**rname_to_tint, **contig_rname_to_tint}
+        final_contigs.append(contig)
+    if args.threads > 1:
+        p.close()
 
     RLIMIT_NOFILE_soft,RLIMIT_NOFILE_hard = resource.getrlimit(resource.RLIMIT_NOFILE)
     if RLIMIT_NOFILE_hard < len(contigs)+10:
         assert False, 'Number of contigs in reference is much larger than system hard limit on open files! {} vs {}'.format(len(contigs), RLIMIT_NOFILE_hard)
     if RLIMIT_NOFILE_soft < len(contigs)+10:
         resource.setrlimit(resource.RLIMIT_NOFILE, (len(contigs)+10, RLIMIT_NOFILE_hard))
-    # import pickle
-    # pickle.dump((rname_to_tint,final_contigs),open('TEST.PICKLE', 'wb'))
-    # exit()
     split_reads(read_files=args.reads,
                 rname_to_tint=rname_to_tint, contigs=final_contigs, outdir=args.outdir, threads=args.threads)
 

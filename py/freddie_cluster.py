@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import functools
 import os
 from multiprocessing import Pool
 
@@ -70,8 +71,12 @@ def parse_args():
     parser.add_argument("-mi",
                         "--max-ilp",
                         type=int,
-                        default=1500,
-                        help="Maximum number of unique reads allowed for an ILP instance. ILP instances with more reads will have their input broken into evenly sized problems, each with less than the max. Default {}".format(1500))
+                        default=1000,
+                        help="""
+                        Maximum number of unique reads allowed for an ILP instance. 
+                        ILP instances with more reads will have their input broken into evenly sized problems, 
+                        each with less than the max. Default {}"
+                        """.format(1000))
     parser.add_argument("-to",
                         "--timeout",
                         type=int,
@@ -187,10 +192,10 @@ def garbage_cost_introns(C):
 def garbage_cost_exons(I):
     # Sum of exons present in the read
     return(max(sum(I.values())-0.5, 1))
-# TO DO: think about better ways to define the cost to assign to the garbagte isoform
-
 
 def partition_reads(tint, maximum_ilp_size):
+    # Partition the reads of the tint so partitions that have incompatible reads
+    # This should speed up the ILP clustering
     reads = tint['reads']
     read_reps = tint['read_reps']
     I = tint['ilp_data']['I']
@@ -198,9 +203,10 @@ def partition_reads(tint, maximum_ilp_size):
     tint['partitions'] = list()
 
     rids = sorted(I.keys())
-    unique_data = dict()
+    unique_data = dict() 
     edges = list()
     for i in rids:
+        # If two reads have the same structure, use one of them
         d = (tuple(I[i]), (FL[i][0], FL[i][1], reads[read_reps[i][0]]['poly_tail_category']))
         if d in unique_data:
             unique_data[d].append(i)
@@ -208,39 +214,53 @@ def partition_reads(tint, maximum_ilp_size):
             unique_data[d] = [i]
     unique_data = list(unique_data.items())
     N = len(unique_data)
+    # For each pair of reads, see if they are incompatible
     for i in range(N):
         for j in range(i+1, N):
             d1, (f1, l1, t1) = unique_data[i][0]
             d2, (f2, l2, t2) = unique_data[j][0]
-            f = max(f1, f2)
-            l = min(l1, l2)
-            o = l-f+1
-            d = sum(x != y for x, y in zip(d1[f:l+1], d2[f:l+1]))
-            w = sum(x == y == 1 for x, y in zip(d1[f:l+1], d2[f:l+1]))
-            if t1 != 'N' and t2 != 'N' and t1 != t2:
+            # if reads have poly-A tail on different ends, they are incompatible
+            if t1 != 'N' and t2 != 'N' and t1 != t2: 
                 continue
-            if w < 1:
+            f = max(f1, f2) # first segment of overlap
+            l = min(l1, l2) # last segment of overlap
+            o = l-f+1 # overlap size
+            w = sum(x == y == 1 for x, y in zip(d1[f:l+1], d2[f:l+1])) # how many segments in overlap are same
+            if w < 1: # no common segments, consider incompatible
                 continue
-            if (o > 3 and d < 3) or (1 <= o <= 3 and d == 0):
+            d = sum(x != y for x, y in zip(d1[f:l+1], d2[f:l+1])) # how many segments in overlap are different (i.e. # of errors)
+            # Compatible if 0-2 errors in overlap >3 segments, or 0 errors in overlap of 1-3 segments
+            if (o > 3 and d < 3) or (1 <= o <= 3 and d == 0): 
                 edges.append((i, j))
+    
+    # Add edges between compatible reads
     G = Graph()
     G.add_nodes_from(range(N))
     G.add_edges_from(edges)
     while True:
         edges_to_remove = list()
+        # Prune edges
         for i, j in G.edges:
             n1 = set(G.neighbors(i))
             n2 = set(G.neighbors(j))
+            # Keep edge if a read has no other neighbors 
+            # or if read pair has another neighbor in common
             if len(n1) == 1 or len(n2) == 1 or len(n1 & n2) > 0:
                 continue
             edges_to_remove.append((i, j))
         G.remove_edges_from(edges_to_remove)
+        # Repeat until no edges are removed
         if len(edges_to_remove) == 0:
             break
-    for c in components.connected_components(G):
-        rids = list()
-        incomp = list()
-        for c in split_list_evenly(list(c), maximum_ilp_size):
+    # Each connected component represents an independent partition
+    connected_components = list(components.connected_components(G))
+    for cc_idx,connected_component in enumerate(connected_components):
+        connected_component = sorted(connected_component)
+        # If connected component is > maximum_ilp_size, split it to evenly sized partitions 
+        for c in split_list_evenly(connected_component, maximum_ilp_size):
+            rids = list() # list of reads per partition
+            incomp = list() # list of incompatible reads in a partition
+            print(len(c), c[:10])
             for idx, i in enumerate(c):
                 rids.extend(unique_data[i][1])
                 for j in c[idx+1:]:
@@ -255,16 +275,12 @@ def partition_reads(tint, maximum_ilp_size):
 
 
 def preprocess_ilp(tint, ilp_settings):
-    # print('Preproessing ILP with {} read reps and the following settings:\n{}'.format(
-    #     len(tint['read_reps']), ilp_settings))
     read_reps = tint['read_reps']
     N = len(read_reps)
     M = len(tint['segs'])
-    I = dict()
-    C = dict()
-    FL = dict()
-    tail_s_rids = list()
-    tail_e_rids = list()
+    I = dict() # For each read segment, 0 if segment has same value in all reads, 1 otherwise
+    C = dict() # For each read segment, 0 if segment is first or last, 1 otherwise 
+    FL = dict() # For each read, indicate First/Last segment 
 
     for i, read_idxs in enumerate(read_reps):
         read = tint['reads'][read_idxs[0]]
@@ -279,13 +295,11 @@ def preprocess_ilp(tint, ilp_settings):
             tail_key = next(iter(read['poly_tail']))
             tail_val = read['poly_tail'][tail_key]
             if tail_key in ['SA', 'ST'] and tail_val[0] > 10:
-                tail_s_rids.append(i)
                 read['poly_tail_category'] = 'S'
                 read['gaps'][(-1, min_i)] = tail_val[1]
                 min_i = 0
             elif tail_key in ['EA', 'ET'] and tail_val[0] > 10:
                 read['poly_tail_category'] = 'E'
-                tail_e_rids.append(i)
                 read['gaps'][(max_i, M)] = tail_val[1]
                 max_i = M-1
         FL[i] = (min_i, max_i)
@@ -327,8 +341,6 @@ def informative_segs(tint, remaining_rids):
     for j in range(1, M-1):
         if len(seg_content[j]) == 1 and (seg_content[j-1] == seg_content[j] == seg_content[j+1]):
             informative[j] = False
-    # for j in range(M):
-    #     print(informative[j], seg_content[j])
     return informative
 
 
@@ -498,32 +510,6 @@ def run_ilp(tint, remaining_rids, incomp_rids, ilp_settings, log_prefix):
                     i1=i1, i2=i2, k=k)
             )
 
-    # [OPTIONAL] Labeling non-garbage isoforms by their exon content and forcing them to occur in increasing label order
-    # LABEL_I    = {}
-    # LABEL_I_C1 = {}
-    # LABEL_I_C2 = {}
-    # for k in range(ISOFORM_INDEX_START,ilp_settings['K']):
-    #     LABEL_I[k]    = ILP_ISOFORMS.addVar(
-    #         vtype = GRB.INTEGER,
-    #         name  = 'LABEL_I[{k}]'.format(k=k)
-    #     )
-    #     LABEL_I_C1[k] = ILP_ISOFORMS.addLConstr(
-    #         lhs   = LABEL_I[k],
-    #         sense = GRB.EQUAL,
-    #         rhs   = quicksum(E2I[j][k]*(2**j) for j in range(0,M)),
-    #         name  = 'LABEL_I_C1[{k}]'.format(k =k)
-    #     )
-    #     if k > ISOFORM_INDEX_START:
-    #         LABEL_I_C2[k] = ILP_ISOFORMS.addLConstr(
-    #             lhs   = LABEL_I[k],
-    #             sense = GRB.LESS_EQUAL,
-    #             rhs   = LABEL_I[k-1]-0.1,
-    #             name  = 'LABEL_I_C2[{k}]'.format(k=k)
-    #         )
-
-    # Objective function
-    # For i,j,k such that i ∈ remaining_rids, C[i,j]=1 (read has a zero that can be
-    #   corrected), and E2I[j,k]=1 (isoform k has exon j), OBJ[i][j][k] = 1
     OBJ = {}
     OBJ_C1 = {}
     OBJ_SUM = LinExpr(0.0)
@@ -721,17 +707,15 @@ def cluster_tint(cluster_args):
     assert len(tints) == 1
     tint = list(tints.values())[0]
 
-    # print('# Clustering tint {}'.format(tint['id']))
     if logs_dir != None:
         os.makedirs('{}/{}'.format(logs_dir, tint['id']), exist_ok=True)
         timeout_log = open(
             '{}/{}/timeout.log'.format(logs_dir, tint['id']), 'w+')
     preprocess_ilp(tint, ilp_settings)
     partition_reads(tint, max_ilp)
-    # print('# Paritions ({}) sizes: {}\n'.format(
-    #     len(tint['partitions']), [len(p) for p in tint['partitions']]))
     tint['isoforms'] = list()
     tint['garbage_rids'] = list()
+
     for partition, (remaining_rids, incomp_rids) in enumerate(tint['partitions']):
         for rid in remaining_rids:
             for ridx in tint['read_reps'][rid]:
@@ -753,19 +737,24 @@ def cluster_tint(cluster_args):
                     logs_dir, tint['id'], partition, round_num) if logs_dir != None else None,
             )
             if logs_dir != None:
-                print('\t'.join(map(str, [ILP_ISOFORMS_STATUS, tint['id'], partition, round_num, len(
-                    remaining_rids)])), file=timeout_log)
+                print(
+                    '\t'.join(map(str, [
+                        ILP_ISOFORMS_STATUS,
+                        tint['id'],
+                        partition,
+                        round_num,
+                        len(remaining_rids)
+                ])),
+                    file=timeout_log
+                )
             if status != 'OPTIMAL':
                 break
             number_of_clustered_reads = 0
             for i in round_isoforms.values():
                 number_of_clustered_reads += sum([len(tint['read_reps'][rid]) for i in round_isoforms.values() for rid in i['rid_to_corrections'].keys()])
-            # print('Number of clustered reads:', number_of_clustered_reads)
             if number_of_clustered_reads < min_isoform_size:
                 break
             for k, isoform in round_isoforms.items():
-                # print('Isoform {} size: {}'.format(
-                #     k, len(isoform['rid_to_corrections'])))
                 if sum(len(tint['read_reps'][rid]) for rid in isoform['rid_to_corrections'].keys()) < min_isoform_size:
                     continue
                 tint['isoforms'].append(isoform)
@@ -775,9 +764,6 @@ def cluster_tint(cluster_args):
                     for ridx in tint['read_reps'][rid]:
                         tint['reads'][ridx]['corrections'] = corrections
                         tint['reads'][ridx]['isoform'] = len(tint['isoforms'])-1
-            # print('------->')
-            # print('Remaining reads: {}\n'.format(len(remaining_rids)))
-            # print('<-------')
         tint['garbage_rids'].extend(sorted(remaining_rids))
     if logs_dir != None:
         timeout_log.close()
@@ -828,14 +814,17 @@ def main():
             ])
     if args.threads > 1:
         p = Pool(args.threads)
-        for idx, tint_id in enumerate(p.imap_unordered(cluster_tint, cluster_args, chunksize=1)):
-            print('[freddie_cluster] Done with {}/{} tints ({:.1%})'.format(idx+1,
-                                                                            len(cluster_args), idx/len(cluster_args)))
+        mapper = functools.partial(p.imap_unordered, chunksize=1)
     else:
-        for idx, tint_id in enumerate(map(cluster_tint, cluster_args)):
-            print('[freddie_cluster] Done with {}/{} tints ({:.1%})'.format(idx+1,
-                                                                            len(cluster_args), idx/len(cluster_args)))
-
+        mapper = map
+    for idx, tint_id in enumerate(mapper(cluster_tint, cluster_args)):
+        print('[freddie_cluster] Done with {}/{} tints ({:.1%})'.format(
+            idx+1,
+            len(cluster_args),
+            idx/len(cluster_args))
+        )
+    if args.threads > 1:
+        p.close()
 
 if __name__ == "__main__":
     main()
