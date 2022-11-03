@@ -2,7 +2,7 @@ outpath:
     test/dev/
 
 gurobi:
-    license: gurobi.lic
+    license: /home/$USER/gurobi.lic
     timeout: 1
 
 exec:
