@@ -144,6 +144,11 @@ def get_intervals(aln, max_del_size=20):
     if cigar[-1][0] == pysam.CSOFT_CLIP:
         qend -= cigar[-1][1]
     assert qend > qstart
+<<<<<<< HEAD
+=======
+    tstart = aln.reference_start + 1
+    tend = tstart 
+>>>>>>> master
 
     # aln.reference_start is 0-indexed 
     tstart = aln.reference_start

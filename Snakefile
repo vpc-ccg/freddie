@@ -12,14 +12,15 @@ outpath = config['outpath'].rstrip('/')
 
 output_d = '{}/results'.format(outpath)
 logs_d   = '{}/logs'.format(outpath)
+benchmark_d   = '{}/benchmark'.format(outpath)
 
 rule all:
     input:
         expand('{}/{{sample}}/{{sample}}.sorted.bam'.format(output_d), sample=config['samples']),
-        expand('{}/{{sample}}/freddie.split'.format(output_d),         sample=config['samples']),
-        expand('{}/{{sample}}/freddie.segment'.format(output_d),       sample=config['samples']),
-        expand('{}/{{sample}}/freddie.cluster'.format(output_d),       sample=config['samples']),
-        expand('{}/{{sample}}/freddie.isoforms.gtf'.format(output_d),  sample=config['samples']),
+        expand('{}/{{sample}}/{{run_mode}}/freddie.split'.format(output_d),         sample=config['samples'], run_mode=config['run_modes']),
+        expand('{}/{{sample}}/{{run_mode}}/freddie.segment'.format(output_d),       sample=config['samples'], run_mode=config['run_modes']),
+        expand('{}/{{sample}}/{{run_mode}}/freddie.cluster'.format(output_d),       sample=config['samples'], run_mode=config['run_modes']),
+        expand('{}/{{sample}}/{{run_mode}}/freddie.isoforms.gtf'.format(output_d),  sample=config['samples'], run_mode=config['run_modes']),
 
 rule minimap2:
     input:
@@ -31,7 +32,7 @@ rule minimap2:
     conda:
         'envs/minimap2.yml'
     threads:
-        32
+        64
     resources:
         mem  = "128G",
         time = 1439,
@@ -45,9 +46,10 @@ rule split:
         reads  = lambda wildcards: config['samples'][wildcards.sample]['reads'],
         bam = '{}/{{sample}}/{{sample}}.sorted.bam'.format(output_d),
     output:
-        split = directory('{}/{{sample}}/freddie.split'.format(output_d)),
+        split = directory('{}/{{sample}}/{{run_mode}}/freddie.split'.format(output_d)),
     params:
         script = config['exec']['split'],
+        run_mode = lambda wildcards: config['run_modes'][wildcards.run_mode]['split']
     conda:
         'envs/freddie.yml'
     threads:
@@ -55,15 +57,19 @@ rule split:
     resources:
         mem  = "16G",
         time = 359,
+    benchmark:
+        f'{benchmark_d}/split/{{sample}}.{{run_mode}}.tsv'
     shell:
-        '{params.script} -b {input.bam} -r {input.reads} -o {output.split} -t {threads}'
+        '{params.script} -b {input.bam} -r {input.reads} -o {output.split} -t {threads} {params.run_mode}'
 
 rule segment:
     input:
-        script = config['exec']['segment'],
-        split  = '{}/{{sample}}/freddie.split'.format(output_d),
+        split  = '{}/{{sample}}/{{run_mode}}/freddie.split'.format(output_d),
     output:
-        segment = directory('{}/{{sample}}/freddie.segment'.format(output_d)),
+        segment = directory('{}/{{sample}}/{{run_mode}}/freddie.segment'.format(output_d)),
+    params:
+        script = config['exec']['segment'],
+        run_mode = lambda wildcards: config['run_modes'][wildcards.run_mode]['segment']
     conda:
         'envs/freddie.yml'
     threads:
@@ -71,32 +77,37 @@ rule segment:
     resources:
         mem  = "32G",
         time = 599,
+    benchmark:
+        f'{benchmark_d}/segment/{{sample}}.{{run_mode}}.tsv'
     shell:
-        '{input.script} -s {input.split} -o {output.segment} -t {threads}'
+        '{params.script} -s {input.split} -o {output.segment} -t {threads} {params.run_mode}'
 
 rule cluster:
     input:
         license = config['gurobi']['license'],
-        script  = config['exec']['cluster'],
-        segment = '{}/{{sample}}/freddie.segment'.format(output_d),
+        segment = '{}/{{sample}}/{{run_mode}}/freddie.segment'.format(output_d),
     output:
-        cluster = directory('{}/{{sample}}/freddie.cluster'.format(output_d)),
-        logs    = directory('{}/{{sample}}/freddie.cluster_logs'.format(output_d)),
-        log     = '{}/{{sample}}/freddie.cluster.log'.format(logs_d),
+        cluster = directory('{}/{{sample}}/{{run_mode}}/freddie.cluster'.format(output_d)),
+        logs    = directory('{}/{{sample}}/{{run_mode}}/freddie.cluster_logs'.format(output_d)),
+        log     = '{}/{{sample}}/{{run_mode}}/freddie.cluster.log'.format(logs_d),
     conda:
         'envs/freddie.yml'
     params:
+        script  = config['exec']['cluster'],
         timeout = config['gurobi']['timeout'],
+        run_mode = lambda wildcards: config['run_modes'][wildcards.run_mode]['cluster']
     conda:
         'envs/freddie.yml'
     threads:
         32
     resources:
-        mem  = "32G",
+        mem  = "64G",
         time = 999,
+    benchmark:
+        f'{benchmark_d}/cluster/{{sample}}.{{run_mode}}.tsv'
     shell:
         'export GRB_LICENSE_FILE={input.license}; '
-        '{input.script} -s {input.segment} -o {output.cluster} -l {output.logs} -t {threads} -to {params.timeout} > {output.log}'
+        '{params.script} -s {input.segment} -o {output.cluster} -l {output.logs} -t {threads} -to {params.timeout} {params.run_mode} > {output.log}'
 
 rule isoforms:
     input:
