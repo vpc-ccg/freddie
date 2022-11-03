@@ -30,6 +30,37 @@ There are few scripts/stages in Freddie:
 - `py/freddie_cluster.py`: Clusters the reads using their canonical segmentation representation
 - `py/freddie_isoforms.py`: Generates consensus isoforms of each cluster and outputs them in `GTF` format
 
+### Obtaining Gurobi license
+Freddie's clustering stage (`py/freddie_cluster.py`) uses Gurobi Solver.
+To use Freddie, you need to have a Gurobi license installed.
+Luckily, you can obtain one for free using an academic email address:
+
+- Go to [https://pages.gurobi.com/registration](https://pages.gurobi.com/registration) to register an account.
+Make sure to select "Academic" to obtain the free license.
+
+- Once you have registered and logged in to [Gurobi.com](https://www.gurobi.com/) with your account, go to [here](https://www.gurobi.com/downloads/end-user-license-agreement-academic/) to obtain an academic license code.
+You need to write this license code down because Gurobi does not save it for you. 
+
+- Install the license on your machine using the following commands:
+
+```bash
+conda activate freddie #Freddie conda environment contains Gurobi command line programs
+grbgetkey <License Code>
+```
+
+By default, Gurobi license installer, `grbgetkey`, installs the license file to `/home/$USER/gurobi.lic`.
+If you installed the license somewhere else, you need to make Freddie know where the new license is installed.
+If you are going to use the supplied Snakemake file, edit the following lines in `config.yaml` file:
+```yaml
+gurobi:
+    license: /home/$USER/gurobi.lic
+```
+
+If you are going to use Freddie's scripts directly, make sure to modify the Bash environment variable before running `freddie_cluster.py` using the following command:
+```bash
+export GRB_LICENSE_FILE=/path/to/gurobi.lic
+```
+
 ### Align
 
 ```
