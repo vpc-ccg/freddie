@@ -4,6 +4,7 @@ import os
 import resource
 import re
 from operator import itemgetter
+import functools
 from collections import deque
 from multiprocessing import Pool
 import gzip
@@ -20,6 +21,12 @@ def parse_args():
                         type=str,
                         required=True,
                         help="Path to sorted and indexed BAM file of reads. Assumes splice aligner is used to the genome. Prefers deSALT")
+    parser.add_argument("--consider-nonspliced",
+                        type=str_to_bool,
+                        nargs='?',
+                        const=True,
+                        default=False,
+                        help="Consider reads with no splicing")
     parser.add_argument("-r",
                         "--reads",
                         nargs="+",
@@ -44,6 +51,14 @@ def parse_args():
     assert args.threads > 0
     return args
 
+def str_to_bool(value):
+    if isinstance(value, bool):
+        return value
+    if value.lower() in {'false', 'f', '0', 'no', 'n'}:
+        return False
+    elif value.lower() in {'true', 't', '1', 'yes', 'y'}:
+        return True
+    raise ValueError(f'{value} is not a valid boolean value')
 
 cigar_re = re.compile(r'(\d+)([M|I|D|N|S|H|P|=|X]{1})')
 
@@ -192,7 +207,7 @@ def get_intervals(aln, max_del_size=20):
     # return list(fix_intervals(intervals))
 
 
-def read_sam(sam, contig):
+def read_sam(sam, contig, ignore_nonspliced):
     reads = list()
     start, end = None, None
     for aln in sam.fetch(contig=contig):
@@ -210,6 +225,8 @@ def read_sam(sam, contig):
             intervals=[(st, et, sr, er, c) for (st, et, sr, er, c)
                        in get_intervals(aln) if st != et and sr != er],
         )
+        if ignore_nonspliced and len(read['intervals']) == 1:
+            continue
         s, _, _, _, _ = read['intervals'][0]
         _, e, _, _, _ = read['intervals'][-1]
         if (start, end) == (None, None):
@@ -408,12 +425,12 @@ def split_reads(read_files, rname_to_tint, contigs, outdir, threads):
 
 
 def run_split(split_args):
-    bam, contig, outdir = split_args
+    bam, contig, ignore_nonspliced, outdir = split_args
     sam = pysam.AlignmentFile(bam, 'rb')
     rname_to_tint = dict()
     tint_id = 0
     contig_outdir = '{}/{}'.format(outdir, contig)
-    for reads in read_sam(sam=sam, contig=contig):
+    for reads in read_sam(sam=sam, contig=contig, ignore_nonspliced=ignore_nonspliced):
         tints = get_transcriptional_intervals(reads=reads)
         for tint in tints:
             if tint_id == 0:
@@ -483,26 +500,24 @@ def main():
         split_args.append((
             args.bam,
             contig,
+            not args.consider_nonspliced,
             args.outdir,
         ))
     rname_to_tint = dict()
     final_contigs = list()
     if args.threads > 1:
         p = Pool(args.threads)
-        for contig, rname_to_tint_thread in p.imap_unordered(run_split, split_args, chunksize=1):
-            if len(rname_to_tint_thread) == 0:
-                continue
-            print('[freddie_split] Done with contig {}'.format(contig))
-            rname_to_tint = {**rname_to_tint, **rname_to_tint_thread}
-            final_contigs.append(contig)
-        p.close()
+        mapper = functools.partial(p.imap_unordered, chunksize=1)
     else:
-        for contig, rname_to_tint_thread in map(run_split, split_args):
-            if len(rname_to_tint_thread) == 0:
-                continue
-            print('[freddie_split] Done with contig {}'.format(contig))
-            rname_to_tint = {**rname_to_tint, **rname_to_tint_thread}
-            final_contigs.append(contig)
+        mapper = map
+    for contig, contig_rname_to_tint in mapper(run_split, split_args):
+        if len(contig_rname_to_tint) == 0:
+            continue
+        print('[freddie_split] Done with contig {}'.format(contig))
+        rname_to_tint = {**rname_to_tint, **contig_rname_to_tint}
+        final_contigs.append(contig)
+    if args.threads > 1:
+        p.close()
 
     RLIMIT_NOFILE_soft,RLIMIT_NOFILE_hard = resource.getrlimit(resource.RLIMIT_NOFILE)
     if RLIMIT_NOFILE_hard < len(contigs)+10:
