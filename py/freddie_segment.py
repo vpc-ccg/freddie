@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
+import functools
 from multiprocessing import Pool
 import os
 import glob
-# import psutil
 
-from itertools import combinations, groupby
+from itertools import groupby
 import argparse
 import re
 from math import exp, ceil
@@ -58,6 +58,12 @@ def parse_args():
                         type=str,
                         required=True,
                         help="Path to Freddie split directory of the reads")
+    parser.add_argument("--consider-ends",
+                        type=str_to_bool,
+                        nargs='?',
+                        const=True,
+                        default=False,
+                        help="Consider the start and end splice sites in segmentation")
     parser.add_argument("-o",
                         "--outdir",
                         type=str,
@@ -103,6 +109,14 @@ def parse_args():
     assert(args.threads > 0)
     return args
 
+def str_to_bool(value):
+    if isinstance(value, bool):
+        return value
+    if value.lower() in {'false', 'f', '0', 'no', 'n'}:
+        return False
+    elif value.lower() in {'true', 't', '1', 'yes', 'y'}:
+        return True
+    raise ValueError(f'{value} is not a valid boolean value')
 
 def read_split(split_tsv):
     tints = dict()
@@ -631,7 +645,7 @@ def break_large_problems(candidate_y_idxs, fixed_c_idxs, y, max_problem_size, wi
     return fixed_c_idxs, new_problems_total_count
 
 
-def process_splicing_data(tint):
+def process_splicing_data(tint, ignore_ends):
     pos_to_Yy_idx = dict()
     Yy_idx_to_pos = list()
     Y_raw = list()
@@ -648,13 +662,15 @@ def process_splicing_data(tint):
     for read_rep, r_idxes in tint['read_reps']:
         for rid in r_idxes:
             tint['reads'][rid]['data'] = list()
-        for ts, te in read_rep:
+        for idx, (ts, te) in enumerate(read_rep):
             Y_idx_s, y_idx_s = pos_to_Yy_idx[ts]
             Y_idx_e, y_idx_e = pos_to_Yy_idx[te]
             assert Y_idx_s == Y_idx_e, (Y_idx_s,Y_idx_e)
             Y_idx = Y_idx_s
-            Y_raw[Y_idx][y_idx_s] += len(r_idxes)
-            Y_raw[Y_idx][y_idx_e] += len(r_idxes)
+            if not (ignore_ends and idx == 0):
+                Y_raw[Y_idx][y_idx_s] += len(r_idxes)
+            if not (ignore_ends and idx == len(read_rep)-1):
+                Y_raw[Y_idx][y_idx_e] += len(r_idxes)
     return (
         pos_to_Yy_idx,
         Yy_idx_to_pos,
@@ -673,7 +689,8 @@ def run_segment(segment_args):
         threshold_rate,
         variance_factor,
         max_problem_size,
-        min_read_support_outside
+        min_read_support_outside,
+        ignore_ends,
     ) = segment_args
     LOG_FILE = open('{}/{}/segment_{}_{}.log'.format(outdir,
                                                      contig, contig, tint_id), 'w+')
@@ -693,6 +710,7 @@ def run_segment(segment_args):
         variance_factor,
         max_problem_size,
         min_read_support_outside,
+        ignore_ends,
     )
     record = list()
     record.append('#{}'.format(tint['chr']))
@@ -717,13 +735,22 @@ def run_segment(segment_args):
     return contig,tint_id
 
 
-def segment(tint, sigma, smoothed_threshold, threshold_rate, variance_factor, max_problem_size, min_read_support_outside):
+def segment(
+    tint, 
+    sigma, 
+    smoothed_threshold, 
+    threshold_rate, 
+    variance_factor, 
+    max_problem_size, 
+    min_read_support_outside,
+    ignore_ends,
+):
 
     (
         pos_to_Yy_idx,
         Yy_idx_to_pos,
         Y_raw,
-    ) = process_splicing_data(tint)
+    ) = process_splicing_data(tint, ignore_ends)
     # Creating a smoothed version of the splicing signal
     Y = [gaussian_filter1d(y, sigma, truncate=4.0) for y in Y_raw]
     # Extracting non-zero values to detect extremely high splicing signals
@@ -839,26 +866,23 @@ def main():
                 args.variance_factor,
                 args.max_problem_size,
                 args.min_read_support_outside,
+                not args.consider_ends,
             ))
     if args.threads > 1:
         p = Pool(args.threads)
-        for idx, (contig,tint_id) in enumerate(p.imap_unordered(run_segment, segment_args, chunksize=1)):
-            if not idx % ceil(len(segment_args)/100) == 0:
-                continue
-            print('[freddie_segment] Done with {}/{} tints ({:.1%})'.format(
-                idx,
-                len(segment_args),
-                idx/len(segment_args)),
-            )
+        mapper = functools.partial(p.imap_unordered, chunksize=1)
     else:
-        for idx, (contig,tint_id) in enumerate(map(run_segment, segment_args)):
-            if not idx % ceil(len(segment_args)/100) == 0:
-                continue
-            print('[freddie_segment] Done with {}/{} tints ({:.1%})'.format(
-                idx,
-                len(segment_args),
-                idx/len(segment_args)),
-            )
+        mapper = map
+    for idx, (contig,tint_id) in enumerate(mapper(run_segment, segment_args)):
+        if not idx % ceil(len(segment_args)/100) == 0:
+            continue
+        print('[freddie_segment] Done with {}/{} tints ({:.1%})'.format(
+            idx,
+            len(segment_args),
+            idx/len(segment_args)),
+        )
+    if args.threads > 1:
+        p.close()
 
 
 if __name__ == "__main__":
