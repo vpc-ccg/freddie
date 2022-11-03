@@ -5,19 +5,6 @@ gurobi:
     license: gurobi.lic
     timeout: 1
 
-run_modes:
-    dev:
-        split: "--ignore-nonsplice"
-        segment: "--ignore-ends"
-        cluster: ""
-    dev_split:
-        split: "--ignore-nonsplice"
-        segment: ""
-        cluster: ""
-    reg:
-        split: ""
-        segment: ""
-        cluster: ""
 exec:
     split    : py/freddie_split.py
     segment  : py/freddie_segment.py
@@ -25,17 +12,13 @@ exec:
     isoforms : py/freddie_isoforms.py
 
 samples:
-    sim:
+    S1:
         ref      : homo_sapiens
         reads    :
-            - /groups/hachgrp/projects/dev-freddie/raw-data/dev-data/22Rv1.L-non.fastq
-    real:
-        ref      : homo_sapiens
-        reads    :
-            - /groups/hachgrp/projects/dev-freddie/raw-data/dev-data/dht_X_21.fq.gz
+            - test/data/S1.fastq
 
 references:
     homo_sapiens:
-        annot      : /groups/hachgrp/annotations/GTF/97/Homo_sapiens.GRCh38.97.gtf
-        genome     : /groups/hachgrp/annotations/DNA/97/Homo_sapiens.GRCh38.dna.primary_assembly.24.fa
-        genome_fai : /groups/hachgrp/annotations/DNA/97/Homo_sapiens.GRCh38.dna.primary_assembly.24.fa.fai
+        annot      : test/refs/homo_sapiens.annot.gtf
+        genome     : test/refs/homo_sapiens.dna.fa
+        genome_fai : test/refs/homo_sapiens.dna.fa.fai
