@@ -8,6 +8,8 @@
 Freddie is an annotation-free isoform detection and discovery tool that uses as input transcriptomic long-reads (e.g. Oxford Nanopore reads) aligned to the reference genome using a splice aligner.
 Note that Freddie does not assume that the splice aligner (e.g. `minimap2`) is supplied with an annotation file of known splice isoforms.
 If you use Freddie in your publications, please [cite Freddie's paper](#citating-freddie).
+Note that if you wish to access the version of Freddie benchmarked in the paper check the [`benchmarking`](https://github.com/vpc-ccg/freddie/tree/benchmarking) branch.
+
 
 ## Running Freddie
 ### Using Snakemake
