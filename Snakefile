@@ -8,6 +8,12 @@ for k in config.keys():
     assert keys[-1] in top_dict
     top_dict[keys[-1]]=config[k]
 
+if '$' in config['gurobi']['license']:
+    import subprocess
+    config['gurobi']['license'] = subprocess.check_output(
+        f"echo {config['gurobi']['license']}", shell=True
+    ).decode().rstrip('\n')
+    
 outpath = config['outpath'].rstrip('/')
 
 output_d = '{}/results'.format(outpath)
