@@ -12,7 +12,20 @@ Make sure to update the license path in `config.yaml` to point to the installed 
 
 ## Running Freddie manually
 
-### Installation
+### Installation as a Conda package
+Freddie is available as a [Conda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/) package.
+However, since Freddie uses Gurobi, you need to install Gurobi alongside Freddie in order to use the Freddie clustering module:
+
+```bash
+conda create -n freddie-env -c bioconda -c gurobi freddie gurobi
+conda activate freddie-env
+```
+
+This will install Gurobi Python dependencies for Freddie and will add four Freddie scripts to your PATH.
+
+
+### Installation using Git
+
 
 The simplest way to install the dependencies is using [Conda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/):
 
