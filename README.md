@@ -174,6 +174,6 @@ Align takes the following arguments:
 Freddie's paper was originally accepted to the proceeding of [RECOMB 2021 conference](http://web.archive.org/web/20220129112349/https://www.recomb2021.org/program) and is now accepted to Nucluic Acid Research (still in-print):
 
 *Freddie: Annotation-independent Detection and Discovery of Transcriptomic Alternative Splicing Isoforms*.
-Baraa Orabi, Brian McConeghy, Cedric Chauve, Faraz Hach.
-bioRxiv 2021.01.20.427493; doi: [https://doi.org/10.1101/2021.01.20.427493](https://doi.org/10.1101/2021.01.20.427493)
+Baraa Orabi, Brian McConeghy, Ning Xie, Xuesen Dong, Cedric Chauve, Faraz Hach.
+Nucleic Acid Research 2022; DOI: [10.1093/nar/gkac1112](https://doi.org/10.1093/nar/gkac1112)
 
